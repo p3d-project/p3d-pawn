@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scvars.c 7151 2024-03-23 16:08:18Z thiadmer $
+ *  Version: $Id: scvars.c 7481 2025-08-20 09:52:36Z thiadmer $
  */
 #include <stdio.h>
 #include <stdlib.h>     /* for _MAX_PATH */
@@ -32,18 +32,16 @@ SC_VDEFINE symbol glbtab;                   /* global symbol table */
 SC_VDEFINE cell *litq;                      /* the literal queue */
 SC_VDEFINE unsigned char *srcline=NULL;     /* the line read from the input file */
 SC_VDEFINE const unsigned char *lexptr;     /* points to the current position in "srcline" */
-SC_VDEFINE constvalue tagname_tab = { NULL, "", 0, 0};  /* tagname table */
-SC_VDEFINE constvalue libname_tab = { NULL, "", 0, 0};  /* library table (#pragma library "..." syntax) */
+SC_VDEFINE constvalue tagname_tab = {NULL,"",0,0,0};  /* tagname table */
+SC_VDEFINE constvalue libname_tab = {NULL,"",0,0,0};  /* library table (#pragma library "..." syntax) */
 SC_VDEFINE constvalue *curlibrary = NULL;   /* current library */
 SC_VDEFINE int pc_addlibtable = TRUE;       /* is the library table added to the AMX file? */
-SC_VDEFINE constvalue ntvindex_tab = { NULL, "", 0, 0}; /* native function index table */
+SC_VDEFINE constvalue ntvindex_tab = {NULL,"",0,0,0}; /* native function index table */
 SC_VDEFINE symbol *curfunc;                 /* pointer to current function */
 SC_VDEFINE char *inpfname;                  /* pointer to name of the file currently read from */
 SC_VDEFINE char outfname[_MAX_PATH];        /* intermediate (assembler) file name */
 SC_VDEFINE char binfname[_MAX_PATH];        /* binary file name */
 SC_VDEFINE char errfname[_MAX_PATH];        /* error file name */
-SC_VDEFINE char sc_ctrlchar = CTRL_CHAR;    /* the control character (or escape character)*/
-SC_VDEFINE char sc_ctrlchar_org = CTRL_CHAR;/* the default control character */
 SC_VDEFINE int litidx    = 0;               /* index to literal table */
 SC_VDEFINE int litmax    = sDEF_LITMAX;     /* current size of the literal table */
 SC_VDEFINE int stgidx    = 0;      /* index to the staging buffer */
@@ -58,7 +56,6 @@ SC_VDEFINE int warnnum   = 0;      /* number of warnings */
 SC_VDEFINE int sc_debug  = sCHKBOUNDS; /* by default: bounds checking+assertions */
 SC_VDEFINE int sc_asmfile= FALSE;  /* create .ASM file? */
 SC_VDEFINE int sc_listing= FALSE;  /* create .LST file? */
-SC_VDEFINE int sc_needsemicolon=TRUE;/* semicolon required to terminate expressions? */
 SC_VDEFINE int pc_cellsize=4;      /* size (in bytes) of a cell */
 SC_VDEFINE int sc_dataalign=4;     /* data alignment value (same as a cell) */
 SC_VDEFINE int sc_alignnext=FALSE; /* must frame of the next function be aligned? */
@@ -71,7 +68,6 @@ SC_VDEFINE int freading  = FALSE;  /* Is there an input file ready for reading? 
 SC_VDEFINE int pc_curline= 0;      /* the line number in the current file */
 SC_VDEFINE short fnumber = 0;      /* the file number in the file table (debugging) */
 SC_VDEFINE short fcurrent= 0;      /* current file being processed (debugging) */
-SC_VDEFINE short sc_intest=FALSE;  /* true if inside a test */
 SC_VDEFINE int pc_sideeffect=0;    /* true if an expression causes a side-effect */
 SC_VDEFINE int pc_stmtindent=0;    /* current indent of the statement */
 SC_VDEFINE int indent_nowarn=FALSE;/* skip warning "217 loose indentation" */
@@ -91,8 +87,8 @@ SC_VDEFINE int pc_overlays=0;      /* generate overlay table + instructions? */
 SC_VDEFINE int pc_ovl0size[ovlFIRST][2];/* offset & size (in bytes) of the first (special) overlays */
 SC_VDEFINE uint64_t pc_cryptkey=0; /* key for encryption of the generated script */
 
-SC_VDEFINE constvalue sc_automaton_tab = { NULL, "", 0, 0}; /* automaton table */
-SC_VDEFINE constvalue sc_state_tab = { NULL, "", 0, 0};   /* state table */
+SC_VDEFINE constvalue sc_automaton_tab = {NULL,"",0,0,0}; /* automaton table */
+SC_VDEFINE constvalue sc_state_tab = {NULL,"",0,0,0};     /* state table */
 
 SC_VDEFINE FILE *inpf    = NULL;   /* file read from (source or include) */
 SC_VDEFINE FILE *inpf_org= NULL;   /* main source file */

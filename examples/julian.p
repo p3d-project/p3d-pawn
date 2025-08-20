@@ -22,11 +22,11 @@ DateToJulian(day, month, year)
     {
     /* The first year is 1. Year 0 does not exist: it is 1 BC (or -1) */
     assert year != 0
-    if (year < 0)
+    if year < 0
         year++
 
     /* move January and February to the end of the previous year */
-    if (month <= 2)
+    if month <= 2
         year--, month += 12
     var jdn = 365*year + year/4 - year/100 + year/400
               + (153*month - 457) / 5
@@ -40,7 +40,7 @@ JulianToDate(jdn, &day, &month, &year)
 
     /* approximate year, then adjust in a loop */
     year = (400 * jdn) / 146097
-    while (365*year + year/4 - year/100 + year/400 < jdn)
+    while 365*year + year/4 - year/100 + year/400 < jdn
         year++
     year--
 

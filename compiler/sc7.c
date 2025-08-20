@@ -27,7 +27,7 @@
  * across function parameter boundaries.
  *
  *
- *  Copyright (c) CompuPhase, 1997-2024
+ *  Copyright (c) CompuPhase, 1997-2025
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7152 2024-03-23 20:47:23Z thiadmer $
+ *  Version: $Id: sc7.c 7481 2025-08-20 09:52:36Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -425,15 +425,15 @@ SC_FUNC int phopt_init(void)
 
   /* expand all strings */
   for (i=0; i<number-1; i++) {
-    int len = strexpand(str,(unsigned char*)sequences_cmp[i].find,sizeof str,SCPACK_TABLE);
+    unsigned len = strexpand(str,(unsigned char*)sequences_cmp[i].find,sizeof str,SCPACK_TABLE);
     assert(len<=sizeof str);
-    assert(len==(int)strlen(str)+1);
+    assert(len==strlen(str)+1);
     sequences[i].find=(char*)malloc(len);
     if (sequences[i].find!=NULL)
       strcpy((char*)sequences[i].find,str);
     len = strexpand(str,(unsigned char*)sequences_cmp[i].replace,sizeof str,SCPACK_TABLE);
     assert(len<=sizeof str);
-    assert(len==(int)strlen(str)+1);
+    assert(len==strlen(str)+1);
     sequences[i].replace=(char*)malloc(len);
     if (sequences[i].replace!=NULL)
       strcpy((char*)sequences[i].replace,str);

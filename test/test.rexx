@@ -30,7 +30,7 @@ say 'You can abort the test run by entering "BYE" at any "test#" prompt.'
 
 /* check whether we are running in Windows or Linux */
 sysname = uname('S')
-if sysname = WINNT | sysname = WIN2K | sysname = WINXP | sysname = WIN7 | sysname = WIN8 | sysname = WIN95 | sysname = WIN98 then
+if sysname = WINNT | sysname = WIN2K | sysname = WINXP | sysname = WIN7 | sysname = WIN8 | sysname = WIN10 | sysname = WIN11 | sysname = WIN95 | sysname = WIN98 then
   iswin32 = 1
 else
   iswin32 = 0
@@ -57,14 +57,26 @@ do forever
   pull reply
   if reply = 'BYE' | reply = 'bye' | reply = 'QUIT' | reply = 'quit' then
     exit
+  ok = 1
   if reply = '' then
     testnumber = testnumber + 1
   else
-    testnumber = reply
+    do
+      if datatype(reply) = 'NUM' then
+        testnumber = reply
+      else
+	    do
+          ok = 0
+		  say "Invalid input, use a test number or 'bye'"
+	    end
+    end
 
-  clearscreen
-  testfunc = 'test'||testnumber
-  interpret 'signal' testfunc   /* interpret 'call' testfunc */
+  if ok = 1 then
+    do
+     clearscreen
+     testfunc = 'test'||testnumber
+     interpret 'signal' testfunc   /* interpret 'call' testfunc */
+    end
 end
 
 syntax_err:
@@ -129,7 +141,7 @@ test5:
   return
 
 test6:
-  say '6. The following test should pass (with only warnings about unused symbols).'
+  say '6. The following test should pass (with only a warning about an unused symbol).'
   say ''
   say '   Array assignment (testing whether valid syntaxes pass).'
   say '-----'
@@ -276,10 +288,9 @@ test18:
   return
 
 test19:
-  say '19. The compilation should issue error 022, after warning 211.'
+  say '19. The compilation should issue error 022.'
   say ''
-  say '    An attempt to assign a value to a constant in a test should issue error 22'
-  say '    and warning 211.'
+  say '    An attempt to assign a value to a constant in a test should issue error 22.'
   say ''
   say 'Symptoms of detected bug: the compiler detects the error but then fails in an'
   say 'assertion and/or crashes.'
@@ -1969,5 +1980,60 @@ test155:
   say 'Symptoms of detected bug: no error, but failed on an assertion later on.'
   say '-----'
   pawncc 'ZERO_ARRAY_TWO_DIMS= test1'
+  return
+
+test156:
+  say '156. The following test should compile successfully.'
+  say ''
+  say '     Stock function that takes parameters with default values.'
+  say '-----'
+  pawncc 'STOCKFUNC_DEFPARAMS= test2'
+  return
+
+test157:
+  say '157. The compilation should issue warning 211.'
+  say ''
+  say '    Assignment inside the test condition of an if, for or while statement is'
+  say '    possibly non-intentional.'
+  say '-----'
+  pawncc ' -p ASSIGN_IN_TEST= test1'
+  return
+
+test158:
+  say '158. The following THREE tests should all compile successfully.'
+  say ''
+  say '    Optional parentheses in test expressions of if/while statements.'
+  say '-----'
+  pawncc ' -p ALT_TEST1= test16'
+  pawncc ' -p ALT_TEST2= test16'
+  pawncc ' -p ALT_TEST3= test16'
+  return
+
+test159:
+  say '159. The compilation should issue error 028.'
+  say ''
+  say '    When test expression omit (optional) parentheses, packed array indexing must'
+  say '    not be detected as opening brace that ends the expression.'
+  say '-----'
+  pawncc ' -p ALT_TEST4= test16'
+  return
+
+test160:
+  say '160. The following test should compile successfully.'
+  say ''
+  say '    Optional parentheses in switch expression.'
+  say ''
+  say 'Symptoms of detected bug: error 028 because opening brace is mistaken for a'
+  say '(packed) array index.'
+  say '-----'
+  pawncc ' -p ALT_TEST5= test16'
+  return
+
+test161:
+  say '161. The following test should compile successfully.'
+  say ''
+  say '    By exception, "while true" should NOT give a warning 206.'
+  say '-----'
+  pawncc ' WHILE_TRUE= test2'
   return
 

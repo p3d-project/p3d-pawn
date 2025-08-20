@@ -1,4 +1,4 @@
-/* parse C comments interactively, using events and a state machine */
+g/* parse C comments interactively, using events and a state machine */
 
 @start()
     state plain
@@ -6,7 +6,7 @@
 @keypressed(key) <plain>
     {
     state (key == '/') slash
-    if (key != '/')
+    if key != '/'
         echo key
     }
 
@@ -15,7 +15,7 @@
     state (key != '/') plain
     state (key == '*') comment
     echo '/'    /* print '/' held back from previous state */
-    if (key != '/')
+    if key != '/'
         echo key
     }
 

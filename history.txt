@@ -1,3 +1,16 @@
+Version 4.1, Build 7481
+-----------------------
+* Parentheses around expressions in if, while, for and switch statements are
+  now optional (under the condition that the expression is either followed by
+  an opening brace for a compound statement, or by a line break).
+
+* No warning "redundant test, constant expression is always true" for the
+  syntax "while (true)" to create an infinite loop.
+
+* Removed the compiler options "-;", "-(" and "-^" to disable optional 
+  semicolons, optional parentheses and to change the escape character.
+
+
 Version 4.1, Build 7152
 -----------------------
 * Optimized assembler core for ARMv6-M architecture (ARM Cortex M0/M0+). Further

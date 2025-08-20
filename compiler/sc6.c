@@ -1,6 +1,6 @@
 /*  Pawn compiler - Binary code generation (the "assembler")
  *
- *  Copyright (c) CompuPhase, 1997-2020
+ *  Copyright (c) CompuPhase, 1997-2025
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc6.c 7152 2024-03-23 20:47:23Z thiadmer $
+ *  Version: $Id: sc6.c 7481 2025-08-20 09:52:36Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -275,7 +275,7 @@ static cell parm2(FILE *fbin,const char *params,cell opcode,cell cip)
 
 static cell parmx(FILE *fbin,const char *params,cell opcode,cell cip)
 {
-  int idx;
+  unsigned idx;
   ucell count=getparamvalue(params,&params);
   (void)cip;
   if (fbin!=NULL) {
@@ -292,7 +292,7 @@ static cell parmx(FILE *fbin,const char *params,cell opcode,cell cip)
 
 static cell parmx_p(FILE *fbin,const char *params,cell opcode,cell cip)
 {
-  int idx;
+  unsigned idx;
   ucell p;
   ucell count=getparamvalue(params,&params);
   (void)cip;
@@ -676,7 +676,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
       unsigned char opcodearray[MAX_OPCODE+1];
       assert(opcodelist[1].name!=NULL);
       memset(opcodearray,0,sizeof opcodearray);
-      for (i=2; i<(sizeof opcodelist / sizeof opcodelist[0]); i++) {
+      for (i=2; i<(int)sizearray(opcodelist); i++) {
         assert(opcodelist[i].name!=NULL);
         assert(stricmp(opcodelist[i].name,opcodelist[i-1].name)>0);
         /* also verify that no opcode number appears twice */
@@ -1199,7 +1199,7 @@ static void append_dbginfo(FILE *fout)
       name=skipwhitespace(str+1);
       str=strchr(name,' ');
       assert(str!=NULL);
-      assert((int)(str-name)<sizeof symname);
+      assert((unsigned)(str-name)<sizeof symname);
       strlcpy(symname,name,(int)(str-name)+1);
       dbghdr.size+=(int32_t)(sizeof(AMX_DBG_SYMBOL)+strlen(symname));
       if ((prevstr=strchr(name,'['))!=NULL)
@@ -1304,7 +1304,7 @@ static void append_dbginfo(FILE *fout)
       name=skipwhitespace(str+1);
       str=strchr(name,' ');
       assert(str!=NULL);
-      assert((int)(str-name)<sizeof symname);
+      assert((unsigned)(str-name)<sizeof symname);
       strlcpy(symname,name,(int)(str-name)+1);
       dbgsym.codestart=(uint32_t)hex2ucell(str,&str);
       dbgsym.codeend=(uint32_t)hex2ucell(str,&str);

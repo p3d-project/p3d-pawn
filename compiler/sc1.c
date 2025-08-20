@@ -7,7 +7,7 @@
  *  originally created by Ron Cain, july 1980, and enhanced by James E. Hendrix.
  *  The modifications in Pawn come close to a complete rewrite, though.
  *
- *  Copyright CompuPhase, 1997-2024
+ *  Copyright CompuPhase, 1997-2025
  *  Copyright J.E. Hendrix, 1982, 1983
  *  Copyright R. Cain, 1980
  *
@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7222 2024-09-14 12:26:01Z thiadmer $
+ *  Version: $Id: sc1.c 7482 2025-08-20 10:59:36Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -91,7 +91,7 @@ static char *get_extension(const char *filename);
 static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
                    char *rname,char *codepage);
 static void setconfig(const char *root);
-static void setcaption(void);
+static void setcaption(int linespacing);
 static void about(void);
 static void setconstants(void);
 static void plungeprefix(char *prefixname);
@@ -100,18 +100,18 @@ static void dumplits(void);
 static void dumpzero(int count);
 static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst);
 static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,
-                    int stock,int fconst);
+                    int fstock,int fconst);
 static int declloc(int fstatic);
-static void decl_const(int table);
+static void decl_const(int scope);
 static cell needsub(char match,constvalue **namelist);
 static void verify_array_namelist(constvalue *namelist[], int numdim);
 static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim,
-                     constvalue *namelist[]);
+                     constvalue *dimnames[]);
 static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
                       int startlit,int counteddim[],constvalue *lastdim,
-                      constvalue *namelist[],int *errorfound);
+                      constvalue *dimnames[],int *errorfound);
 static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
-                       constvalue *namelist,int *errorfound);
+                       constvalue *dimnames,int *errorfound);
 static cell init(int ident,int usage,int *tag,int *errorfound,int *packcount,cell *packitem);
 static int getstates(const char *funcname);
 static statelist *attachstatelist(symbol *sym,int state_id);
@@ -134,9 +134,9 @@ static constvalue *clone_consttable(const constvalue *table);
 static symbol *fetchlab(const char *name);
 static void statement(int *lastindent,int allow_decl);
 static void compound(int stmt_sameline);
-static int test(int label,int parens,int invert);
+static int test(int label,int invert,int test_true,int *parenthesized);
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
-                  int *tag,symbol **symptr,int chkfuncresult);
+                  int *tag,symbol **symptr,int chkfuncresult,int in_test);
 static void doassert(void);
 static void doexit(void);
 static int doif(void);
@@ -160,7 +160,6 @@ static int nestlevel  =0;       /* number of active (open) compound statements *
 static int endlessloop=0;       /* nesting level of endless loop */
 static int rettype    =0;       /* the type that a "return" expression should have */
 static int skipinput  =0;       /* number of lines to skip from the first input file */
-static int optproccall=TRUE;    /* support "procedure call" */
 static int verbosity  =1;       /* verbosity level, 0=quiet, 1=normal, 2=verbose */
 static int sc_reparse =0;       /* needs 3th parse because of changed prototypes? */
 static int sc_parsenum=0;       /* number of the extra parses */
@@ -482,7 +481,7 @@ int pc_compile(int argc, char *argv[])
   char *tmpname;  /* temporary input file name */
   FILE *binf;
   void *inpfmark;
-  int lcl_needsemicolon,lcl_tabsize;
+  int lcl_tabsize;
   #if !defined PAWN_LIGHT
     int hdrsize=0;
   #endif
@@ -530,9 +529,7 @@ int pc_compile(int argc, char *argv[])
   if (strlen(errfname)!=0)
     remove(errfname);   /* delete file on startup */
   else if (verbosity>0)
-    setcaption();
-  sc_ctrlchar_org=sc_ctrlchar;
-  lcl_needsemicolon=sc_needsemicolon;
+    setcaption(TRUE);
   lcl_tabsize=pc_tabsize;
   #if !defined PAWN_NO_CODEPAGE
     if (!cp_set(codepage))      /* set codepage */
@@ -615,10 +612,6 @@ int pc_compile(int argc, char *argv[])
   /* write starting options (from the command line or the configuration file) */
   if (sc_listing) {
     char string[150];
-    sprintf(string,"#pragma ctrlchar 0x%02x\n"
-                   "#pragma semicolon %s\n",
-            sc_ctrlchar,
-            sc_needsemicolon ? "true" : "false");
     if (pc_matchedtabsize>1 && pc_tabsize>1)
       sprintf(string,"#pragma tabsize %d\n",pc_tabsize);
     pc_writeasm(outf,string);
@@ -638,8 +631,6 @@ int pc_compile(int argc, char *argv[])
     delete_inputfiletable();
     delete_undefsymboltable();
     resetglobals();
-    sc_ctrlchar=sc_ctrlchar_org;
-    sc_needsemicolon=lcl_needsemicolon;
     pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
     errorset(sRESET,0);
     /* reset the source file */
@@ -710,8 +701,6 @@ int pc_compile(int argc, char *argv[])
   delete_undefsymboltable();
   litarray_deleteall();         /* this list should already be empty */
   resetglobals();
-  sc_ctrlchar=sc_ctrlchar_org;
-  sc_needsemicolon=lcl_needsemicolon;
   pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
   errorset(sRESET,0);
   /* reset the source file */
@@ -977,7 +966,6 @@ static void resetglobals(void)
   pc_curline=0;         /* the line number in the current file */
   fnumber=0;            /* the file number in the file table (debugging) */
   fcurrent=0;           /* current file being processed (debugging) */
-  sc_intest=FALSE;      /* true if inside a test */
   pc_sideeffect=0;      /* true if an expression causes a side-effect */
   pc_stmtindent=0;      /* current indent of the statement */
   indent_nowarn=FALSE;  /* do not skip warning "217 loose indentation" */
@@ -1001,15 +989,12 @@ static void initglobals(void)
   sc_asmfile=FALSE;     /* do not create .ASM file */
   sc_listing=FALSE;     /* do not create .LST file */
   skipinput=0;          /* number of lines to skip from the first input file */
-  sc_ctrlchar=CTRL_CHAR;/* the escape character */
   litmax=sDEF_LITMAX;   /* current size of the literal table */
   errnum=0;             /* number of errors */
   warnnum=0;            /* number of warnings */
-  optproccall=TRUE;     /* support "procedure call" */
   verbosity=1;          /* verbosity level, 0=no copyright banner */
   sc_debug=sCHKBOUNDS;  /* by default: bounds checking+assertions */
   pc_optimize=sOPTIMIZE_CORE;
-  sc_needsemicolon=FALSE;/* semicolon required to terminate expressions? */
   pc_cellsize=4;        /* default cell size = 4 bytes, 32-bits */
   sc_dataalign=pc_cellsize;
   pc_stksize=sDEF_AMXSTACK;/* default stack size */
@@ -1330,18 +1315,6 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
             about();
         } /* if */
         break;
-      case '\\':                /* use \ instead for escape characters */
-        sc_ctrlchar='\\';
-        break;
-      case '^':                 /* use ^ instead for escape characters */
-        sc_ctrlchar='^';
-        break;
-      case ';':
-        sc_needsemicolon=toggle_option(ptr,sc_needsemicolon);
-        break;
-      case '(':
-        optproccall=!toggle_option(ptr,!optproccall);
-        break;
       default:                  /* wrong option */
         about();
       } /* switch */
@@ -1533,8 +1506,10 @@ static void setconfig(const char *root)
 
   #if defined macintosh
     /* on OS X, use argv[0] */
+    (void)root;
     getcwd(path,sizeof path);
   #elif defined __WIN32__ || defined _WIN32
+    (void)root;
     GetModuleFileName(NULL,path,_MAX_PATH);
   #elif defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__
     /* see www.autopackage.org (now Listaller) for the BinReloc module */
@@ -1622,15 +1597,19 @@ static void setconfig(const char *root)
   } /* if */
 }
 
-static void setcaption(void)
+static void setcaption(int linespacing)
 {
-  pc_printf("Pawn compiler %-25s Copyright (c) 1997-2024, CompuPhase\n\n",VERSION_STR);
+  pc_printf("Pawn compiler %-25s Copyright (c) 1997-2025, CompuPhase\n",VERSION_STR);
+  if (linespacing)
+    pc_printf("\n");
 }
 
 static void about(void)
 {
   if (strlen(errfname)==0) {
-    setcaption();
+    setcaption(FALSE);
+    pc_printf("\t\t\t\t\tCopyright (c) 1982-1983, J.E. Hendrix\n");
+    pc_printf("\t\t\t\t\tCopyright (c) 1980, Ron Cain\n\n");
     pc_printf("Usage:   pawncc <filename> [filename...] [options]\n\n");
     pc_printf("Options:\n");
     pc_printf("         -A<num>  alignment in bytes of the data segment and the stack\n");
@@ -1669,10 +1648,6 @@ static void about(void)
     pc_printf("         -w<num>  disable a specific warning by its number\n");
     pc_printf("         -X<num>  abstract machine size limit in bytes\n");
     pc_printf("         -XD<num> abstract machine data/stack size limit in bytes\n");
-    pc_printf("         -\\       use '\\' for escape characters\n");
-    pc_printf("         -^       use '^' for escape characters\n");
-    pc_printf("         -;[+/-]  require a semicolon to end each statement (default=%c)\n", sc_needsemicolon ? '+' : '-');
-    pc_printf("         -([+/-]  require parantheses for function invocation (default=%c)\n", optproccall ? '-' : '+');
     pc_printf("         sym=val  define constant \"sym\" with value \"val\"\n");
     pc_printf("         sym=     define constant \"sym\" with value 0\n");
 #if defined __WIN32__ || defined _WIN32 || defined _Windows || defined __MSDOS__
@@ -2600,7 +2575,7 @@ static int declloc(int fstatic)
         int ctag = tag;         /* set to "tag" by default */
         int explicit_init=FALSE;/* is the variable explicitly initialized? */
         if (matchtoken('=')) {
-          doexpr(FALSE,FALSE,FALSE,FALSE,&ctag,NULL,TRUE);
+          doexpr(FALSE,FALSE,FALSE,FALSE,&ctag,NULL,TRUE,FALSE);
           explicit_init=TRUE;
         } else {
           ldconst(0,sPRI);      /* uninitialized variable, set to zero */
@@ -2802,7 +2777,7 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
       int errorfound=FALSE;
       int counteddim[sDIMEN_MAX];
       int idx;
-      constvalue lastdim={NULL,"",0,0};     /* sizes of the final dimension */
+      constvalue lastdim={NULL,"",0,0,0};   /* sizes of the final dimension */
       int skipdim=0;
       int err=0;
 
@@ -4055,8 +4030,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
    * prototype */
   if (matchtoken(';')) {
     sym->usage|=uFORWARD;
-    if (!sc_needsemicolon)
-      error(218);       /* old style prototypes used with optional semicolons */
+    error(218);         /* old style prototypes used with optional semicolons */
     delete_symbols(&loctab,0,TRUE,TRUE);  /* prototype is done; forget everything */
     return TRUE;
   } /* if */
@@ -5885,9 +5859,9 @@ static void statement(int *lastindent,int allow_decl)
     decl_const(sLOCAL);
     break;
   default:          /* non-empty expression */
-    sc_allowproccall=optproccall;
+    sc_allowproccall=TRUE;
     lexpush();      /* analyze token later */
-    doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE);
+    doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE,FALSE);
     if (matchtoken('}'))
       lexpush();    /* a closing brace terminates the expression, but must be re-analysed */
     else
@@ -5950,7 +5924,7 @@ static void compound(int stmt_sameline)
  *  Global references: stgidx   (referred to only)
  */
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
-                  int *tag,symbol **symptr,int chkfuncresult)
+                  int *tag,symbol **symptr,int chkfuncresult,int in_test)
 {
   int index,ident;
   int localstaging=FALSE;
@@ -5968,7 +5942,7 @@ static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
     if (index!=stgidx)
       markexpr(sEXPR,NULL,0);
     pc_sideeffect=FALSE;
-    ident=expression(&val,tag,symptr,chkfuncresult);
+    ident=expression(&val,tag,symptr,NULL,chkfuncresult,in_test);
     if (!allowarray && (ident==iARRAY || ident==iREFARRAY))
       error(33,"-unknown-");    /* array must be indexed */
     if (chkeffect && !pc_sideeffect) {
@@ -6000,7 +5974,7 @@ SC_FUNC int constexpr(cell *val,int *tag,symbol **symptr)
   stgset(TRUE);         /* start stage-buffering */
   stgget(&index,&cidx); /* mark position in code generator */
   errorset(sEXPRMARK,0);
-  ident=expression(val,tag,symptr,FALSE);
+  ident=expression(val,tag,symptr,NULL,FALSE,FALSE);
   stgdel(index,cidx);   /* scratch generated code */
   stgset(FALSE);        /* stop stage-buffering */
   if (ident!=iCONSTEXPR) {
@@ -6020,22 +5994,19 @@ SC_FUNC int constexpr(cell *val,int *tag,symbol **symptr)
 /*  test
  *
  *  In the case a "simple assignment" operator ("=") is used within a test,
- *  the warning "possibly unintended assignment" is displayed. This routine
- *  sets the global variable "sc_intest" to true, it is restored upon termination.
- *  In the case the assignment was intended, use parantheses around the
- *  expression to avoid the warning; primary() sets "sc_intest" to 0.
- *
- *  Global references: sc_intest (altered, but restored upon termination)
+ *  the warning "possibly unintended assignment" is flagged. In the case the
+ *  assignment was intended, use parantheses around the expression to avoid the
+ *  warning, and compare to zero.
  */
-static int test(int label,int parens,int invert)
+static int test(int label,int invert,int test_true,int *parenthesized)
 {
   int index,tok;
   cell cidx;
   int ident,tag;
+  int parens,simple_true;
   cell constval;
   symbol *sym;
   int localstaging=FALSE;
-  short local_intest;
 
   if (!staging) {
     stgset(TRUE);               /* start staging */
@@ -6046,36 +6017,41 @@ static int test(int label,int parens,int invert)
     #endif
   } /* if */
 
-  local_intest=sc_intest;
-  sc_intest=TRUE;
-  if (parens)
-    needtoken('(');
+  parens=TRUE;
+  simple_true= test_true ? NOT_SET : FALSE;
   do {
+    int subparens;
     stgget(&index,&cidx);       /* mark position (of last expression) in
                                  * code generator */
-    ident=expression(&constval,&tag,&sym,TRUE);
+    ident=expression(&constval,&tag,&sym,&subparens,TRUE,TRUE);
+    parens=parens && subparens;
+    if (simple_true==NOT_SET)
+      simple_true= (ident==iCONSTEXPR && sym!=NULL && strcmp(sym->name,"true")==0);
     tok=matchtoken(',');
     if (tok) {
       markexpr(sEXPR,NULL,0);
       sc_allowproccall=FALSE;   /* cannot use "procedure call" syntax anymore */
+      parens=FALSE;             /* expression is not fully parenthesized if comma was found */
+      simple_true=FALSE;
     }
   } while (tok); /* do */
-  if (parens)
-    needtoken(')');
+  if (parenthesized!=NULL)
+    *parenthesized=parens;
   if (ident==iARRAY || ident==iREFARRAY) {
     char *ptr=(strlen(sym->name)>0) ? sym->name : "-unknown-";
     error(33,ptr);              /* array must be indexed */
   } /* if */
   if (ident==iCONSTEXPR) {      /* constant expression */
     int testtype=0;
-    sc_intest=local_intest;     /* restore state */
     stgdel(index,cidx);
     if (constval) {             /* code always executed */
-      error(206);               /* redundant test: always non-zero */
+      if (simple_true!=TRUE)
+        error(206);             /* redundant test: always non-zero */
       testtype=tENDLESS;
     } else {
       error(205);               /* redundant code: never executed */
-      jumplabel(label);
+      if (!invert)
+        jumplabel(label);
     } /* if */
     if (localstaging) {
       stgout(0);                /* write "jumplabel" code */
@@ -6091,7 +6067,6 @@ static int test(int label,int parens,int invert)
   else
     jmp_eq0(label);             /* jump to label if false (equal to 0) */
   markexpr(sEXPR,NULL,0);       /* end expression (give optimizer a chance) */
-  sc_intest=local_intest;       /* restore state */
   if (localstaging) {
     stgout(0);                  /* output queue from the very beginning (see
                                  * assert() when localstaging is set to TRUE) */
@@ -6104,7 +6079,10 @@ static int doif(void)
 {
   int ifindent=pc_stmtindent;   /* save the indent of the "if" instruction */
   int flab1=getlabel();         /* get label number for false branch */
-  test(flab1,TRUE,FALSE);       /* get expression, branch to flab1 if false */
+  int parens;
+  test(flab1,FALSE,FALSE,&parens); /* get expression, branch to flab1 if false */
+  if (!parens && lexpeek()!='{')
+    needtoken(tTERM);           /* if expression is not parenthesized and not followed by '{', must end with newline */
   statement(NULL,FALSE);        /* if true, do a statement */
   if (!matchtoken(tELSE)) {     /* if...else ? */
     setlabel(flab1);            /* no, simple if..., print false label */
@@ -6135,6 +6113,7 @@ static int dowhile(void)
 {
   int wq[wqSIZE];               /* allocate local queue */
   int save_endlessloop,retcode;
+  int parens;
 
   save_endlessloop=endlessloop;
   addwhile(wq);                 /* add entry to queue for "break" */
@@ -6144,7 +6123,9 @@ static int dowhile(void)
    * tiniest loop, set it below the top of the loop
    */
   setline(TRUE);
-  endlessloop=test(wq[wqEXIT],TRUE,FALSE);/* branch to wq[wqEXIT] if false */
+  endlessloop=test(wq[wqEXIT],FALSE,TRUE,&parens);/* branch to wq[wqEXIT] if false */
+  if (!parens && lexpeek()!='{')
+    needtoken(tTERM);           /* if expression is not parenthesized and not followed by '{', must end with newline */
   statement(NULL,FALSE);        /* if so, do a statement */
   jumplabel(wq[wqLOOP]);        /* and loop to "while" start */
   setlabel(wq[wqEXIT]);         /* exit label */
@@ -6162,7 +6143,8 @@ static int dowhile(void)
 static int dodo(void)
 {
   int wq[wqSIZE];
-  int save_endlessloop,retcode,top;
+  int save_endlessloop;
+  int retcode,top,parens;
 
   save_endlessloop=endlessloop;
   addwhile(wq);           /* see "dowhile" for more info */
@@ -6172,11 +6154,12 @@ static int dodo(void)
   needtoken(tWHILE);
   setlabel(wq[wqLOOP]);   /* "continue" always jumps to WQLOOP. */
   setline(TRUE);
-  endlessloop=test(wq[wqEXIT],TRUE,FALSE);
+  parens=matchtoken('(');
+  endlessloop=test(wq[wqEXIT],FALSE,FALSE,NULL);
   jumplabel(top);
   setlabel(wq[wqEXIT]);
   delwhile();
-  needtoken(tTERM);
+  needtoken(parens ? ')' : tTERM);
 
   retcode=endlessloop ? tENDLESS : tDO;
   endlessloop=save_endlessloop;
@@ -6188,7 +6171,7 @@ static int dofor(void)
   int wq[wqSIZE];
   cell save_decl;
   int save_nestlevel,save_endlessloop,skiplab;
-  int index;
+  int index,parens;
   int *ptr;
 
   save_decl=declared;
@@ -6197,9 +6180,8 @@ static int dofor(void)
 
   addwhile(wq);
   skiplab=getlabel();
-  needtoken('(');
-  //emptyexpr=matchtoken(')');    /* "for ()" is the same as "for ( ;; )" */
-  if (/*!emptyexpr &&*/ !matchtoken(';')) {
+  parens=matchtoken('(');
+  if (!matchtoken(';')) {
     /* new variable declarations are allowed here */
     if (matchtoken(tNEW) || matchtoken(tVAR)) {
       /* The variable in expr1 of the for loop is at a
@@ -6208,21 +6190,14 @@ static int dofor(void)
       nestlevel++;
       declloc(FALSE);           /* declare local variable */
     } else {
-      doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE);  /* expression 1 */
-      //if (matchtoken(')')) {
-      //  /* the expression is actually the test */
-      //  //??? generate jump to wq[wqEXIT] if PRI is zero
-      //  //??? when using doexpr() for test expressions, ckkeffect and allowarray should be FALSE
-      //  //??? when it is a constant expression, warnings 205 or 206 should be given
-      //  //??? the tag should be checked, because a non-bool: tag may have a user-defined operator
-      //} else
+      doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE,FALSE);  /* expression 1 */
       needtoken(';');
     } /* if */
   } /* if */
-  /* Adjust the "declared" field in the "while queue", in case that
-   * local variables were declared in the first expression of the
-   * "for" loop. These are deleted in separately, so a "break" or a "continue"
-   * must ignore these fields.
+  /* Adjust the "declared" field in the "while queue", in case that local
+   * variables were declared in the first expression of the "for" loop.
+   * These are deleted separately, so a "break" or a "continue" must ignore
+   * these fields.
    */
   ptr=readwhile();
   assert(ptr!=NULL);
@@ -6242,16 +6217,26 @@ static int dofor(void)
   stgmark(sSTARTREORDER);
   stgmark((unsigned char)(sEXPRSTART+0));    /* mark start of 2nd expression in stage */
   setlabel(skiplab);                         /* jump to this point after 1st expression */
-  if (/*emptyexpr ||*/ matchtoken(';')) {
+  if (matchtoken(';')) {
     endlessloop=1;
   } else {
-    endlessloop=test(wq[wqEXIT],FALSE,FALSE);/* expression 2 (jump to wq[wqEXIT] if false) */
+    endlessloop=test(wq[wqEXIT],FALSE,FALSE,NULL);/* expression 2 (jump to wq[wqEXIT] if false) */
     needtoken(';');
   } /* if */
   stgmark((unsigned char)(sEXPRSTART+1));    /* mark start of 3th expression in stage */
-  if (/*!emptyexpr &&*/ !matchtoken(')')) {
-    doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE);    /* expression 3 */
-    needtoken(')');
+  if (parens) {
+    if (!matchtoken(')')) {
+      doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE,FALSE);  /* expression 3 */
+      needtoken(')');
+    } /* if */
+  } else {
+    if (matchtoken('{')==1) {
+      lexpush();                /* analyzed again in statement() */
+    } else {
+      doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE,FALSE);  /* expression 3 */
+      if (lexpeek()!='{')
+        needtoken(tTERM);       /* if expression is not parenthesized and not followed by '{', must end with newline */
+    } /* if */
   } /* if */
   stgmark(sENDREORDER);         /* mark end of reversed evaluation */
   stgout(index);
@@ -6298,13 +6283,15 @@ static void doswitch(void)
   int tok;
   cell val;
   char *str;
-  constvalue caselist = { NULL, "", 0, 0};   /* case list starts empty */
+  constvalue caselist = {NULL,"",0,0,0};   /* case list starts empty */
   constvalue *cse,*csp;
   int label;
+  int parens;
 
-  needtoken('(');
-  doexpr(TRUE,FALSE,FALSE,FALSE,NULL,NULL,TRUE);/* evaluate switch expression */
-  needtoken(')');
+  parens=matchtoken('(');
+  doexpr(TRUE,FALSE,FALSE,FALSE,NULL,NULL,TRUE,TRUE);/* evaluate switch expression */
+  if (parens)
+    needtoken(')');
   /* generate the code for the switch statement, the label is the address
    * of the case table (to be generated later).
    */
@@ -6437,9 +6424,10 @@ static void doassert(void)
 {
   if ((sc_debug & sCHKBOUNDS)!=0) {
     int flab1=getlabel();       /* get label number for "OK" branch */
-    test(flab1,FALSE,TRUE);/* get expression and branch to flab1 if true */
+    int pass=test(flab1,TRUE,FALSE,NULL);/* get expression and branch to flab1 if true */
     insert_dbgline(pc_curline); /* make sure we can find the correct line number */
-    ffabort(xASSERTION);
+    if (pass==0)
+      ffabort(xASSERTION);      /* don't halt on constant non-zero expression */
     setlabel(flab1);
   } else {
     int index;
@@ -6447,7 +6435,7 @@ static void doassert(void)
     stgset(TRUE);               /* start staging */
     stgget(&index,&cidx);       /* mark position in code generator */
     do {
-      expression(NULL,NULL,NULL,FALSE);
+      expression(NULL,NULL,NULL,NULL,FALSE,TRUE);
       stgdel(index,cidx);       /* just scrap the code */
     } while (matchtoken(','));
     stgset(FALSE);              /* stop staging */
@@ -6546,7 +6534,7 @@ static void doreturn(void)
     int ident;
     if ((rettype & uRETNONE)!=0)
       error(78);                        /* mix "return;" and "return value;" */
-    ident=doexpr(TRUE,FALSE,TRUE,FALSE,&tag,&sym,TRUE);
+    ident=doexpr(TRUE,FALSE,TRUE,FALSE,&tag,&sym,TRUE,FALSE);
     needtoken(tTERM);
     if (ident==iARRAY && sym==NULL) {
       /* returning a literal string is not supported (it must be a variable) */
@@ -6725,7 +6713,7 @@ static void doexit(void)
   int tag=0;
 
   if (matchtoken(tTERM)==0){
-    doexpr(TRUE,FALSE,FALSE,FALSE,&tag,NULL,TRUE);
+    doexpr(TRUE,FALSE,FALSE,FALSE,&tag,NULL,TRUE,FALSE);
     needtoken(tTERM);
   } else {
     ldconst(0,sPRI);
@@ -6741,7 +6729,7 @@ static void dosleep(void)
   int tag=0;
 
   if (matchtoken(tTERM)==0){
-    doexpr(TRUE,FALSE,FALSE,FALSE,&tag,NULL,TRUE);
+    doexpr(TRUE,FALSE,FALSE,FALSE,&tag,NULL,TRUE,FALSE);
     needtoken(tTERM);
   } else {
     ldconst(0,sPRI);
@@ -6774,7 +6762,7 @@ static void dostate(void)
   if (matchtoken('(')) {
     flabel=getlabel();          /* get label number for "false" branch */
     pc_docexpr=TRUE;            /* attach expression as a documentation string */
-    test(flabel,FALSE,FALSE);/* get expression, branch to flabel if false */
+    test(flabel,FALSE,FALSE,NULL);  /* get expression, branch to flabel if false */
     pc_docexpr=FALSE;
     needtoken(')');
   } else {
@@ -6785,7 +6773,7 @@ static void dostate(void)
   needtoken(tTERM);
   if (!result) {
     /* the state is unknown, it may be used before definition;
-     * since the report is built in after the first state, create a dummy state,
+     * since the report is built after the first state, create a dummy state,
      * so that the transitions can be documented
      */
     if (sc_status==statBROWSE) {

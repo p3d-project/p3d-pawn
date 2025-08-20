@@ -18,7 +18,7 @@ rpncalc(const string{})
     for ( ;; )
         {
         field = gettoken(string, index)
-        switch (field.type)
+        switch field.type
             {
             case Number:
                 push field.value
@@ -37,7 +37,7 @@ rpncalc(const string{})
             }
         }
     printf "Result = %r\n", pop()
-    if (clearstack())
+    if clearstack()
         print "Stack not empty\n", red
     }
 
@@ -50,12 +50,12 @@ gettoken(const string{}, &index)
     /* then parse it */
     new field[Token]
     field.word = word
-    if (strlen(word) == 0)
+    if strlen(word) == 0
         {
         field.type = EndOfExpr /* special "stop" symbol */
         field.value = 0
         }
-    else if ('0' <= word{0} <= '9')
+    else if '0' <= word{0} <= '9'
         {
         field.type = Number
         field.value = rval(word)

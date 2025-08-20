@@ -1,8 +1,6 @@
-/*  Pawn compiler - Error message system
+/*  Pawn compiler - Error message output
  *
- *  In fact a very simple system, using only 'panic mode'.
- *
- *  Copyright (c) CompuPhase, 1997-2023
+ *  Copyright (c) CompuPhase, 1997-2025
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -16,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7222 2024-09-14 12:26:01Z thiadmer $
+ *  Version: $Id: sc5.c 7481 2025-08-20 09:52:36Z thiadmer $
  */
 #include <assert.h>
 #if defined	__WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -66,6 +64,7 @@ static int errflag;
 static int errfile;
 static int errstart;    /* line number at which the instruction started */
 static int errline;     /* forced line number for the error message */
+static int warnignore;  /* line number for warning to ignore (when error wal also given for the line) */
 
 /*  error
  *
@@ -79,7 +78,7 @@ static int errline;     /* forced line number for the error message */
  *                     fcurrent   (reffered to only)
  *                     errflag    (altered)
  */
-SC_FUNC int error(long number,...)
+SC_FUNC int error(unsigned long number,...)
 {
 static const char *prefix[3]={ "error", "fatal error", "warning" };
 static int lastline,errorcount;
@@ -88,7 +87,7 @@ static short lastfile;
   const char *filename;
   va_list argptr;
   char string[256];
-  int notice;
+  unsigned notice;
 
   /* split the error field between the real error/warning number and an optional
    * "notice" number
@@ -122,13 +121,17 @@ static short lastfile;
     pre=prefix[0];
     errflag=TRUE;       /* set errflag (skip rest of erroneous expression) */
     errnum++;
+    warnignore=pc_curline;
   } else if (number<200) {
-    assert((number-100)>=0 && (number-100)<sizearray(fatalmsg));
+    assert(((int)number-100)>=0 && (number-100)<sizearray(fatalmsg));
     msg=fatalmsg[number-100];
     pre=prefix[1];
     errnum++;           /* a fatal error also counts as an error */
   } else {
-    assert((number-200)>=0 && (number-200)<sizearray(warnmsg));
+    assert(((int)number-200)>=0 && (number-200)<sizearray(warnmsg));
+    if (pc_curline==warnignore)
+      return 0;         /* an error was already given for this line, gobble up the (probably incorrect) warning*/
+    warnignore=-1;
     msg=warnmsg[number-200];
     pre=prefix[2];
     warnnum++;
@@ -212,16 +215,16 @@ static short lastfile;
   return 0;
 }
 
-SC_FUNC int error_symbolname(int number,const char *name)
+SC_FUNC int error_symbolname(unsigned number,const char *name)
 {
   cell val;
   char *str;
   int tok=tokeninfo(&val,&str);
-  long errnum= (tok>tMIDDLE && tok<=tLAST) ? makelong(number,4) : number;
-  return error(errnum,name);
+  unsigned long errornum= (tok>tMIDDLE && tok<=tLAST) ? (unsigned long)makelong(number,4) : number;
+  return error(errornum,name);
 }
 
-SC_FUNC int error_suggest(int number,const char *name,int ident)
+SC_FUNC int error_suggest(unsigned number,const char *name,int ident)
 {
   symbol *closestsym=find_closestsymbol(name,ident);
   if (closestsym!=NULL && strcmp(name,closestsym->name)!=0)
@@ -229,7 +232,7 @@ SC_FUNC int error_suggest(int number,const char *name,int ident)
   return error(number,name);
 }
 
-SC_FUNC int error_suggest_list(int number,const char *name,constvalue *list)
+SC_FUNC int error_suggest_list(unsigned number,const char *name,constvalue *list)
 {
   assert(name!=NULL);
   assert(list!=NULL);
@@ -295,7 +298,7 @@ SC_FUNC void errorset(int code,int line)
   extern "C"
 #endif
 DLLEXPORT
-int pc_enablewarning(int number,int enable)
+int pc_enablewarning(unsigned number,int enable)
 {
   int index;
   unsigned char mask;

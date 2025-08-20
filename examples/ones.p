@@ -15,7 +15,7 @@ forward ones: operator-(ones: a)
         chksum = chksum + value
         printf "Checksum = %x\n", chksum
         }
-    while (value)
+    while value
     }
 
 stock ones: operator+(ones: a, ones: b)
@@ -48,7 +48,7 @@ stock ones: operator+(ones: a, ones: b)
      * word may cause the new low to overflow, so restart in
      * that case
      */
-    if (carry)
+    if carry
         goto restart
 
     return (r2 << shift) | r1

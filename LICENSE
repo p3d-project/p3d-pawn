@@ -1,5 +1,5 @@
 The software toolkit "Pawn" (the compiler, the abstract machine and the support
-routines) is copyright (c) 1997-2023 by CompuPhase, and distributed under the
+routines) is copyright (c) 1997-2025 by CompuPhase, and distributed under the
 "Apache License" version 2.0, which is reproduced below, plus an exception
 clause regarding static linking.
 
@@ -202,7 +202,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 
 ------------------------------------------------------------------------------
 
-The Pawn documentation is copyright (c) 1997-2023 by CompuPhase, and licensed
+The Pawn documentation is copyright (c) 1997-2025 by CompuPhase, and licensed
 under the Creative Commons Attribution/Share-Alike 3.0 License. To view a copy
 of this licence, visit http://creativecommons.org/licenses/by-sa/3.0/ or send a
 letter to Creative Commons, 559 Nathan Abbott Way, Stanford, California 94305,

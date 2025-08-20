@@ -1,7 +1,7 @@
 /*  Pawn compiler - Peephole optimizer "sequences" strings (plain
  *                  and compressed formats)
  *
- *  Copyright (c) CompuPhase, 2000-2024
+ *  Copyright (c) CompuPhase, 2000-2025
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -15,7 +15,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.sch 7151 2024-03-23 16:08:18Z thiadmer $
+ *  Version: $Id: sc7.sch 7481 2025-08-20 09:52:36Z thiadmer $
  */
 
 /* Special characters in the strings of this file:
@@ -1118,7 +1118,7 @@ static const SEQUENCE sequences_cmp[] = {
   /* ----------------------------------- */
 
   /* separator, so optimizer can stop before generating macro opcodes */
-  { separator_macro, "", 0 },
+  { separator_macro, "", 0, 0 },
 
   /* Array indexing can merit from special instructions.
    * Simple indexed array lookup can be optimized quite
@@ -2692,7 +2692,7 @@ static const SEQUENCE sequences_cmp[] = {
   /* ------------------ */
 
   /* separator, so optimizer can stop before generating macro opcodes */
-  { separator_full, "", 0 },
+  { separator_full, "", 0, 0 },
 
   /* If %0 is in the range cell_min .. cell_max, do conversions like:
    *    add.c %0                add.p.c %0
@@ -3214,5 +3214,5 @@ static const SEQUENCE sequences_cmp[] = {
   },
 
   /* ----- */
-  { NULL, NULL, 0 }
+  { NULL, NULL, 0, 0 }
 };

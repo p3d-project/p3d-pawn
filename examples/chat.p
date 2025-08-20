@@ -10,11 +10,11 @@ const cellchars	= cellbits / charbits
     static string{100}
     static index
 
-    if (key == '\e')
+    if key == '\e'
         exit                    /* quit on 'Esc' key */
 
     echo key
-    if (key == '\r' || key == '\n' || index == sizeof string * cellchars)
+    if key == '\r' || key == '\n' || index == sizeof string * cellchars
         {
         string{index} = '\0'    /* terminate string */
         sendstring string

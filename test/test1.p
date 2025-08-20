@@ -278,6 +278,14 @@ main()
         while (1 = lLoop);
     #endif
 
+    #if defined ASSIGN_IN_TEST
+        new test = 1;
+        if (test = 2)
+        {
+            test++;
+        }
+    #endif
+
     #if defined MISSING_PARM
         SetString(''Value'');     /* function needs 2 parameters */
     #endif

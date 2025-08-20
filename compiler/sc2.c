@@ -1,6 +1,8 @@
 /*  Pawn compiler - File input, preprocessing and lexical analysis functions
  *
- *  Copyright (c) CompuPhase, 1997-2024
+ *  Copyright (c) CompuPhase, 1997-2025
+ *  Copyright J.E. Hendrix, 1982, 1983
+ *  Copyright R. Cain, 1980
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -14,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7152 2024-03-23 20:47:23Z thiadmer $
+ *  Version: $Id: sc2.c 7481 2025-08-20 09:52:36Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -124,7 +126,7 @@ SC_FUNC int plungequalifiedfile(const char *name)
 static const char *extensions[] = { ".i", ".inc", ".p", ".pawn" };
   FILE *fp;
   char *ext;
-  int ext_idx;
+  unsigned ext_idx;
 
   assert(name!=NULL);
   ext_idx=0;
@@ -250,11 +252,11 @@ static void doinclude(int silent)
   } /* if */
 
   i=0;
-  while (*lexptr!=c && *lexptr!='\0' && i<sizearray(name)-1)  /* find the end of the string */
+  while (*lexptr!=c && *lexptr!='\0' && i<(int)sizearray(name)-1)  /* find the end of the string */
     name[i++]=*lexptr++;
   while (i>0 && name[i-1]<=' ')
     i--;                        /* strip trailing whitespace */
-  assert(i>=0 && i<sizearray(name));
+  assert(i>=0 && i<(int)sizearray(name));
   name[i]='\0';                 /* zero-terminate the string */
 
   if (*lexptr!=c) {             /* verify correct string termination */
@@ -522,7 +524,7 @@ static void stripcom(unsigned char *line)
           c=*line;      /* ending quote, single or double */
           line+=1;
           while (*line!=c && *line!='\0') {
-            if (*line==sc_ctrlchar && *(line+1)!='\0')
+            if (*line==ESCAPE_CHAR && *(line+1)!='\0')
               line+=1;  /* skip escape character (but avoid skipping past '\0' */
             line+=1;
           } /* while */
@@ -817,7 +819,7 @@ static int ftoi(cell *val,const unsigned char *curptr)
  *        for at "hier2()" (in fact, it is viewed as an operator, not as a
  *        sign) and the + is invalid (as in K&R C, and unlike ANSI C).
  */
-static int number(cell *val,const unsigned char *curptr)
+SC_FUNC int number(cell *val,const unsigned char *curptr)
 {
   int i;
   cell value;
@@ -957,7 +959,7 @@ static int command(void)
   /* on a pending expression, force to return a silent ';' token and force to
    * re-read the line
    */
-  if (!sc_needsemicolon && stgget(&index,&code_index)) {
+  if (stgget(&index,&code_index)) {
     lexptr=term_expr;
     return CMD_TERM;
   } /* if */
@@ -1130,23 +1132,13 @@ static int command(void)
             lexptr=getstring((unsigned char*)name,sizearray(name),lexptr);
           } else {
             int i;
-            for (i=0; i<sizearray(name) && alphanum(*lexptr); i++,lexptr++)
+            for (i=0; i<(int)sizearray(name) && alphanum(*lexptr); i++,lexptr++)
               name[i]=*lexptr;
             name[i]='\0';
           } /* if */
           if (!cp_set(name))
             error(108);         /* codepage mapping file not found */
 #endif
-        } else if (strcmp(str,"ctrlchar")==0) {
-          while (*lexptr<=' ' && *lexptr!='\0')
-            lexptr++;
-          if (*lexptr=='\0') {
-            sc_ctrlchar=sc_ctrlchar_org;
-          } else {
-            if (lex(&val,&str)!=tNUMBER)
-              error(27);          /* invalid character constant */
-            sc_ctrlchar=(char)val;
-          } /* if */
         } else if (strcmp(str,"deprecated")==0) {
           while (*lexptr<=' ' && *lexptr!='\0')
             lexptr++;
@@ -1164,7 +1156,7 @@ static int command(void)
             lexptr=getstring((unsigned char*)name,sizearray(name),lexptr);
           } else {
             int i;
-            for (i=0; i<sizearray(name) && (alphanum(*lexptr) || *lexptr=='-'); i++,lexptr++)
+            for (i=0; i<(int)sizearray(name) && (alphanum(*lexptr) || *lexptr=='-'); i++,lexptr++)
               name[i]=*lexptr;
             name[i]='\0';
           } /* if */
@@ -1198,7 +1190,7 @@ static int command(void)
           /* first gather all information, start with the tag name */
           while (*lexptr<=' ' && *lexptr!='\0')
             lexptr++;
-          for (i=0; i<sizearray(name) && alphanum(*lexptr); i++,lexptr++)
+          for (i=0; i<(int)sizearray(name) && alphanum(*lexptr); i++,lexptr++)
             name[i]=*lexptr;
           name[i]='\0';
           /* then the precision (for fixed point arithmetic) */
@@ -1226,10 +1218,6 @@ static int command(void)
           } else {
             error(69);          /* rational number format already set, can only be set once */
           } /* if */
-        } else if (strcmp(str,"semicolon")==0) {
-          cell val;
-          preproc_expr(&val,NULL);
-          sc_needsemicolon=(int)val;
         } else if (strcmp(str,"tabsize")==0) {
           cell val;
           preproc_expr(&val,NULL);
@@ -1245,7 +1233,7 @@ static int command(void)
             /* get the name */
             while (*lexptr<=' ' && *lexptr!='\0')
               lexptr++;
-            for (i=0; i<sizearray(name) && alphanum(*lexptr); i++,lexptr++)
+            for (i=0; i<(int)sizearray(name) && alphanum(*lexptr); i++,lexptr++)
               name[i]=*lexptr;
             name[i]='\0';
             /* get the symbol */
@@ -1464,7 +1452,7 @@ static int is_startstring(const unsigned char *string)
   if (*string=='"' || *string=='\'')
     return TRUE;                        /* "..." */
 
-  if (*string==sc_ctrlchar) {
+  if (*string==ESCAPE_CHAR) {
     string++;
     if (*string=='\"' || *string=='\'')
       return TRUE;                      /* \"..." */
@@ -1478,8 +1466,8 @@ static const unsigned char *skipstring(const unsigned char *string)
   char endquote;
   int flags=0;
 
-  while (*string=='!' || *string==sc_ctrlchar) {
-    if (*string==sc_ctrlchar)
+  while (*string=='!' || *string==ESCAPE_CHAR) {
+    if (*string==ESCAPE_CHAR)
       flags=RAWMODE;
     string++;
   } /* while */
@@ -1603,7 +1591,7 @@ static int substpattern(unsigned char *line,size_t buffersize,char *pattern,char
         /* character behind the pattern was matched too */
         if (*e==*p) {
           s=e+1;
-        } else if (*e=='\n' && *p==';' && *(p+1)=='\0' && !sc_needsemicolon) {
+        } else if (*e=='\n' && *p==';' && *(p+1)=='\0') {
           s=e;    /* allow a trailing ; in the pattern match to end of line */
         } else {
           assert(*e=='\0' || *e=='\n');
@@ -1614,7 +1602,7 @@ static int substpattern(unsigned char *line,size_t buffersize,char *pattern,char
       } else {
         match=FALSE;
       } /* if */
-    } else if (*p==';' && *(p+1)=='\0' && !sc_needsemicolon) {
+    } else if (*p==';' && *(p+1)=='\0') {
       /* source may be ';' or end of the line */
       while (*s<=' ' && *s!='\0')
         s++;          /* skip white space */
@@ -2020,14 +2008,14 @@ SC_FUNC int lex_adjusttabsize(int matchindent)
  *
  *  Global references: lexptr        (altered)
  *                     litidx        (referred to only)
- *                     _lextok, _lexval, _lexstr
- *                     _pushed
+ *                     cached_tok, cached_val, cached_str
+ *                     is_cached
  */
 
-static int _pushed;
-static int _lextok;
-static cell _lexval;
-static char *_lexstr=NULL;
+static int is_cached;
+static int cached_tok;
+static cell cached_val;
+static char *cached_str=NULL;
 static int _lexnewline;
 
 SC_FUNC int lexinit(int releaseall)
@@ -2036,7 +2024,7 @@ SC_FUNC int lexinit(int releaseall)
   iflevel=0;            /* preprocessor: nesting of "#if" is currently 0 */
   skiplevel=0;          /* preprocessor: not currently skipping */
   icomment=0;           /* currently not in a multiline comment */
-  _pushed=FALSE;        /* no token pushed back into lex */
+  is_cached=FALSE;      /* no token pushed back into lex */
   _lexnewline=FALSE;
 
   pc_indentmask=0;      /* tab/space interval to make up the current indent */
@@ -2046,18 +2034,18 @@ SC_FUNC int lexinit(int releaseall)
     if (srcline!=NULL)
       free(srcline);
     srcline=NULL;
-    if (_lexstr!=NULL)
-      free(_lexstr);
-    _lexstr=NULL;
+    if (cached_str!=NULL)
+      free(cached_str);
+    cached_str=NULL;
   } else {
     if (srcline==NULL)
       srcline=(unsigned char*)malloc((sLINEMAX+1)*sizeof(unsigned char));
-    if (_lexstr==NULL)
-      _lexstr=(char*)malloc((sLINEMAX+1)*sizeof(char));
-    if (srcline==NULL || _lexstr==NULL)
+    if (cached_str==NULL)
+      cached_str=(char*)malloc((sLINEMAX+1)*sizeof(char));
+    if (srcline==NULL || cached_str==NULL)
       return 0;
     *srcline='\0';
-    *_lexstr='\0';
+    *cached_str='\0';
   } /* if */
   return 1;
 }
@@ -2085,18 +2073,18 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
 
   assert(lexvalue!=NULL);
   assert(lexsym!=NULL);
-  if (_pushed) {
-    _pushed=FALSE;      /* reset "_pushed" flag */
-    *lexvalue=_lexval;
-    *lexsym=_lexstr;
-    return _lextok;
+  if (is_cached) {
+    is_cached=FALSE;            /* reset "_pushed" flag */
+    *lexvalue=cached_val;
+    *lexsym=cached_str;
+    return cached_tok;
   } /* if */
 
-  _lextok=0;            /* preset all values */
-  _lexval=0;
-  _lexstr[0]='\0';
-  *lexvalue=_lexval;
-  *lexsym=_lexstr;
+  cached_tok=0;                 /* preset all values */
+  cached_val=0;
+  cached_str[0]='\0';
+  *lexvalue=cached_val;
+  *lexsym=cached_str;
   _lexnewline=FALSE;
   if (!freading)
     return 0;
@@ -2108,7 +2096,7 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
       if (!freading)
         return 0;
       if (lexptr==term_expr)    /* special sequence to terminate a pending expression */
-        return (_lextok=tENDEXPR);
+        return (cached_tok=tENDEXPR);
       _lexnewline=TRUE;         /* set this after preprocess(), because
                                  * preprocess() calls lex() recursively */
       newline=TRUE;
@@ -2123,36 +2111,36 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
   tokptr=sc_tokens;
   while (i<=tMIDDLE) {  /* match multi-character operators */
     if (*lexptr==**tokptr && match(*tokptr,FALSE)) {
-      _lextok=i;
-      strcpy(_lexstr,*tokptr);
+      cached_tok=i;
+      strcpy(cached_str,*tokptr);
       if (pc_docexpr)   /* optionally concatenate to documentation string */
         insert_autolist(*tokptr);
-      return _lextok;
+      return cached_tok;
     } /* if */
     i+=1;
     tokptr+=1;
   } /* while */
   while (i<=tLAST) {    /* match reserved words and compiler directives */
     if (*lexptr==**tokptr && match(*tokptr,TRUE)) {
-      _lextok=i;
-      strcpy(_lexstr,*tokptr);
+      cached_tok=i;
+      strcpy(cached_str,*tokptr);
       errorset(sRESET,0); /* reset error flag (clear the "panic mode")*/
       if (pc_docexpr)   /* optionally concatenate to documentation string */
         insert_autolist(*tokptr);
-      return _lextok;
+      return cached_tok;
     } /* if */
     i+=1;
     tokptr+=1;
   } /* while */
 
   starttoken=lexptr;    /* save start pointer (for concatenating to documentation string) */
-  if ((i=number(&_lexval,lexptr))!=0) {   /* number (non-floating point) */
-    _lextok=tNUMBER;
-    *lexvalue=_lexval;
+  if ((i=number(&cached_val,lexptr))!=0) {   /* number (non-floating point) */
+    cached_tok=tNUMBER;
+    *lexvalue=cached_val;
     lexptr+=i;
-  } else if ((i=ftoi(&_lexval,lexptr))!=0) {
-    _lextok=tRATIONAL;
-    *lexvalue=_lexval;
+  } else if ((i=ftoi(&cached_val,lexptr))!=0) {
+    cached_tok=tRATIONAL;
+    *lexvalue=cached_val;
     lexptr+=i;
   } else if (isdigit(*lexptr)) {
     /* so this symbol starts with a digit, but it is not a valid number; flag
@@ -2161,39 +2149,39 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
     error(92);          /* invalid number format */
     while (alphanum(*lexptr))
       lexptr++;
-    _lextok=tNUMBER;
-    *lexvalue=_lexval=0;
+    cached_tok=tNUMBER;
+    *lexvalue=cached_val=0;
   } else if (alpha(*lexptr) || *lexptr=='.' && alpha(*(lexptr+1))) {  /* symbol, label or symbol-label */
     /*  Note: only sNAMEMAX characters are significant. The compiler
      *        generates a warning if a symbol exceeds this length.
      */
     if (*lexptr=='.') {
-      _lextok=tSYMLABEL;
+      cached_tok=tSYMLABEL;
       lexptr++; /* skip the '.' (it is not stored in the name) */
     } else {
-      _lextok=tSYMBOL;
+      cached_tok=tSYMBOL;
     } /* if */
     i=0;
     toolong=0;
     while (alphanum(*lexptr)){
-      _lexstr[i]=(char)*lexptr++;
+      cached_str[i]=(char)*lexptr++;
       if (i<sNAMEMAX)
         i+=1;
       else
         toolong=1;
     } /* while */
-    _lexstr[i]='\0';
+    cached_str[i]='\0';
     if (toolong)
-      error(200,_lexstr,sNAMEMAX);  /* symbol too long, truncated to sNAMEMAX chars */
-    if (_lexstr[0]==PUBLIC_CHAR && _lexstr[1]=='\0')
-      _lextok=PUBLIC_CHAR;      /* '@' all alone is not a symbol, it is an operator */
-    else if (_lexstr[0]=='_' && _lexstr[1]=='\0')
-      _lextok='_';              /* '_' by itself is not a symbol, it is a placeholder */
-    if (*lexptr==':' && *(lexptr+1)!=':' && (_lextok!=PUBLIC_CHAR && _lextok!=tSYMLABEL)) {
+      error(200,cached_str,sNAMEMAX); /* symbol too long, truncated to sNAMEMAX chars */
+    if (cached_str[0]==PUBLIC_CHAR && cached_str[1]=='\0')
+      cached_tok=PUBLIC_CHAR;   /* '@' all alone is not a symbol, it is an operator */
+    else if (cached_str[0]=='_' && cached_str[1]=='\0')
+      cached_tok='_';           /* '_' by itself is not a symbol, it is a placeholder */
+    if (*lexptr==':' && *(lexptr+1)!=':' && (cached_tok!=PUBLIC_CHAR && cached_tok!=tSYMLABEL)) {
       if (sc_allowtags) {
-        _lextok=tLABEL; /* it wasn't a normal symbol, it was a label/tagname */
-        lexptr+=1;        /* skip colon */
-      } else if (find_constval(&tagname_tab,_lexstr,-1)!=NULL) {
+        cached_tok=tLABEL;      /* it wasn't a normal symbol, it was a label/tagname */
+        lexptr+=1;              /* skip colon */
+      } else if (find_constval(&tagname_tab,cached_str,-1)!=NULL) {
         /* this looks like a tag override (because a tag with this name
          * exists), but tags are not allowed right now, so it is probably an
          * error
@@ -2202,21 +2190,21 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
       } /* if */
     } /* if */
   } else if (*lexptr=='\"'                                /* packed string literal */
-             || *lexptr==sc_ctrlchar && *(lexptr+1)=='\"' /* packed raw string */
+             || *lexptr==ESCAPE_CHAR && *(lexptr+1)=='\"' /* packed raw string */
              || *lexptr=='\'' && *(lexptr+1)=='\''        /* unpacked string */
              || *lexptr=='`' && *(lexptr+1)=='`'          /* unpacked string (alternative syntax) */
-             || *lexptr==sc_ctrlchar && *(lexptr+1)=='\'' && *(lexptr+2)=='\''  /* unpacked raw string */
-             || *lexptr==sc_ctrlchar && *(lexptr+1)=='`' && *(lexptr+2)=='`')   /* unpacked raw string */
+             || *lexptr==ESCAPE_CHAR && *(lexptr+1)=='\'' && *(lexptr+2)=='\''  /* unpacked raw string */
+             || *lexptr==ESCAPE_CHAR && *(lexptr+1)=='`' && *(lexptr+2)=='`')   /* unpacked raw string */
   {
     int stringflags;
-    _lextok=(*lexptr=='\"') ? tPACKSTRING : tSTRING;
-    *lexvalue=_lexval=litidx;
-    _lexstr[0]='\0';
+    cached_tok=(*lexptr=='\"') ? tPACKSTRING : tSTRING;
+    *lexvalue=cached_val=litidx;
+    cached_str[0]='\0';
     stringflags=-1;     /* to mark the first segment */
     for ( ;; ) {
       char *cat;
       int segmentflags=0;
-      if (*lexptr==sc_ctrlchar) {
+      if (*lexptr==ESCAPE_CHAR) {
         segmentflags|=RAWMODE;
         lexptr+=1;
       } /* if */
@@ -2231,15 +2219,15 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
         stringflags=segmentflags;
       else if (stringflags!=segmentflags)
         error(238);         /* mixing packed/unpacked/raw strings in concatenation */
-      cat=strchr(_lexstr,'\0');
+      cat=strchr(cached_str,'\0');
       assert(cat!=NULL);
       while ((*lexptr!='"' || (segmentflags & ISPACKED)==0)
              && (*lexptr!='\'' || *(lexptr+1)!='\'' || (segmentflags & ISPACKED)!=0)
-             && *lexptr!='\0' && (cat-_lexstr)<sLINEMAX)
+             && *lexptr!='\0' && (cat-cached_str)<sLINEMAX)
       {
         if (*lexptr!='\a') {  /* ignore '\a' (which was inserted at a line concatenation) */
           *cat++=*lexptr;
-          if (*lexptr==sc_ctrlchar && *(lexptr+1)!='\0')
+          if (*lexptr==ESCAPE_CHAR && *(lexptr+1)!='\0')
             *cat++=*++lexptr; /* skip escape character plus the escaped character */
         } /* if */
         lexptr++;
@@ -2281,24 +2269,24 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
         } /* if */
       } /* while */
       if (!freading || !(*lexptr=='\"'
-                         || *lexptr==sc_ctrlchar && *(lexptr+1)=='\"'
+                         || *lexptr==ESCAPE_CHAR && *(lexptr+1)=='\"'
                          || *lexptr=='\'' && *(lexptr+1)=='\''
                          || *lexptr=='`' && *(lexptr+1)=='`'
-                         || *lexptr==sc_ctrlchar && *(lexptr+1)=='\'' && *(lexptr+2)=='\''
-                         || *lexptr==sc_ctrlchar && *(lexptr+1)=='`' && *(lexptr+2)=='`'))
+                         || *lexptr==ESCAPE_CHAR && *(lexptr+1)=='\'' && *(lexptr+2)=='\''
+                         || *lexptr==ESCAPE_CHAR && *(lexptr+1)=='`' && *(lexptr+2)=='`'))
       {
         error(37);                /* invalid string concatenation */
         break;
       } /* if */
     } /* for */
     if ((stringflags & ISPACKED)!=0)
-      packedstring((unsigned char*)_lexstr,stringflags);
+      packedstring((unsigned char*)cached_str,stringflags);
     else
-      unpackedstring((unsigned char*)_lexstr,stringflags);
+      unpackedstring((unsigned char*)cached_str,stringflags);
   } else if (*lexptr=='\'' || *lexptr=='`') {       /* character literal */
     lexptr+=1;            /* skip quote */
-    _lextok=tNUMBER;
-    *lexvalue=_lexval=litchar(&lexptr,UTF8MODE);
+    cached_tok=tNUMBER;
+    *lexvalue=cached_val=litchar(&lexptr,UTF8MODE);
     if (*lexptr=='\'') {
       lexptr+=1;          /* skip final quote */
     } else {
@@ -2316,11 +2304,11 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
       } /* if */
     } /* if */
   } else if (*lexptr==';') {      /* semicolon resets "error" flag */
-    _lextok=';';
+    cached_tok=';';
     lexptr+=1;
     errorset(sRESET,0);   /* reset error flag (clear the "panic mode")*/
   } else {
-    _lextok=*lexptr;      /* if every match fails, return the character */
+    cached_tok=*lexptr;   /* if every match fails, return the character */
     lexptr+=1;            /* advance the "lexptr" pointer */
   } /* if */
 
@@ -2332,7 +2320,7 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
       free(docstr);
     } /* if */
   } /* if */
-  return _lextok;
+  return cached_tok;
 }
 
 /*  lexpush
@@ -2349,8 +2337,8 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
  */
 SC_FUNC void lexpush(void)
 {
-  assert(_pushed==FALSE);
-  _pushed=TRUE;
+  assert(is_cached==FALSE);
+  is_cached=TRUE;
 }
 
 /*  lexclr
@@ -2361,7 +2349,7 @@ SC_FUNC void lexpush(void)
  */
 SC_FUNC void lexclr(int clreol)
 {
-  _pushed=FALSE;
+  is_cached=FALSE;
   if (clreol) {
     lexptr=(unsigned char*)strchr((char*)srcline,'\0');
     assert(lexptr!=NULL);
@@ -2375,24 +2363,22 @@ SC_FUNC int lexpeek(void)
 {
   cell val;
   char *str;
-  int tok;
-
-  tok=lex(&val,&str);
+  int tok=lex(&val,&str);
   lexpush();
   return tok;
 }
 
-/* changes the current token, this is sometimes convenient when a
- * reserved word must be re-interpreted as a symbol
+/* Changes the current token, this is sometimes convenient when a
+ * reserved word must be re-interpreted as a symbol.
  */
 SC_FUNC int lexsettoken(int token,const char *lexsym)
 {
-  assert(_pushed==FALSE);
-  _lextok=token;
+  assert(is_cached==FALSE);
+  cached_tok=token;
   assert(lexsym!=NULL);
   assert(strlen(lexsym)<=sLINEMAX);
-  strcpy(_lexstr,lexsym);
-  return _lextok;
+  strcpy(cached_str,lexsym);
+  return cached_tok;
 }
 
 /*  matchtoken
@@ -2417,8 +2403,7 @@ SC_FUNC int matchtoken(int token)
       || token==tSEPARATOR && tok==',')
   {
     return 1;
-  } else if (!sc_needsemicolon
-             && (token==tTERM || token==tSEPARATOR)
+  } else if ((token==tTERM || token==tSEPARATOR)
              && (_lexnewline || !freading))
   {
     /* Push "tok" back, because it is the token following the implicit statement
@@ -2445,10 +2430,10 @@ SC_FUNC int tokeninfo(cell *val,char **str)
   /* if the token was pushed back, tokeninfo() would return the token and
    * parameters of the *next* token, not of the *current* token.
    */
-  assert(!_pushed);
-  *val=_lexval;
-  *str=_lexstr;
-  return _lextok;
+  assert(!is_cached);
+  *val=cached_val;
+  *str=cached_str;
+  return cached_tok;
 }
 
 /*  needtoken
@@ -2458,33 +2443,32 @@ SC_FUNC int tokeninfo(cell *val,char **str)
  *  this function returns 1 for "token found" and 2 for "statement termination
  *  token" found; see function matchtoken() for details.
  *
- *  Global references: _lextok;
+ *  Global references: cached_tok;
  */
 SC_FUNC int needtoken(int token)
 {
-  char s1[20],s2[20];
-  int t;
-
-  if ((t=matchtoken(token))!=0)
-    return t;
-  assert(_pushed);                      /* token already pushed back */
-  litidx=0;                             /* force clear literal pool on error */
-  if (token<256)
-    sprintf(s1,"%c",(char)token);       /* single character token */
-  else
-    strcpy(s1,sc_tokens[token-tFIRST]); /* multi-character symbol */
-  if (!freading)
-    strcpy(s2,"-end of file-");
-  else if (_lextok<256)
-    sprintf(s2,"%c",(char)_lextok);
-  else if (_lextok==tNUMBER)
-    sprintf(s2,"%d",(int)_lexval);
-  else if (_lextok==tSYMBOL)
-    strcpy(s2,_lexstr);
-  else
-    strcpy(s2,sc_tokens[_lextok-tFIRST]);
-  error(1,s1,s2);     /* expected ..., but found ... */
-  return FALSE;
+  int t=matchtoken(token);
+  if (t!=1 && !(t==2 && token==tTERM)) {
+    char s1[20],s2[20];
+    assert(is_cached);                    /* token already pushed back */
+    litidx=0;                             /* force clear literal pool on error */
+    if (token<256)
+      sprintf(s1,"%c",(char)token);       /* single character token */
+    else
+      strcpy(s1,sc_tokens[token-tFIRST]); /* multi-character symbol */
+    if (!freading)
+      strcpy(s2,"-end of file-");
+    else if (cached_tok<256)
+      sprintf(s2,"%c",(char)cached_tok);
+    else if (cached_tok==tNUMBER)
+      sprintf(s2,"%d",(int)cached_val);
+    else if (cached_tok==tSYMBOL)
+      strcpy(s2,cached_str);
+    else
+      strcpy(s2,sc_tokens[cached_tok-tFIRST]);
+    error(1,s1,s2);     /* expected ..., but found ... */
+  } /* if */
+  return t;
 }
 
 /*  match
@@ -2593,7 +2577,7 @@ static cell litchar(const unsigned char **lptr,int flags)
   const unsigned char *cptr;
 
   cptr=*lptr;
-  if ((flags & RAWMODE)!=0 || *cptr!=sc_ctrlchar) {  /* no escape character */
+  if ((flags & RAWMODE)!=0 || *cptr!=ESCAPE_CHAR) {  /* no escape character */
     #if !defined PAWN_NO_UTF8
       if (sc_is_utf8 && (flags & UTF8MODE)!=0) {
         c=get_utf8_char(cptr,&cptr);
@@ -2611,7 +2595,7 @@ static cell litchar(const unsigned char **lptr,int flags)
     #endif
   } else {
     cptr+=1;
-    if (*cptr==sc_ctrlchar) {
+    if (*cptr==ESCAPE_CHAR) {
       c=*cptr;          /* \\ == \ (the escape character itself) */
       cptr+=1;
     } else {
@@ -3192,27 +3176,27 @@ SC_FUNC int getlabel(void)
  */
 SC_FUNC char *itoh(ucell val)
 {
-static char itohstr[30];
+static char itohstr[20];
   char *ptr;
   int nibble[16];       /* a 64-bit hexadecimal cell has 16 nibbles */
-  int i,max;
+  unsigned i,imax;
 
-  max=pc_cellsize*2;
-  assert(max<=sizearray(nibble));
-  assert(max<sizearray(itohstr));
+  imax=pc_cellsize*2;
+  assert(imax<=sizearray(nibble));
+  assert(imax<sizearray(itohstr));
   ptr=itohstr;
-  for (i=0; i<max; i+=1){
+  for (i=0; i<imax; i+=1){
     nibble[i]=(int)(val & 0x0f);        /* nibble 0 is lowest nibble */
     val>>=4;
   } /* endfor */
-  i=max-1;
+  i=imax;
   /* reverse the nibbles in the string */
-  while (i>=0){
+  while (i>0) {
+    i-=1;
     if (nibble[i]>=10)
       *ptr++=(char)('a'+(nibble[i]-10));
     else
       *ptr++=(char)('0'+nibble[i]);
-    i-=1;
   } /* while */
   *ptr='\0';            /* and a zero-terminator */
   return itohstr;

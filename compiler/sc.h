@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7152 2024-03-23 20:47:23Z thiadmer $
+ *  Version: $Id: sc.h 7481 2025-08-20 09:52:36Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -49,7 +49,7 @@
 /* Note: the "cell" and "ucell" types are defined in AMX.H */
 
 #define PUBLIC_CHAR   '@'   /* character that defines a function "public" */
-#define CTRL_CHAR     '\\'  /* default control character */
+#define ESCAPE_CHAR   '\\'  /* for special characters in strings (escape character) */
 #define sCHARBITS     8     /* size of a packed character */
 
 #define sDIMEN_MAX    3     /* maximum number of array dimensions */
@@ -270,7 +270,8 @@ typedef struct s_value {
   char ident;           /* iCONSTEXPR, iVARIABLE, iARRAY, iARRAYCELL,
                          * iEXPRESSION or iREFERENCE */
   char boolresult;      /* boolean result for relational operators */
-  char ispacked;        /* to flag "packed arrays" for literal arrays and for pseudo-arrays */
+  char ispacked;        /* flag "packed arrays" for literal arrays and for pseudo-arrays */
+  char has_assign;      /* flag assignment (for checking assigment inside if/while etc.) */
   cell *arrayidx;       /* last used array indices, for checking self assignment */
 } value;
 
@@ -463,6 +464,7 @@ typedef struct s_arraymerge {
   #define FALSE         0
   #define TRUE          1
 #endif
+#define NOT_SET         (-1)    /* special "boolean" value: no value set yet */
 #define sIN_CSEG        1       /* if parsing CODE */
 #define sIN_DSEG        2       /* if parsing DATA */
 #define sCHKBOUNDS      1       /* bit position in "debug" variable: check bounds */
@@ -521,7 +523,7 @@ typedef enum s_optmark {
 DLLEXPORT int pc_compile(int argc, char **argv);
 DLLEXPORT int pc_addconstant(const char *name,cell value,int tag);
 DLLEXPORT int pc_addtag(const char *name);
-DLLEXPORT int pc_enablewarning(int number,int enable);
+DLLEXPORT int pc_enablewarning(unsigned number,int enable);
 
 /*
  * Functions called from the compiler (to be implemented by you)
@@ -548,8 +550,8 @@ int  pc_eofsrc(void *handle);
 void *pc_openasm(const char *filename); /* read/write */
 void pc_closeasm(void *handle,int deletefile);
 void pc_resetasm(void *handle);
-int  pc_writeasm(void *handle,const char *str);
-char *pc_readasm(void *handle,char *target,int maxchars);
+int  pc_writeasm(void *handle,const char *string);
+char *pc_readasm(void *handle,char *string,int maxchars);
 
 /* output to binary (.AMX) file */
 void *pc_openbin(const char *filename);
@@ -608,7 +610,7 @@ SC_FUNC int lex_adjusttabsize(int matchindent);
 SC_FUNC int lexinit(int releaseall);
 SC_FUNC int lex(cell *lexvalue,char **lexsym);
 SC_FUNC void lexpush(void);
-SC_FUNC int lexsettoken(int token,const char *str);
+SC_FUNC int lexsettoken(int token,const char *lexsym);
 SC_FUNC void lexclr(int clreol);
 SC_FUNC int lexpeek(void);
 SC_FUNC int matchtoken(int token);
@@ -619,8 +621,9 @@ SC_FUNC void litinsert(cell value,int pos);
 SC_FUNC void litremove(int pos);
 SC_FUNC int alphanum(unsigned char c);
 SC_FUNC int ishex(char c);
+SC_FUNC int number(cell *val,const unsigned char *curptr);
 SC_FUNC void delete_symbol(symbol *root,symbol *sym);
-SC_FUNC void delete_symbols(symbol *root,int level,int del_labels,int delete_functions);
+SC_FUNC void delete_symbols(symbol *root,int level,int delete_labels,int delete_functions);
 SC_FUNC int refer_symbol(symbol *entry,symbol *bywhom);
 SC_FUNC void markusage(symbol *sym,int usage);
 SC_FUNC uint32_t namehash(const char *name);
@@ -631,7 +634,7 @@ SC_FUNC symbol *finddepend(const symbol *parent);
 SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int tag,
                        int usage);
 SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int tag,
-                            const int dim[],constvalue *dimnames[],int numdim,int ispacked);
+                            const int dim[],constvalue *dimnames[],int numdim,int usage);
 SC_FUNC int getlabel(void);
 SC_FUNC char *itoh(ucell val);
 
@@ -639,7 +642,7 @@ SC_FUNC char *itoh(ucell val);
 SC_FUNC int check_userop(void (*oper)(void),int tag1,int tag2,int numparam,
                          value *lval,int *resulttag);
 SC_FUNC int matchtag(int formaltag,int actualtag,int allowcoerce);
-SC_FUNC int expression(cell *val,int *tag,symbol **symptr,int chkfuncresult);
+SC_FUNC int expression(cell *val,int *tag,symbol **symptr,int *parenthesized,int chkfuncresult,int in_test);
 SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *statename);
 SC_FUNC cell array_totalsize(symbol *sym);
 
@@ -658,7 +661,7 @@ SC_FUNC void startfunc(const char *fname,int index);
 SC_FUNC void endfunc(void);
 SC_FUNC void alignframe(int numbytes);
 SC_FUNC void rvalue(value *lval);
-SC_FUNC void address(symbol *ptr,regid reg);
+SC_FUNC void address(symbol *sym,regid reg);
 SC_FUNC void store(value *lval);
 SC_FUNC void loadreg(cell address,regid reg);
 SC_FUNC void storereg(cell address,regid reg);
@@ -734,10 +737,10 @@ SC_FUNC void jmp_eq0(int number);
 SC_FUNC void outval(cell val,int fullcell,int newline);
 
 /* function prototypes in SC5.C */
-SC_FUNC int error(long number,...);
-SC_FUNC int error_symbolname(int number,const char *name);
-SC_FUNC int error_suggest(int error,const char *name,int ident);
-SC_FUNC int error_suggest_list(int number,const char *name,constvalue *list);
+SC_FUNC int error(unsigned long number,...);
+SC_FUNC int error_symbolname(unsigned number,const char *name);
+SC_FUNC int error_suggest(unsigned number,const char *name,int ident);
+SC_FUNC int error_suggest_list(unsigned number,const char *name,constvalue *list);
 SC_FUNC void errorset(int code,int line);
 SC_FUNC void pushwarnings(void);
 SC_FUNC void popwarnings(void);
@@ -861,8 +864,6 @@ SC_VDECL char *inpfname;      /* name of the file currently read from */
 SC_VDECL char outfname[];     /* intermediate (assembler) file name */
 SC_VDECL char binfname[];     /* binary file name */
 SC_VDECL char errfname[];     /* error file name */
-SC_VDECL char sc_ctrlchar;    /* the control character (or escape character) */
-SC_VDECL char sc_ctrlchar_org;/* the default control character */
 SC_VDECL int litidx;          /* index to literal table */
 SC_VDECL int litmax;          /* current size of the literal table */
 SC_VDECL int stgidx;          /* index to the staging buffer */
@@ -877,7 +878,6 @@ SC_VDECL int warnnum;         /* number of warnings */
 SC_VDECL int sc_debug;        /* debug/optimization options (bit field) */
 SC_VDECL int sc_asmfile;      /* create .ASM file? */
 SC_VDECL int sc_listing;      /* create .LST file? */
-SC_VDECL int sc_needsemicolon;/* semicolon required to terminate expressions? */
 SC_VDECL int sc_dataalign;    /* data alignment value */
 SC_VDECL int sc_alignnext;    /* must frame of the next function be aligned? */
 SC_VDECL int pc_docexpr;      /* must expression be attached to documentation comment? */
@@ -889,7 +889,6 @@ SC_VDECL int freading;        /* is there an input file ready for reading? */
 SC_VDECL int pc_curline;      /* the line number in the current file */
 SC_VDECL short fnumber;       /* number of files in the input file table */
 SC_VDECL short fcurrent;      /* current file being processed */
-SC_VDECL short sc_intest;     /* true if inside a test */
 SC_VDECL int pc_sideeffect;   /* true if an expression causes a side-effect */
 SC_VDECL int pc_stmtindent;   /* current indent of the statement */
 SC_VDECL int indent_nowarn;   /* skip warning "217 loose indentation" */

@@ -13,7 +13,7 @@ faculty(n)
     assert n >= 0
 
     var result = 1
-    while (n > 0)
+    while n > 0
         result *= n--
 
     return result

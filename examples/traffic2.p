@@ -10,7 +10,7 @@ var bool: button_memo <red_wait, green_wait_interim>
 
 @keypressed(key)
     {
-    switch (key)
+    switch key
         {
         case ' ': button_press
         case '*': mirt_detect

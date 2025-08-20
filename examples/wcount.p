@@ -11,10 +11,10 @@
 
     var word[20]
     var index
-    for ( ;; )
+    while true
         {
         word = strtok(string, index)
-        if (strlen(word) == 0)
+        if strlen(word) == 0
             break
         count++
         printf "Word %d: '%s'\n", count, word
@@ -28,15 +28,15 @@ strtok(const string[], &index)
     var length = strlen(string)
 
     /* skip leading white space */
-    while (index < length && string[index] <= ' ')
+    while index < length && string[index] <= ' '
         index++
 
     /* store the word letter for letter */
     var offset = index                /* save start position of token */
     var result[20]                    /* string to store the word in */
-    while (index < length
-           && string[index] > ' '
-           && index - offset < sizeof result - 1)
+    while index < length
+          && string[index] > ' '
+          && index - offset < sizeof result - 1
         {
         result[index - offset] = string[index]
         index++

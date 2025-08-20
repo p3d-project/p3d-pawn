@@ -122,6 +122,13 @@ native RegPublicFunction(ParameterCount, ...);
         }
 #endif
 
+#if defined STOCKFUNC_DEFPARAMS
+stock stockfunc(first, second = 2)
+    {
+    printf("first=%d, second=%d\n", first, second);
+    }
+#endif
+
 main()
     {
     #if defined ASSERT_LINENO
@@ -467,5 +474,15 @@ main()
         goto test_label;
     test_label:
         print("test_label 2\n");
+    #endif
+
+    #if defined STOCKFUNC_DEFPARAMS
+        stockfunc 1, 2
+        stockfunc 3
+    #endif
+
+    #if defined WHILE_TRUE
+        while (true)
+            printf "."
     #endif
     }

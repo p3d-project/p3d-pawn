@@ -1,7 +1,8 @@
 /* Set operations, using bit arithmetic */
 
 const
-    { A = 0b0000001,
+    {
+      A = 0b0000001,
       B = 0b0000010,
       C = 0b0000100,
       D = 0b0001000,
@@ -34,8 +35,8 @@ const
     /* make the set */
     var result = findtargets(start, steps, nextstep)
     printf "The points in range of %c in %d steps: ", start + 'A', steps
-    for (var i = 0; i < sizeof nextstep; i++)
-        if (result & 1 << i)
+    for var i = 0; i < sizeof nextstep; i++
+        if result & 1 << i
             printf "%c ", i + 'A'
     }
 
@@ -43,11 +44,11 @@ findtargets(start, steps, nextstep[], numpoints = sizeof nextstep)
     {
     var result = 0
     var addedpoints = nextstep[start]
-    while (steps-- > 0 && result != addedpoints)
+    while steps-- > 0 && result != addedpoints
         {
         result = addedpoints
-        for (var i = 0; i < numpoints; i++)
-            if (result & 1 << i)
+        for var i = 0; i < numpoints; i++
+            if result & 1 << i
                 addedpoints |= nextstep[i]
         }
     return result

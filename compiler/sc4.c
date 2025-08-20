@@ -1,6 +1,8 @@
 /*  Pawn compiler - code generation (unoptimized "assembler" code)
  *
- *  Copyright (c) CompuPhase, 1997-2024
+ *  Copyright (c) CompuPhase, 1997-2025
+ *  Copyright J.E. Hendrix, 1982, 1983
+ *  Copyright R. Cain, 1980
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -14,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7152 2024-03-23 20:47:23Z thiadmer $
+ *  Version: $Id: sc4.c 7481 2025-08-20 09:52:36Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -374,11 +376,11 @@ SC_FUNC void setlinedirect(int line)
  *
  *  Post a code label (specified as a number), on a new line.
  */
-SC_FUNC void setlabel(int number)
+SC_FUNC void setlabel(int index)
 {
-  assert(number>=0);
+  assert(index>=0);
   stgwrite("l.");
-  stgwrite((char *)itoh(number));
+  stgwrite((char *)itoh(index));
   /* To assist verification of the assembled code, put the address of the
    * label as a comment. However, labels that occur inside an expression
    * may move (through optimization or through re-ordering). So write the
@@ -458,9 +460,9 @@ SC_FUNC void alignframe(int numbytes)
 {
   #if !defined NDEBUG
     /* "numbytes" should be a power of 2 for this code to work */
-    int i,count=0;
+    unsigned i,count=0;
     for (i=0; i<sizeof numbytes*8; i++)
-      if (numbytes & (1 << i))
+      if (numbytes & (1u << i))
         count++;
     assert(count==1);
   #endif
@@ -920,7 +922,7 @@ SC_FUNC void ffcall(symbol *sym,const char *label,int numargs)
     } /* if */
     if (sc_asmfile
         && (label!=NULL || pc_overlays>0
-            || !isalpha(sym->name[0]) && sym->name[0]!='_'  && sym->name[0]!=sc_ctrlchar))
+            || !isalpha(sym->name[0]) && sym->name[0]!='_'  && sym->name[0]!=ESCAPE_CHAR))
     {
       stgwrite("\t; ");
       stgwrite(symname);

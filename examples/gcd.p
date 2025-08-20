@@ -8,8 +8,8 @@
     print "Input two values\n"
     var a = getvalue()
     var b = getvalue()
-    while (a != b)
-        if (a > b)
+    while a != b
+        if a > b
             a = a - b
         else
             b = b - a

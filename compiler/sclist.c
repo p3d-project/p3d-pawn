@@ -6,7 +6,7 @@
  *  o  Documentation tags and automatic listings
  *  o  Debug strings
  *
- *  Copyright (c) CompuPhase, 2001-2017
+ *  Copyright (c) CompuPhase, 2001-2025
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -20,7 +20,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sclist.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: sclist.c 7481 2025-08-20 09:52:36Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -230,7 +230,7 @@ SC_FUNC void delete_stringtable(stringlist *root)
 
 
 /* ----- alias table --------------------------------------------- */
-static stringpair alias_tab = {NULL, NULL, NULL};   /* alias table */
+static stringpair alias_tab = {NULL, NULL, NULL, 0};   /* alias table */
 
 SC_FUNC stringpair *insert_alias(const char *name,const char *alias)
 {
@@ -283,7 +283,7 @@ SC_FUNC void delete_pathtable(void)
 /* ----- text substitution patterns ------------------------------ */
 #if !defined NO_DEFINE
 
-static stringpair substpair = { NULL, NULL, NULL};  /* list of substitution pairs */
+static stringpair substpair = { NULL, NULL, NULL, 0};  /* list of substitution pairs */
 
 static stringpair *substindex['z'-PUBLIC_CHAR+1]; /* quick index to first character */
 static void adjustindex(char c)
@@ -339,9 +339,9 @@ SC_FUNC int delete_subst(const char *name,int length)
 
 SC_FUNC void delete_substtable(void)
 {
-  int i;
+  unsigned i;
   delete_stringpairtable(&substpair);
-  for (i=0; i<sizeof substindex/sizeof substindex[0]; i++)
+  for (i=0; i<sizearray(substindex); i++)
     substindex[i]=NULL;
 }
 

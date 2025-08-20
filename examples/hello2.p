@@ -1,6 +1,5 @@
 #include <console>
 
-main()
-{
+main() {
     printf("Hello world\n");
 }

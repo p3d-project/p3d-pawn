@@ -19,7 +19,7 @@ Rational: pop()
 clearstack()
     {
     assert stackidx >= 0
-    if (stackidx == 0)
+    if stackidx == 0
         return false
     stackidx = 0
     return true

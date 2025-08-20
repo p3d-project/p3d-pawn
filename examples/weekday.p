@@ -12,11 +12,11 @@
 @start()
     {
     var day, month, year
-    if (readdate(day, month, year))
+    if readdate(day, month, year)
         {
         var wkday = weekday(day, month, year)
         printf "The date %d-%d-%d falls on a ", day, month, year
-        switch (wkday)
+        switch wkday
             {
             case 0:
                 print "Saturday"
@@ -82,7 +82,7 @@ weekday(day, month, year)
      *   has either 28 or 29 days) is moved to the end of the year.
      * </remarks>
      */
-    if (month <= 2)
+    if month <= 2
         month += 12, --year
 
     var j = year % 100

@@ -5,7 +5,7 @@
     wherexy x, y
 
     /* determine how the update the current position */
-    switch (key)
+    switch key
         {
         case 'u': y--   /* up */
         case 'd': y++   /* down */

@@ -4,7 +4,7 @@
     {
     print "Enter a value: "
     var v = getvalue()
-    if (v > 0)
+    if v > 0
         printf "The value of Fibonacci number %d is %d\n",
                v, fibonacci(v)
     else
@@ -16,7 +16,7 @@ fibonacci(n)
     assert n > 0
 
     var a = 0, b = 1
-    for (var i = 2; i < n; i++)
+    for var i = 2; i < n; i++
         {
         var c = a + b
         a = b

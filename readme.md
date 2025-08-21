@@ -143,28 +143,28 @@ text window (with 30 lines of 80 characters per line) that the DLL creates.
 The core and console functions are automatically registered to any Pawn
 program by amx_Init().
 
-   Microsoft Visual C/C++ version 5.0 or 6.0, 32-bit:
+### Microsoft Visual C/C++, 32-bit:
 ```
         cl -DAMXAPI=__stdcall prun-dll.c amx32m.lib
 ```
-        (Note: the "prun-dll" example does not register additional native
-        functions. Therefore, AMX_NATIVE_CALL does not need to be defined.)
+>  (Note: the "prun-dll" example does not register additional native
+   functions. Therefore, AMX_NATIVE_CALL does not need to be defined.)
 
-   Watcom C/C++ version 11.0, 32-bit:
+### Watcom C/C++ version 11.0, 32-bit:
 ```
         wcl386 /l=nt_win /dAMXAPI=__stdcall prun-dll.c amx32w.lib
 ```
-        (Note: the "prun-dll" example does not register additional native
-        functions. Therefore, AMX_NATIVE_CALL does not need to be defined.)
+>  (Note: the "prun-dll" example does not register additional native
+   functions. Therefore, AMX_NATIVE_CALL does not need to be defined.)
 
-   Borland C++ version 3.1, 16-bit:
+### Borland C++ version 3.1, 16-bit:
 ```
         bcc -DAMXAPI=__cdecl -W -ml prun-dll.c amx16.lib
 ```
-        (Note: the program must be compiled as a Win16 application, because
-        only Windows programs can use DLLs (option -W). Using large memory
-        model, option -ml, is not strictly required, but it is the most
-        convenient. Finally, note that the 16-bit DLL uses `__cdecl` calling
-        convention for its exported functions, for reasons explained below.)
+>  (Note: the program must be compiled as a Win16 application, because
+   only Windows programs can use DLLs (option -W). Using large memory
+   model, option -ml, is not strictly required, but it is the most
+   convenient. Finally, note that the 16-bit DLL uses `__cdecl` calling
+   convention for its exported functions, for reasons explained below.)
 
 

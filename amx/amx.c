@@ -48,7 +48,7 @@
     #include <libproc.h>
   #endif
 #endif
-#if !defined AMX_ANSIONLY && (defined __LCC__ || defined __LINUX__ || defined __APPLE__) || defined (__FreeBSD__)
+#if !defined AMX_ANSIONLY && (defined __LCC__ || defined __LINUX__ || defined __APPLE__) || defined __FreeBSD__
   #include <wchar.h>    /* for wcslen() */
 #endif
 

@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7481 2025-08-20 09:52:36Z thiadmer $
+ *  Version: $Id: sc.h 7505 2025-09-23 07:46:02Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -583,7 +583,7 @@ SC_FUNC void set_extension(char *filename,const char *extension,int force);
 SC_FUNC symbol *fetchfunc(const char *name,int tag);
 SC_FUNC char *operator_symname(char *symname,char *opername,int tag1,int tag2,int numtags,int resulttag);
 SC_FUNC char *funcdisplayname(char *dest,const char *funcname);
-SC_FUNC int constexpr(cell *val,int *tag,symbol **symptr);
+SC_FUNC int constexpression(cell *val,int *tag,symbol **symptr);
 SC_FUNC constvalue *append_constval(constvalue *table,const char *name,cell val,int index);
 SC_FUNC constvalue *find_constval(constvalue *table,const char *name,int index);
 SC_FUNC void delete_consttable(constvalue *table);

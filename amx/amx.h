@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amx.h 7222 2024-09-14 12:26:01Z thiadmer $
+ *  Version: $Id: amx.h 7491 2025-08-25 09:14:23Z thiadmer $
  */
 
 #ifndef AMX_H_INCLUDED
@@ -41,6 +41,7 @@
 
 #if !defined HAVE_STDINT_H
   #if (defined __STDC_VERSION__ && __STDC_VERSION__ >= 199901L) \
+      || defined __cplusplus \
       || defined __GNUC__ || defined __LCC__ || defined __DMC__ \
       || (defined __WATCOMC__ && __WATCOMC__ >= 1200)
     #define HAVE_STDINT_H 1

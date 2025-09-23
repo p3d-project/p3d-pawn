@@ -129,6 +129,13 @@ stock stockfunc(first, second = 2)
     }
 #endif
 
+#if defined RETURN_ARRAY_LITERAL
+    return_array_literal()
+        {
+        return "ok"
+        }
+#endif
+
 main()
     {
     #if defined ASSERT_LINENO
@@ -474,6 +481,10 @@ main()
         goto test_label;
     test_label:
         print("test_label 2\n");
+    #endif
+
+    #if defined RETURN_ARRAY_LITERAL
+        return_array_literal()
     #endif
 
     #if defined STOCKFUNC_DEFPARAMS

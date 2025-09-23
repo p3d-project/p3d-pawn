@@ -2037,3 +2037,25 @@ test161:
   pawncc ' WHILE_TRUE= test2'
   return
 
+test162:
+  say '162. The following test should issue error 096.'
+  say ''
+  say '    Returning array literals (or string literals) is not supported.'
+  say '-----'
+  pawncc ' RETURN_ARRAY_LITERAL= test2'
+  return
+
+test163:
+  say '163. The following test should compile successfully; when run, it should print:'
+  say ''
+  say '    result = 1'
+  say ''
+  say 'Symptoms of detected bug: wrong output due to code generation bug. The issue is'
+  say 'a global variable that is passed to forward function (and never modified), and'
+  say 'which was then removed as if it weren''t used.'
+  say '-----'
+  pawncc ' test_glbvar'
+  say '-----'
+  pawnrun ' test_glbvar.amx'
+  return
+

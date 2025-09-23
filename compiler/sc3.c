@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc3.c 7483 2025-08-20 13:21:46Z thiadmer $
+ *  Version: $Id: sc3.c 7505 2025-09-23 07:46:02Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -2450,6 +2450,8 @@ static int nesting=0;
         switch (arg[argidx].ident) {
         case 0:
           error(202);             /* argument count mismatch */
+          if (sc_status==statBROWSE && lvalue)
+            rvalue(&lval);        /* dummy fetch, to mark symbol as used */
           break;
         case iVARARGS:
           /* always pass by reference */
@@ -2920,7 +2922,7 @@ static int constant(value *lval)
     packitem=0;
     packcount=0;
     do {
-      /* cannot call constexpr() here, because "staging" is already turned
+      /* cannot call constexpression() here, because "staging" is already turned
        * on at this point */
       assert(staging);
       stgget(&index,&cidx);     /* mark position in code generator */

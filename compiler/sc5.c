@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7481 2025-08-20 09:52:36Z thiadmer $
+ *  Version: $Id: sc5.c 7487 2025-08-21 18:37:33Z thiadmer $
  */
 #include <assert.h>
 #if defined	__WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -352,7 +352,7 @@ SC_FUNC void popwarnings(void)
     memcpy(warndisable.mask,p->mask,sizeof(warndisable.mask));
     free(p);
   } else {
-    error(97);          /* #pragma warning pop without push */
+    error(98);          /* #pragma warning pop without push */
   }
 }
 
@@ -362,7 +362,7 @@ SC_FUNC void popwarnings(void)
 SC_FUNC void clear_warningstack(void)
 {
   if (warndisable.next!=NULL)
-    error(96);          /* #pragma warning push without pop */
+    error(97);          /* #pragma warning push without pop */
   while (warndisable.next!=NULL) {
     warnstack *p=warndisable.next;
     warndisable.next=p->next;

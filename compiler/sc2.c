@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7481 2025-08-20 09:52:36Z thiadmer $
+ *  Version: $Id: sc2.c 7505 2025-09-23 07:46:02Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -876,7 +876,7 @@ static int preproc_expr(cell *val,int *tag)
   term=strchr((char*)srcline,'\0');
   assert(term!=NULL);
   chrcat((char*)srcline,PREPROC_TERM);  /* the "DEL" code (see SC.H) */
-  result=constexpr(val,tag,NULL);       /* get value (or 0 on error) */
+  result=constexpression(val,tag,NULL); /* get value (or 0 on error) */
   *term='\0';                           /* erase the token (if still present) */
   lexclr(FALSE);                        /* clear any "pushed" tokens */
   litidx=cur_lit;                       /* reset literal pool */
@@ -1091,8 +1091,8 @@ static int command(void)
           insert_inputfile(pathname);
           fnumber++;
           fcurrent=fnumber;
-        }
-
+        } /* if */
+        insert_dbgfile(pathname);
       } /* if */
     } /* if */
     check_empty(lexptr);
@@ -2915,18 +2915,16 @@ static symbol *find_symbol(const symbol *root,const char *name,int fnumber,int a
   symbol *sym=root->next;
   unsigned long hash=namehash(name);
   while (sym!=NULL) {
-    if (hash==sym->hash && strcmp(name,sym->name)==0        /* check name */
-        && sym->parent==NULL                                /* sub-types (hierarchical types) are skipped */
-        && (sym->fvisible<0 || sym->fvisible==fnumber))     /* check file number for scope */
+    if (hash==sym->hash && strcmp(name,sym->name)==0            /* check name */
+        && sym->parent==NULL                                    /* sub-types (hierarchical types) are skipped */
+        && (sym->fvisible==NOT_SET || sym->fvisible==fnumber))  /* check file number for scope */
     {
-      assert(sym->states==NULL || sym->states->next!=NULL); /* first element of the state list is the "root" */
+      assert(sym->states==NULL || sym->states->next!=NULL);     /* first element of the state list is the "root" */
       if (sym->ident==iFUNCTN
           || automaton<0 && sym->states==NULL
           || automaton>=0 && sym->states!=NULL && state_getfsa(sym->states->next->id)==automaton)
-      {
         return sym;   /* return first match */
-      } /* if */
-    } /*  */
+    } /* if */
     sym=sym->next;
   } /* while */
   return NULL;
@@ -3105,7 +3103,7 @@ SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int tag,in
   entry.ident=(char)ident;
   entry.tag=tag;
   entry.usage=(char)usage;
-  entry.fvisible=-1;    /* assume global visibility (ignored for local symbols) */
+  entry.fvisible=NOT_SET; /* assume global visibility (ignored for local symbols) */
   entry.fnumber=fcurrent;
   entry.lnumber=pc_curline;
   entry.numrefers=1;

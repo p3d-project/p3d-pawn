@@ -83,6 +83,7 @@
 
 #if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__)
   #include <binreloc.h> /* from BinReloc, see www.autopackage.org */
+  #include <installpath.h> 
 #endif
 
 extern int chdir(const char *path); /* position of this function in header files depends on the compiler */
@@ -2905,13 +2906,17 @@ extern AMX_NATIVE_INFO console_Natives[];
   unsigned short flags;
   char *ptr;
 
-  #if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__)
+  #if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
     /* see www.autopackage.org (now Listaller) for the BinReloc module */
     if (br_init(NULL)) {
       char *libroot=br_find_exe_dir("");
       setenv("AMXLIB",libroot,0);
       free(libroot);
     } /* if */
+  #elif defined __FreeBSD__ || defined __OpenBSD__ 
+    char *libroot=get_install_path();
+    setenv("AMXLIB", libroot, 0);
+    free(libroot);
   #endif
 
   if (setjmp(restart_buf)) {

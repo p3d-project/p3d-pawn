@@ -10,6 +10,8 @@
  * more information and how to use this.
  */
 
+#ifdef __linux__
+
 #ifndef __BINRELOC_C__
 #define __BINRELOC_C__
 
@@ -770,3 +772,4 @@ br_dirname (const char *path)
 #endif /* __cplusplus */
 
 #endif /* __BINRELOC_C__ */
+#endif /* __linux__ */

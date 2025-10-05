@@ -2913,7 +2913,7 @@ extern AMX_NATIVE_INFO console_Natives[];
       setenv("AMXLIB",libroot,0);
       free(libroot);
     } /* if */
-  #elif defined __FreeBSD__ || defined __OpenBSD__ 
+  #elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__ 
     char *libroot=get_install_path();
     setenv("AMXLIB", libroot, 0);
     free(libroot);

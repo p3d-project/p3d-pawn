@@ -73,7 +73,7 @@
 
 #include "lstring.h"
 #include "sc.h"
-#if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
+#if defined __LINUX__ || defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__ || defined __APPLE__
   #include <sys/wait.h>
   #include <sclinux.h>
   #include <binreloc.h> /* from BinReloc, see www.autopackage.org */

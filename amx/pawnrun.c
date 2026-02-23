@@ -32,6 +32,7 @@
 
 #if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__)
   #include <binreloc.h> /* from BinReloc, see www.autopackage.org */
+  #include <installpath.h> 
 #endif
 
 #if defined AMXOVL
@@ -320,13 +321,17 @@ int main(int argc,char *argv[])
   if (argc < 2)
     PrintUsage(argv[0]);        /* function "usage" aborts the program */
 
-  #if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__)
+  #if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
     /* see www.autopackage.org (now Listaller) for the BinReloc module */
     if (br_init(NULL)) {
       char *libroot=br_find_exe_dir("");
       setenv("AMXLIB",libroot,0);
       free(libroot);
     } /* if */
+  #elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+    char *libroot=get_install_path();
+    setenv("AMXLIB", libroot, 0);
+    free(libroot);
   #endif
 
   /* Load the program and initialize the abstract machine. */

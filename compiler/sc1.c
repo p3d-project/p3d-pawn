@@ -73,10 +73,11 @@
 
 #include "lstring.h"
 #include "sc.h"
-#if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
+#if defined __LINUX__ || defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__ || defined __APPLE__
   #include <sys/wait.h>
   #include <sclinux.h>
   #include <binreloc.h> /* from BinReloc, see www.autopackage.org */
+  #include <installpath.h> 
   #include <sys/wait.h>
 #endif
 
@@ -886,7 +887,7 @@ cleanup:
       pc_printf("Completed successfully\n");
     retcode = jmpcode;
   } /* if */
-  #if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__
+  #if defined __LINUX__ 
     br_deinit();
   #endif
   #if defined FORTIFY
@@ -1511,10 +1512,14 @@ static void setconfig(const char *root)
   #elif defined __WIN32__ || defined _WIN32
     (void)root;
     GetModuleFileName(NULL,path,_MAX_PATH);
-  #elif defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__
+  #elif defined __LINUX__ 
     /* see www.autopackage.org (now Listaller) for the BinReloc module */
     br_init(NULL);
     ptr=br_find_exe("/opt/Pawn/bin/pawncc");
+    strlcpy(path,ptr,sizeof path);
+    free(ptr);
+  #elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+    ptr=get_install_path();
     strlcpy(path,ptr,sizeof path);
     free(ptr);
   #else

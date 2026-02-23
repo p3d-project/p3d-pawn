@@ -47,7 +47,8 @@ IF(WIN32)
   SET(PAWNCC_SRCS ${PAWNCC_SRCS} pawncc.rc)
 ENDIF(WIN32)
 IF(UNIX)
-  SET(PAWNCC_SRCS ${PAWNCC_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/../linux/binreloc.c)
+  SET(PAWNCC_SRCS ${PAWNCC_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/../linux/binreloc.c
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/../linux/installpath.c)
 ENDIF(UNIX)
 
 FILE(READ svnrev.h SVNREV_STR)

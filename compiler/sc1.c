@@ -7,7 +7,7 @@
  *  originally created by Ron Cain, july 1980, and enhanced by James E. Hendrix.
  *  The modifications in Pawn come close to a complete rewrite, though.
  *
- *  Copyright CompuPhase, 1997-2025
+ *  Copyright CompuPhase, 1997-2026
  *  Copyright J.E. Hendrix, 1982, 1983
  *  Copyright R. Cain, 1980
  *
@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7505 2025-09-23 07:46:02Z thiadmer $
+ *  Version: $Id: sc1.c 7597 2026-02-22 20:41:53Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -1599,7 +1599,7 @@ static void setconfig(const char *root)
 
 static void setcaption(int linespacing)
 {
-  pc_printf("Pawn compiler %-25s Copyright (c) 1997-2025, CompuPhase\n",VERSION_STR);
+  pc_printf("Pawn compiler %-25s Copyright (c) 1997-2026, CompuPhase\n",VERSION_STR);
   if (linespacing)
     pc_printf("\n");
 }

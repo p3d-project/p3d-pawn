@@ -27,7 +27,7 @@
  * across function parameter boundaries.
  *
  *
- *  Copyright (c) CompuPhase, 1997-2025
+ *  Copyright (c) CompuPhase, 1997-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7481 2025-08-20 09:52:36Z thiadmer $
+ *  Version: $Id: sc7.c 7599 2026-02-23 10:25:02Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -73,7 +73,7 @@
 #endif
 
 static int stgstring(char *start,char *end);
-static void stgopt(char *start,char *end,int (*outputfunc)(char *str));
+static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *str));
 
 
 #define sSTG_GROW   512
@@ -230,30 +230,21 @@ SC_FUNC void stgwrite(const char *st)
  */
 SC_FUNC void stgout(int index)
 {
-  int reordered=0;
-
   if (!staging)
     return;
   assert(pipeidx==0);
 
   /* first pass: sub-expressions */
   if (sc_status==statWRITE)
-    reordered=stgstring(&stgbuf[index],&stgbuf[stgidx]);
+    stgstring(&stgbuf[index],&stgbuf[stgidx]);
   stgidx=index;
 
-  /* second pass: optimize the buffer created in the first pass */
-  if (sc_status==statWRITE) {
-    if (reordered) {
-      stgopt(stgpipe,stgpipe+pipeidx,filewrite);
-    } else {
-      /* there is no sense in re-optimizing if the order of the sub-expressions
-       * did not change; so output directly
-       */
-      int idx;
-      for (idx=0; idx<pipeidx; idx+=(int)strlen(stgpipe+idx)+1)
-        filewrite(stgpipe+idx);
-    } /* if */
-  } /* if */
+  /* second pass: optimize the buffer created in the first pass (always, even
+     if the first pass did not re-order sub-instructions, because the first
+     pass stops at level sOPTIMIZE_MACRO) */
+  if (sc_status==statWRITE)
+    stgopt(stgpipe,stgpipe+pipeidx,TRUE,filewrite);
+
   pipeidx=0;  /* reset second pipe */
 }
 
@@ -338,10 +329,10 @@ static int stgstring(char *start,char *end)
       ptr=start;
       while (ptr<end && *ptr!=sSTARTREORDER)
         ptr+=strlen(ptr)+1;
-      stgopt(start,ptr,rebuffer);
+      stgopt(start,ptr,FALSE,rebuffer);
       start=ptr;
     } /* if */
-  } /* while */
+  } /* while (start<end) */
   return reordered;
 }
 
@@ -768,35 +759,45 @@ static void strreplace(char *dest,const char *replace,int sub_length,int repl_le
  *
  *  Optimizes the staging buffer by checking for series of instructions that
  *  can be coded more compact. The routine expects the lines in the staging
- *  buffer to be separated with '\n' and '\0' characters.
+ *  buffer to be separated with '\0' characters.
  *
- *  The longest sequences should probably be checked first.
+ *  This rules in the peephole optimizer are categorized according to the
+ *  optimization level. This routine iteratively runs the rules of the lowest
+ *  level first, until no more optimizations can be done (at that level). Then
+ *  it goes to the next level and re-runs through the rules again (now including
+ *  the ones of the higher level).
+ *
+ *  The longest sequences should probably be checked first, but the current
+ *  implementation simply uses the order in the list.
  */
 
-static void stgopt(char *start,char *end,int (*outputfunc)(char *str))
+static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *str))
 {
-  int match_length,repl_length;
-  char *debut=start;  /* save original start of the buffer */
-
   assert(sequences!=NULL);
-  /* do not match anything if debug-level is maximum */
-  if (pc_optimize>sOPTIMIZE_NONE && sc_status==statWRITE) {
-    int matches;
+  assert(start!=NULL && end!=NULL && end>=start);
+  /* do not match anything if optimization is off (or if not writing to output
+     anyway) */
+  if (pc_optimize>sOPTIMIZE_NONE && sc_status==statWRITE && start!=end) {
+    int max_level=packed_opc ? pc_optimize : (pc_optimize<sOPTIMIZE_MACRO ? pc_optimize : sOPTIMIZE_MACRO);
+    int opt_level=sOPTIMIZE_CORE; /* start at "core" optimizations, proceed to higher levels after these have exhausted */
+    int matches;                  /* optimization is iterative, continue until no more matches are found */
     do {
+      int top_seq=0;
+      if (opt_level>sOPTIMIZE_CORE) {
+        while (sequences[top_seq].find!=NULL && *sequences[top_seq].find!=opt_level)
+          top_seq++;  /* skip optimization rules of a lower level (these were already handled) */
+        if (sequences[top_seq].find!=NULL)
+          top_seq++;  /* skip the separator too */
+      }
+      char *head=start;
       matches=0;
-      start=debut;
-      while (start<end) {
-        int seq=0;
-        while (sequences[seq].find!=NULL) {
+      while (head<end) {
+        int seq=top_seq;
+        assert(seq>=0);
+        while (sequences[seq].find!=NULL && *sequences[seq].find>sOPTIMIZE_NUMBER) {
+          int match_length,repl_length;
           char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1];
-          assert(seq>=0);
-          if (*sequences[seq].find<sOPTIMIZE_NUMBER) {
-            if (*sequences[seq].find>pc_optimize)
-              break;    /* don't look further */
-            seq++;    /* continue with next string */
-            continue;
-          } /* if */
-          if (matchsequence(start,end,sequences[seq].find,symbols,&match_length)) {
+          if (matchsequence(head,end,sequences[seq].find,symbols,&match_length)) {
             char *replace=replacesequence(sequences[seq].replace,symbols,&repl_length);
             /* If the replacement is bigger than the original section, we may need
              * to "grow" the staging buffer. This is quite complex, due to the
@@ -808,11 +809,10 @@ static void stgopt(char *start,char *end,int (*outputfunc)(char *str))
              */
             assert(match_length>=repl_length);
             if (match_length>=repl_length) {
-              strreplace(start,replace,match_length,repl_length,(int)(end-start));
+              strreplace(head,replace,match_length,repl_length,(int)(end-head));
               end-=match_length-repl_length;
               free(replace);
               code_idx-=opcodes(sequences[seq].opc)+opargs(sequences[seq].arg);
-              seq=0;                      /* restart search for matches */
               matches++;
             } else {
               /* actually, we should never get here (match_length<repl_length) */
@@ -824,14 +824,16 @@ static void stgopt(char *start,char *end,int (*outputfunc)(char *str))
             seq++;
           } /* if */
         } /* while */
-        assert(sequences[seq].find==NULL || *sequences[seq].find<sOPTIMIZE_NUMBER);
-        start += strlen(start) + 1;       /* to next string */
-      } /* while (start<end) */
-    } while (matches>0);
+        assert(sequences[seq].find==NULL || *sequences[seq].find<=sOPTIMIZE_NUMBER);
+        head += strlen(head) + 1;         /* to next string */
+      } /* while (head<end) */
+    } while (matches>0 || (opt_level++<max_level));
   } /* if (pc_optimize>sOPTIMIZE_NONE && sc_status==statWRITE) */
 
-  for (start=debut; start<end; start+=strlen(start)+1)
+  while (start<end) {
     outputfunc(start);
+    start+=strlen(start)+1;
+  }
 }
 
 #undef SCPACK_TABLE

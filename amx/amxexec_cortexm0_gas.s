@@ -29,7 +29,7 @@
 @   License for the specific language governing permissions and limitations
 @   under the License.
 @
-@   $Id: amxexec_cortexm0_gas.S 7115 2024-02-26 21:45:03Z thiadmer $
+@   $Id: amxexec_cortexm0_gas.S 7630 2026-04-14 18:40:54Z thiadmer $
 
     .file   "amxexec_cortexm0_gas.S"
     .syntax unified
@@ -2181,30 +2181,31 @@ amx_opcodelist_size:
     .thumb_func
     .type   amx_udiv, %function
 amx_udiv:
-    @ expects divident in r1, divisor in r0
+    @ adapted from "the Definite Guide to ARM Cortex-M0" by Joseph Yiu
+    @ expects dividend in r1, divisor in r0
     @ on exit quotient is in r0, remainder in r1
     @ unsigned division only; when r1 (divisor) is zero, the function returns
     @ with all registers unchanged
     cmp r0, #0                  @ verify r0
     beq .udiv_quit              @ just for security
     push {r2 - r4}              @ save extra registers needed
-    mov r2, r0                  @ save divisor (r0 is changed)
     movs r3, #1
     lsls r3, r3, #31            @ r3 has top bit set
+    mov r2, r1                  @ save dividend (r1 is remeander)
+    mov r4, r0                  @ save divisor (r0 is quotient)
     movs r0, #0                 @ initial quotient
-    movs r4, #0                 @ initial remainder
+    movs r1, #0                 @ initial remainder
   .udiv1:
-    lsls r2, #1                 @ shift divisor left, top bit goes to carry flag
-    adcs r4, r4, r4             @ r4 = r4 + r4 + carry => r4 = r4 << 1 + carry
-    cmp r4, r1                  @ accumulated remainder >= divident ?
+    lsls r2, #1                 @ shift dividend left, top bit goes to carry flag
+    adcs r1, r1, r1             @ r1 = r1 + r1 + carry => r1 = r1 << 1 + carry
+    cmp r1, r4                  @ accumulated remainder >= divisor ?
     blo .udiv2                  @ no
     adds r0, r0, r3             @ yes -> set bit in quotient
-    subs r4, r4, r1             @ subtract from remainder
+    subs r1, r1, r4             @ subtract from remainder
   .udiv2:
     lsrs r3, r3, #1             @ prepare for next lower bit
     bne .udiv1                  @ r3 != 0 -> continue
-    mov r1, r4                  @ store remainder
-    pop {r2 - r4}
+    pop {r2 - r4}               @ when exciting the loop, quotient is in r0, remainder in r1
   .udiv_quit:
     bx lr
 

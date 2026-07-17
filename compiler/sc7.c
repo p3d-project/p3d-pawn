@@ -774,7 +774,8 @@ static void strreplace(char *dest,const char *replace,int sub_length,int repl_le
 static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *str))
 {
   assert(sequences!=NULL);
-  assert(start!=NULL && end!=NULL && end>=start);
+  if (start==NULL || end==NULL || end<start)
+    return;
   /* do not match anything if optimization is off (or if not writing to output
      anyway) */
   if (pc_optimize>sOPTIMIZE_NONE && sc_status==statWRITE && start!=end) {

@@ -241,8 +241,10 @@ SC_FUNC void stgout(int index)
 
   /* second pass: optimize the buffer created in the first pass (always, even
      if the first pass did not re-order sub-instructions, because the first
-     pass stops at level sOPTIMIZE_MACRO) */
-  if (sc_status==statWRITE)
+     pass stops at level sOPTIMIZE_MACRO); skip when the pipe is empty, which
+     happens on the error-recovery path where the first pass staged nothing and
+     "stgpipe" was never allocated */
+  if (sc_status==statWRITE && pipeidx>0)
     stgopt(stgpipe,stgpipe+pipeidx,TRUE,filewrite);
 
   pipeidx=0;  /* reset second pipe */
@@ -774,8 +776,7 @@ static void strreplace(char *dest,const char *replace,int sub_length,int repl_le
 static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *str))
 {
   assert(sequences!=NULL);
-  if (start==NULL || end==NULL || end<start)
-    return;
+  assert(start!=NULL && end!=NULL && end>=start);
   /* do not match anything if optimization is off (or if not writing to output
      anyway) */
   if (pc_optimize>sOPTIMIZE_NONE && sc_status==statWRITE && start!=end) {

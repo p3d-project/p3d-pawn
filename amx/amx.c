@@ -1,6 +1,6 @@
 /*  Pawn Abstract Machine (for the Pawn language)
  *
- *  Copyright (c) CompuPhase, 1997-2023
+ *  Copyright (c) CompuPhase, 1997-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -1697,7 +1697,7 @@ int AMXAPI amx_GetPublic(AMX *amx, int index, char *name, ucell *address)
 
 int AMXAPI amx_FindPublic(AMX *amx, const char *name, int *index)
 {
-  int first,last,result;
+  int first,last;
   char pname[sNAMEMAX+1];
 
   amx_NumPublics(amx, &last);
@@ -1706,6 +1706,7 @@ int AMXAPI amx_FindPublic(AMX *amx, const char *name, int *index)
   /* binary search */
   while (first<=last) {
     int mid=(first+last)/2;
+    int result;
     amx_GetPublic(amx,mid,pname,NULL);
     result=strcmp(pname,name);
     if (result>0) {
@@ -1763,7 +1764,7 @@ int AMXAPI amx_GetPubVar(AMX *amx, int index, char *name, cell **address)
 
 int AMXAPI amx_FindPubVar(AMX *amx, const char *name, cell **address)
 {
-  int first,last,result;
+  int first,last;
   char pname[sNAMEMAX+1];
 
   amx_NumPubVars(amx,&last);
@@ -1772,6 +1773,7 @@ int AMXAPI amx_FindPubVar(AMX *amx, const char *name, cell **address)
   /* binary search */
   while (first<=last) {
     int mid=(first+last)/2;
+    int result;
     amx_GetPubVar(amx,mid,pname,address);
     result=strcmp(pname,name);
     if (result>0)
@@ -1794,16 +1796,19 @@ int AMXAPI amx_NumTags(AMX *amx, int *number)
   AMX_HEADER *hdr=(AMX_HEADER *)amx->base;
   assert(hdr!=NULL);
   assert(hdr->magic==AMX_MAGIC);
-  if (hdr->file_version<5) {    /* the tagname table appeared in file format 5 */
+  if (hdr->file_version<5) {          /* the tagname table appeared in file format 5 */
     *number=0;
     return AMX_ERR_VERSION;
   } /* if */
-  if (hdr->file_version<7) {    /* file version 7 introduced the name table */
+  if (hdr->file_version<7) {          /* file version 7 introduced the name table */
     assert(hdr->tags<=hdr->cod);
     *number=NUMENTRIES(hdr,tags,cod);
-  } else {
+  } else if (hdr->file_version<10) {  /* file version 10 introduced the overlay table */
     assert(hdr->tags<=hdr->nametable);
     *number=NUMENTRIES(hdr,tags,nametable);
+  } else {
+    assert(hdr->tags<=hdr->overlays);
+    *number=NUMENTRIES(hdr,tags,overlays);
   } /* if */
   return AMX_ERR_NONE;
 }
@@ -1816,19 +1821,23 @@ int AMXAPI amx_GetTag(AMX *amx, int index, char *tagname, cell *tag_id)
   hdr=(AMX_HEADER *)amx->base;
   assert(hdr!=NULL);
   assert(hdr->magic==AMX_MAGIC);
-  if (hdr->file_version<5) {    /* the tagname table appeared in file format 5 */
+  if (hdr->file_version<5) {          /* the tagname table appeared in file format 5 */
     *tagname='\0';
     *tag_id=0;
     return AMX_ERR_VERSION;
   } /* if */
 
-  if (hdr->file_version<7) {    /* file version 7 introduced the name table */
+  if (hdr->file_version<7) {          /* file version 7 introduced the name table */
     assert(hdr->tags<=hdr->cod);
     if (index>=(cell)NUMENTRIES(hdr,tags,cod))
       return AMX_ERR_INDEX;
-  } else {
+  } else if (hdr->file_version<10) {  /* file version 10 introduced the overlay table */
     assert(hdr->tags<=hdr->nametable);
     if (index>=(cell)NUMENTRIES(hdr,tags,nametable))
+      return AMX_ERR_INDEX;
+  } else {
+    assert(hdr->tags<=hdr->overlays);
+    if (index>=(cell)NUMENTRIES(hdr,tags,overlays))
       return AMX_ERR_INDEX;
   } /* if */
 
@@ -1846,7 +1855,7 @@ int AMXAPI amx_FindTagId(AMX *amx, cell tag_id, char *tagname)
 
   #if !defined NDEBUG
     /* verify that the tagname table is sorted on the tag_id */
-    amx_NumTags(amx, &last);
+    amx_NumTags(amx,&last);
     if (last>0) {
       cell cur_id;
       amx_GetTag(amx,0,tagname,&cur_id);
@@ -1858,7 +1867,7 @@ int AMXAPI amx_FindTagId(AMX *amx, cell tag_id, char *tagname)
     } /* if */
   #endif
 
-  amx_NumTags(amx, &last);
+  amx_NumTags(amx,&last);
   last--;       /* last valid index is 1 less than the number of functions */
   first=0;
   /* binary search */
@@ -1928,7 +1937,7 @@ static AMX_NATIVE findfunction(char *name, const AMX_NATIVE_INFO *list, int numb
   return NULL;
 }
 
-int AMXAPI amx_Register(AMX *amx, const AMX_NATIVE_INFO *list, int number)
+int AMXAPI amx_Register(AMX *amx, const AMX_NATIVE_INFO *nativelist, int number)
 {
   AMX_FUNCSTUB *func;
   AMX_HEADER *hdr;
@@ -1947,7 +1956,7 @@ int AMXAPI amx_Register(AMX *amx, const AMX_NATIVE_INFO *list, int number)
   for (i=0; i<numnatives; i++) {
     if (func->address==0) {
       /* this function is not yet located */
-      funcptr=(list!=NULL) ? findfunction(GETENTRYNAME(hdr,func),list,number) : NULL;
+      funcptr=(nativelist!=NULL) ? findfunction(GETENTRYNAME(hdr,func),nativelist,number) : NULL;
       if (funcptr!=NULL) {
         func->address=(uint32_t)(intptr_t)funcptr;
         #if defined __64BIT__
@@ -2452,7 +2461,7 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
         frm=pri;
         break;
       case 6:
-        cip=(cell *)(amx->code + (int)pri);
+        cip=(cell *)(amx->code+(int)pri);
         break;
       } /* switch */
       break;
@@ -2627,6 +2636,9 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
       alt++;
       break;
     case OP_INC_I:
+      /* verify address */
+      if (pri>=hea && pri<stk || (ucell)pri>=(ucell)amx->stp)
+        ABORT(amx,AMX_ERR_MEMACCESS);
       #if defined _R_DEFAULT
         *(cell *)(data+(int)pri) += 1;
       #else
@@ -2641,6 +2653,9 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
       alt--;
       break;
     case OP_DEC_I:
+      /* verify address */
+      if (pri>=hea && pri<stk || (ucell)pri>=(ucell)amx->stp)
+        ABORT(amx,AMX_ERR_MEMACCESS);
       #if defined _R_DEFAULT
         *(cell *)(data+(int)pri) -= 1;
       #else
@@ -2665,9 +2680,9 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
       #if defined _R_DEFAULT
         memcpy(data+(int)alt, data+(int)pri, (int)offs);
       #else
-        for (i=0; i+4<offs; i+=4) {
-          val=_R32(data,pri+i);
-          _W32(data,alt+i,val);
+        for (i=0; i+sizeof(cell)<offs; i+=sizeof(cell)) {
+          val=_R(data,pri+i);
+          _W(data,alt+i,val);
         } /* for */
         for ( ; i<offs; i++) {
           val=_R8(data,pri+i);
@@ -2693,8 +2708,8 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
         pri=memcmp(data+(int)alt, data+(int)pri, (int)offs);
       #else
         val=0;
-        for (i=0; i+4<offs && val==0; i+=4)
-          val=_R32(data,alt+i)-_R32(data,pri+i);
+        for (i=0; i+sizeof(cell)<offs && val==0; i+=sizeof(cell))
+          val=_R(data,alt+i)-_R(data,pri+i);
         for ( ; i<offs && val==0; i++)
           val=_R8(data,alt+i)-_R8(data,pri+i);
       #endif
@@ -2708,7 +2723,7 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
       if ((alt+offs)>hea && (alt+offs)<stk || (ucell)(alt+offs)>(ucell)amx->stp)
         ABORT(amx,AMX_ERR_MEMACCESS);
       for (i=(int)alt; (size_t)offs>=sizeof(cell); i+=sizeof(cell), offs-=sizeof(cell))
-        _W32(data,i,pri);
+        _W(data,i,pri);
       break;
     case OP_HALT:
       GETPARAM(offs);
@@ -2767,12 +2782,12 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
     } /* case */
     case OP_SWAP_PRI:
       offs=_R(data,stk);
-      _W32(data,stk,pri);
+      _W(data,stk,pri);
       pri=offs;
       break;
     case OP_SWAP_ALT:
       offs=_R(data,stk);
-      _W32(data,stk,alt);
+      _W(data,stk,alt);
       alt=offs;
       break;
     case OP_BREAK:
@@ -2828,7 +2843,7 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
       amx->frm=frm;
       amx->stk=stk;
       pri=((AMX_NATIVE)(intptr_t)offs)(amx,(cell*)(data+(int)stk));
-      stk+=val+4;
+      stk+=val+sizeof(cell);
       if (amx->error!=AMX_ERR_NONE) {
         if (amx->error==AMX_ERR_SLEEP) {
           amx->pri=pri;
@@ -3073,7 +3088,7 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
       amx->frm=frm;
       amx->stk=stk;
       i=amx->callback(amx,offs,&pri,(cell *)(data+(int)stk));
-      stk+=val+4;
+      stk+=val+sizeof(cell);
       if (i!=AMX_ERR_NONE) {
         if (i==AMX_ERR_SLEEP) {
           amx->pri=pri;
@@ -3150,12 +3165,12 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
     case OP_CONST:
       GETPARAM(offs);
       GETPARAM(val);
-      _W32(data,offs,val);
+      _W(data,offs,val);
       break;
     case OP_CONST_S:
       GETPARAM(offs);
       GETPARAM(val);
-      _W32(data,frm+offs,val);
+      _W(data,frm+offs,val);
       break;
 #endif  /* AMX_NO_MACRO_INSTR */
 
@@ -3522,7 +3537,7 @@ int AMXAPI amx_VerifyAddress(AMX *amx,cell *address)
   #error Unsupported cell size
 #endif
 
-int AMXAPI amx_StrLen(const cell *cstr, int *length)
+int AMXAPI amx_StrLen(const cell *cstring, int *length)
 {
   int len;
   #if BYTE_ORDER==LITTLE_ENDIAN
@@ -3530,19 +3545,19 @@ int AMXAPI amx_StrLen(const cell *cstr, int *length)
   #endif
 
   assert(length!=NULL);
-  if (cstr==NULL) {
+  if (cstring==NULL) {
     *length=0;
     return AMX_ERR_PARAMS;
   } /* if */
 
-  if ((ucell)*cstr>UNPACKEDMAX) {
+  if ((ucell)*cstring>UNPACKEDMAX) {
     /* packed string */
     assert_static(sizeof(char)==1);
-    len=(int)strlen((char *)cstr);      /* find '\0' */
+    len=(int)strlen((char *)cstring);      /* find '\0' */
     assert(check_endian());
     #if BYTE_ORDER==LITTLE_ENDIAN
       /* on Little Endian machines, toggle the last bytes */
-      c=cstr[len/sizeof(cell)];         /* get last cell */
+      c=cstring[len/sizeof(cell)];         /* get last cell */
       len=len - len % sizeof(cell);     /* len = multiple of "cell" bytes */
       while ((c & CHARMASK)!=0) {
         len++;
@@ -3550,7 +3565,7 @@ int AMXAPI amx_StrLen(const cell *cstr, int *length)
       } /* if */
     #endif
   } else {
-    for (len=0; cstr[len]!=0; len++)
+    for (len=0; cstring[len]!=0; len++)
       /* nothing */;
   } /* if */
   *length = len;
@@ -3693,7 +3708,6 @@ static const char utf8_count[16]={ 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 
 static const long utf8_lowmark[5] = { 0x80, 0x800, 0x10000L, 0x200000L, 0x4000000L };
   unsigned char c;
   cell result;
-  int followup;
 
   assert(string!=NULL);
   if (value!=NULL)      /* preset, in case of an error */
@@ -3706,6 +3720,7 @@ static const long utf8_lowmark[5] = { 0x80, 0x800, 0x10000L, 0x200000L, 0x400000
     /* ASCII */
     result=c;
   } else {
+    int followup;
     if (c<0xc0 || c>=0xfe)
       return AMX_ERR_PARAMS;  /* invalid or "follower" code, quit with error */
     /* At this point we know that the two top bits of c are ones. The two

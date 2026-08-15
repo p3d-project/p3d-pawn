@@ -18,7 +18,7 @@
 @   machine.
 @
 @
-@   Copyright (c) CompuPhase, 2006-2023
+@   Copyright (c) CompuPhase, 2006-2026
 @
 @   Licensed under the Apache License, Version 2.0 (the "License"); you may not
 @   use this file except in compliance with the License. You may obtain a copy
@@ -646,13 +646,13 @@ amx_exec_run:
     addeq r3, r0, r5            @ 2 == HEA (relocated)
     teq r11, #4
     it  eq
-    addeq r6, r0, r5            @ 4 == STK (reverse relocated)
+    addeq r6, r0, r5            @ 4 == STK (relocated)
     teq r11, #5
     it  eq
-    addeq r7, r0, r5            @ 5 == FRM (reverse relocated)
+    addeq r7, r0, r5            @ 5 == FRM (relocated)
     teq r11, #6
     it  eq
-    addeq r4, r0, r8            @ 6 == CIP (relative to code)
+    addeq r4, r0, r8            @ 6 == CIP (relocated)
     NEXT
 
 .OP_XCHG:                       @ tested
@@ -907,6 +907,8 @@ amx_exec_run:
     NEXT
 
 .OP_INC_I:                      @ tested
+    add r12, r0, r5             @ relocate PRI for address verification
+    VERIFYADDRESS r12
     ldr r12, [r5, r0]
     add r12, r12, #1
     str r12, [r5, r0]
@@ -921,6 +923,8 @@ amx_exec_run:
     NEXT
 
 .OP_DEC_I:                      @ tested
+    add r12, r0, r5             @ relocate PRI for address verification
+    VERIFYADDRESS r12
     ldr r12, [r5, r0]
     sub r12, r12, #1
     str r12, [r5, r0]

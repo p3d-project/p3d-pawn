@@ -393,37 +393,40 @@ OP_LCTRL:
         add     esi,8
         cmp     ebp,0
         jne     short lctrl_1
-        mov     eax,code ; COD
-        NEXT
+        mov     eax,code        ; 0 -> COD
+        jmp     short lctrl_done
     lctrl_1:
         cmp     ebp,1
         jne     short lctrl_2
-        mov     eax,edi  ; DAT
-        NEXT
+        mov     eax,edi         ; 1 -> DAT
+        jmp     short lctrl_done
     lctrl_2:
         cmp     ebp,2
         jne     short lctrl_3
-        mov     eax,hea  ; 2=HEA
-        NEXT
+        mov     eax,hea         ; 2 -> HEA
+        jmp     short lctrl_done
     lctrl_3:
         cmp     ebp,3
         jne     short lctrl_4
-        mov     ebp,amx
+        mov     ebp,amx         ; 3 -> STP
         mov     eax,stp
-        NEXT
+        jmp     short lctrl_done
     lctrl_4:
         cmp     ebp,4
         jne     short lctrl_5
-        mov     eax,ecx  ; 4=STK
-        NEXT
+        mov     eax,ecx         ; 4 -> STK
+        jmp     short lctrl_done
     lctrl_5:
         cmp     ebp,5
         jne     short lctrl_6
-        mov     eax,frm  ; 5=FRM
-        NEXT
+        mov     eax,frm         ; 5 -> FRM
+        jmp     short lctrl_done
     lctrl_6:
-        mov     eax,esi  ; 6=CIP
-        sub     eax,code
+        cmp     ebp,6
+        jne     short lctrl_done
+        mov     eax,esi         ; 6 -> CIP
+        sub     eax,code        ; reverse relocate
+    lctrl_done:
         NEXT
 
 
@@ -432,20 +435,25 @@ OP_SCTRL:
         add     esi,8
         cmp     ebp,2
         jne     short sctrl_4
-        mov     hea,eax  ; 2=HEA
-        NEXT
+        mov     hea,eax         ; 2 -> HEA
+        jmp     short sctrl_done
     sctrl_4:
         cmp     ebp,4
         jne     short sctrl_5
-        mov     ecx,eax  ; 4=STK
-        NEXT
+        mov     ecx,eax         ; 4 -> STK
+        jmp     short sctrl_done
     sctrl_5:
         cmp     ebp,5
         jne     short sctrl_6
-        mov     ebx,eax  ; 5=FRM
+        mov     ebx,eax         ; 5 -> FRM
         mov     frm,eax
-        add     ebx,edi  ; relocate FRM
+        add     ebx,edi         ; relocate
     sctrl_6:
+        cmp     ebp,6
+        jne     short sctrl_done
+        mov     esi,eax         ; 6 -> CIP
+        add     esi,code        ; relocate
+    sctrl_done:
         NEXT
 
 
@@ -863,6 +871,7 @@ OP_INC_ALT:
 
 OP_INC_I:
         add     esi,4
+        _VERIFYADDRESS  eax
         inc     DWORD ptr [edi+eax]
         NEXT
 
@@ -881,6 +890,7 @@ OP_DEC_ALT:
 
 OP_DEC_I:
         add     esi,4
+        _VERIFYADDRESS  eax
         sub     DWORD ptr [edi+eax],1
         NEXT
 
@@ -1331,7 +1341,7 @@ ENDIF
         mov     code,esi        ; save new code base in local variable
         NEXT
 
-ELSE	; AMX_NO_OVERLAY
+ELSE    ; AMX_NO_OVERLAY
 
 OP_CALL_OVL:
 OP_RETN_OVL:

@@ -13,10 +13,10 @@
 ;   segments, add the definition "BORLAND" on the command line.
 ; * You will need to compile the standard AMX.C file with the macro AMX_ASM
 ;   defined. On the command line, use:
-;       nasmw -Ox -f obj -d BORLAND amxexecn.asm
+;       nasm -Ox -f obj -d BORLAND amxexecn.asm
 ;       bcc32 -DAMX_ASM srun.c amx.c amxcore.c amxcons.c amxexecn.obj
 ;   or
-;       nasmw -Ox -f win32 amxexecn.asm
+;       nasm -Ox -f win32 amxexecn.asm
 ;   or
 ;       nasm -Ox -f elf amxexecn.asm
 ;       gcc -o srun -DLINUX -DAMX_ASM -I../linux srun.c amx.c amxcore.c amxcons.c amxexecn.o
@@ -28,7 +28,7 @@
 ;This implementation of the abstract machine for NASM is a port of the
 ;abstract machine core written by Marc Peter.
 ;
-;Copyright 2003-2016 CompuPhase, portions copyright 1998-2000 by Marc Peter.
+;Copyright 2003-2026 CompuPhase, portions copyright 1998-2000 by Marc Peter.
 ;
 ;Licensed under the Apache License, Version 2.0 (the "License"); you may not
 ;use this file except in compliance with the License. You may obtain a copy
@@ -322,37 +322,40 @@ OP_LCTRL:
         add     esi,8
         cmp     ebp,0
         jne     short lctrl_1
-        mov     eax,code ; COD
-        NEXT
+        mov     eax,code        ; 0 -> COD
+        jmp     short lctrl_done
     lctrl_1:
         cmp     ebp,1
         jne     short lctrl_2
-        mov     eax,edi  ; DAT
-        NEXT
+        mov     eax,edi         ; 1 -> DAT
+        jmp     short lctrl_done
     lctrl_2:
         cmp     ebp,2
         jne     short lctrl_3
-        mov     eax,hea  ; 2=HEA
-        NEXT
+        mov     eax,hea         ; 2 -> HEA
+        jmp     short lctrl_done
     lctrl_3:
         cmp     ebp,3
         jne     short lctrl_4
-        mov     ebp,amx
+        mov     ebp,amx         ; 3 -> STP
         mov     eax,stp
-        NEXT
+        jmp     short lctrl_done
     lctrl_4:
         cmp     ebp,4
         jne     short lctrl_5
-        mov     eax,ecx  ; 4=STK
-        NEXT
+        mov     eax,ecx         ; 4 -> STK
+        jmp     short lctrl_done
     lctrl_5:
         cmp     ebp,5
         jne     short lctrl_6
-        mov     eax,frm  ; 5=FRM
-        NEXT
+        mov     eax,frm         ; 5 -> FRM
+        jmp     short lctrl_done
     lctrl_6:
-        mov     eax,esi  ; 6=CIP
-        sub     eax,code
+        cmp     ebp,6
+        jne     short lctrl_done
+        mov     eax,esi         ; 6 -> CIP
+        sub     eax,code        ; reverse relocate
+    lctrl_done:
         NEXT
 
 
@@ -361,20 +364,25 @@ OP_SCTRL:
         add     esi,8
         cmp     ebp,2
         jne     short sctrl_4
-        mov     hea,eax  ; 2=HEA
-        NEXT
+        mov     hea,eax         ; 2 -> HEA
+        jmp     short sctrl_done
     sctrl_4:
         cmp     ebp,4
         jne     short sctrl_5
-        mov     ecx,eax  ; 4=STK
-        NEXT
+        mov     ecx,eax         ; 4 -> STK
+        jmp     short sctrl_done
     sctrl_5:
         cmp     ebp,5
         jne     short sctrl_6
-        mov     ebx,eax  ; 5=FRM
+        mov     ebx,eax         ; 5 -> FRM
         mov     frm,eax
-        add     ebx,edi  ; relocate FRM
+        add     ebx,edi         ; relocate
     sctrl_6:
+        cmp     ebp,6
+        jne     short sctrl_done
+        mov     esi,eax         ; 6 -> CIP
+        add     esi,code        ; relocate
+    sctrl_done:
         NEXT
 
 
@@ -792,6 +800,7 @@ OP_INC_ALT:
 
 OP_INC_I:
         add     esi,4
+        _VERIFYADDRESS  eax
         inc     DWORD [edi+eax]
         NEXT
 
@@ -810,6 +819,7 @@ OP_DEC_ALT:
 
 OP_DEC_I:
         add     esi,4
+        _VERIFYADDRESS  eax
         sub     DWORD [edi+eax],1
         NEXT
 

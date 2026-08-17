@@ -15,7 +15,7 @@
 @   machine.
 @
 @
-@   Copyright (c) CompuPhase, 2015-2024
+@   Copyright (c) CompuPhase, 2015-2026
 @
 @   Licensed under the Apache License, Version 2.0 (the "License"); you may not
 @   use this file except in compliance with the License. You may obtain a copy
@@ -665,28 +665,34 @@ amx_opcodelist_size:
     cmp r2, #0
     bne 0f
     mov r0, r8                  @ 0 == code base address
+    b   6f
   0:
     cmp r2, #1
     bne 1f
     mov r0, r5                  @ 1 == data base address
+    b   6f
   1:
     cmp r2, #2
     bne 2f
     mov r2, r12
     subs r0, r2, r5             @ 2 == HEA (reverse relocated)
+    b   6f
   2:
     cmp r2, #3
     bne 3f
     mov r2, r11
     subs r0, r2, r5             @ 3 == STP (reverse relocated)
+    b   6f
   3:
     cmp r2, #4
     bne 4f
     subs r0, r6, r5             @ 4 == STK (reverse relocated)
+    b   6f
   4:
     cmp r2, #5
     bne 5f
     subs r0, r7, r5             @ 5 == FRM (reverse relocated)
+    b   6f
   5:
     cmp r2, #6
     bne 6f
@@ -701,19 +707,22 @@ amx_opcodelist_size:
     bne 2f
     adds r2, r0, r5             @ 2 == HEA (relocated)
     mov r12, r2
+    b   6f
   2:
     cmp r2, #4
     bne 4f
-    adds r6, r0, r5             @ 4 == STK (reverse relocated)
+    adds r6, r0, r5             @ 4 == STK (relocated)
+    b   6f
   4:
     cmp r2, #5
     bne 5f
-    adds r7, r0, r5             @ 5 == FRM (reverse relocated)
+    adds r7, r0, r5             @ 5 == FRM (relocated)
+    b   6f
   5:
     cmp r2, #6
     bne 6f
     mov r2, r8
-    adds r4, r0, r2             @ 6 == CIP (relative to code)
+    adds r4, r0, r2             @ 6 == CIP (relocated)
   6:
     NEXT
 
@@ -974,6 +983,8 @@ amx_opcodelist_size:
     NEXT
 
 .OP_INC_I:          @ tested
+    adds r3, r0, r5             @ relocate PRI for address verification
+    VERIFYADDRESS r3
     ldr r3, [r5, r0]
     adds r3, r3, #1
     str r3, [r5, r0]
@@ -988,6 +999,8 @@ amx_opcodelist_size:
     NEXT
 
 .OP_DEC_I:          @ tested
+    adds r3, r0, r5             @ relocate PRI for address verification
+    VERIFYADDRESS r3
     ldr r3, [r5, r0]
     subs r3, r3, #1
     str r3, [r5, r0]

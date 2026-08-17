@@ -80,11 +80,17 @@ AMX_ERR_INIT_JIT    EQU 24
 AMX_ERR_PARAMS      EQU 25
 AMX_ERR_DOMAIN      EQU 26
 AMX_ERR_GENERAL     EQU 27
+AMX_ERR_OVERLAY     EQU 28
 
+AMX_FLAG_OVERLAY    EQU 0001h   ; all function calls use overlays
 AMX_FLAG_DEBUG      EQU 0002h   ; symbolic info. available
-AMX_FLAG_COMPACT    EQU 0004h
-AMX_FLAG_BYTEOPC    EQU 0008h
-AMX_FLAG_NOCHECKS   EQU 0010h
-AMX_FLAG_BROWSE     EQU 4000h
-AMX_FLAG_RELOC      EQU 8000h   ; jump/call addresses relocated
+AMX_FLAG_NOCHECKS   EQU 0004h   ; no array bounds checking; no BREAK opcodes
+AMX_FLAG_SLEEP      EQU 0008h   ; script uses the sleep instruction (possible re-entry or power-down mode)
+AMX_FLAG_CRYPT      EQU 0010h   ; scrypt is encrypted
+AMX_FLAG_DSEG_INIT  EQU 0020h   ; data section is explicitly initialized
+AMX_FLAG_SYSREQN    EQU 0800h   ; script uses new (optimized) version of SYSREQ opcode
+AMX_FLAG_NTVREG     EQU 1000h   ; all native functions are registered
+AMX_FLAG_JITC       EQU 2000h   ; abstract machine is JIT compiled
+AMX_FLAG_VERIFY     EQU 4000h   ; busy verifying P-code
+AMX_FLAG_INIT       EQU 8000h   ; AMX has been initialized
 

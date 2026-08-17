@@ -4,7 +4,7 @@
  *  compiler to create a fast "indirect threaded" interpreter. The Intel C/C++
  *  compiler supports this too.
  *
- *  Copyright (c) CompuPhase, 1998-2020
+ *  Copyright (c) CompuPhase, 1998-2026
  *
  *  This software is provided "as-is", without any express or implied warranty.
  *  In no event will the authors be held liable for any damages arising from
@@ -89,7 +89,7 @@
 #define CHKSTACK()      if (stk>amx->stp) return AMX_ERR_STACKLOW
 #define CHKHEAP()       if (hea<amx->hlw) return AMX_ERR_HEAPLOW
 
-#define JUMPREL(ip)     ((cell*)((unsigned long)(ip)+*(cell*)(ip)-sizeof(cell)))
+#define JUMPREL(ip)     ((cell*)((intptr_t)(ip)+*(cell*)(ip)-sizeof(cell)))
 
 
 #if !defined AMX_NO_PACKED_OPC && !defined AMX_TOKENTHREADING
@@ -99,7 +99,7 @@
   #if defined AMX_NO_PACKED_OPC
     #define NEXT(cip,op) goto *amx_opcodelist[*cip++]
   #else
-    #define NEXT(cip,op) goto *amx_opcodelist[(op=*cip++) & ((1 << sizeof(cell)*4)-1)]
+    #define NEXT(cip,op) goto *amx_opcodelist[(op=*cip++) & ((1UL << sizeof(cell)*4)-1)]
   #endif
 #else
   #if !defined AMX_NO_PACKED_OPC
@@ -339,7 +339,7 @@ static const void * const amx_opcodelist[] = {
       pri=frm;
       break;
     case 6:
-      pri=(cell)((unsigned char *)cip - amx->code);
+      pri=(cell)((unsigned char *)cip-amx->code);
       break;
     } /* switch */
     NEXT(cip,op);
@@ -361,7 +361,7 @@ static const void * const amx_opcodelist[] = {
       frm=pri;
       break;
     case 6:
-      cip=(cell *)(amx->code + (int)pri);
+      cip=(cell *)(amx->code+(int)pri);
       break;
     } /* switch */
     NEXT(cip,op);
@@ -536,6 +536,9 @@ static const void * const amx_opcodelist[] = {
     alt++;
     NEXT(cip,op);
   op_inc_i:
+    /* verify address */
+    if (pri>=hea && pri<stk || (ucell)pri>=(ucell)amx->stp)
+      ABORT(amx,AMX_ERR_MEMACCESS);
     #if defined _R_DEFAULT
       *(cell *)(data+(int)pri) += 1;
     #else
@@ -550,6 +553,9 @@ static const void * const amx_opcodelist[] = {
     alt--;
     NEXT(cip,op);
   op_dec_i:
+    /* verify address */
+    if (pri>=hea && pri<stk || (ucell)pri>=(ucell)amx->stp)
+      ABORT(amx,AMX_ERR_MEMACCESS);
     #if defined _R_DEFAULT
       *(cell *)(data+(int)pri) -= 1;
     #else
@@ -574,9 +580,9 @@ static const void * const amx_opcodelist[] = {
     #if defined _R_DEFAULT
       memcpy(data+(int)alt, data+(int)pri, (int)offs);
     #else
-      for (i=0; i+4<offs; i+=4) {
-        val=_R32(data,pri+i);
-        _W32(data,alt+i,val);
+      for (i=0; i+sizeof(cell)<offs; i+=sizeof(cell)) {
+        val=_R(data,pri+i);
+        _W(data,alt+i,val);
       } /* for */
       for ( ; i<offs; i++) {
         val=_R8(data,pri+i);
@@ -602,8 +608,8 @@ static const void * const amx_opcodelist[] = {
       pri=memcmp(data+(int)alt, data+(int)pri, (int)offs);
     #else
       val=0;
-      for (i=0; i+4<offs && val==0; i+=4)
-        val=_R32(data,alt+i)-_R32(data,pri+i);
+      for (i=0; i+sizeof(cell)<offs && val==0; i+=sizeof(cell))
+        val=_R(data,alt+i)-_R(data,pri+i);
       for ( ; i<offs && val==0; i++)
         val=_R8(data,alt+i)-_R8(data,pri+i);
     #endif
@@ -617,7 +623,7 @@ static const void * const amx_opcodelist[] = {
     if ((alt+offs)>hea && (alt+offs)<stk || (ucell)(alt+offs)>(ucell)amx->stp)
       ABORT(amx,AMX_ERR_MEMACCESS);
     for (i=(int)alt; offs>=(int)sizeof(cell); i+=sizeof(cell), offs-=sizeof(cell))
-      _W32(data,i,pri);
+      _W(data,i,pri);
     NEXT(cip,op);
   op_halt:
     GETPARAM(offs);
@@ -741,7 +747,7 @@ static const void * const amx_opcodelist[] = {
       amx->frm=frm;
       amx->stk=stk;
       pri=((AMX_NATIVE)offs)(amx,(cell *)(data+(int)stk));
-      stk+=val+4;
+      stk+=val+sizeof(cell);
       if (amx->error!=AMX_ERR_NONE) {
         if (amx->error==AMX_ERR_SLEEP) {
           amx->pri=pri;
@@ -762,7 +768,7 @@ static const void * const amx_opcodelist[] = {
 #if !defined AMX_NO_OVERLAY
   op_call_ovl:
     offs=(unsigned char *)cip-amx->code+sizeof(cell); /* skip address */
-    assert(offs>=0 && offs<(1<<(sizeof(cell)*4)));
+    assert(offs>=0 && offs<(1L<<(sizeof(cell)*4)));
     PUSH((offs<<(sizeof(cell)*4)) | amx->ovl_index);
     amx->ovl_index=(int)*cip;
     assert(amx->overlay!=NULL);
@@ -995,7 +1001,7 @@ static const void * const amx_opcodelist[] = {
     amx->frm=frm;
     amx->stk=stk;
     num=amx->callback(amx,offs,&pri,(cell *)(data+(int)stk));
-    stk+=val+4;
+    stk+=val+sizeof(cell);
     if (num!=AMX_ERR_NONE) {
       if (num==AMX_ERR_SLEEP) {
         amx->pri=pri;

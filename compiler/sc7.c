@@ -241,8 +241,10 @@ SC_FUNC void stgout(int index)
 
   /* second pass: optimize the buffer created in the first pass (always, even
      if the first pass did not re-order sub-instructions, because the first
-     pass stops at level sOPTIMIZE_MACRO) */
-  if (sc_status==statWRITE)
+     pass stops at level sOPTIMIZE_MACRO); skip when the pipe is empty, which
+     happens on the error-recovery path where the first pass staged nothing and
+     "stgpipe" was never allocated */
+  if (sc_status==statWRITE && pipeidx>0)
     stgopt(stgpipe,stgpipe+pipeidx,TRUE,filewrite);
 
   pipeidx=0;  /* reset second pipe */

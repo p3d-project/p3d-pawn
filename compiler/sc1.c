@@ -32,6 +32,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#if !defined S_ISDIR
+  #define S_ISDIR(mode) (((mode) & _S_IFDIR) != 0)
+#endif
 
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
   #include <conio.h>
@@ -251,6 +255,9 @@ static char *prefix[3]={ "error", "fatal error", "warning" };
  */
 void *pc_opensrc(const char *filename)
 {
+  struct stat st;
+  if (stat(filename,&st)==0 && S_ISDIR(st.st_mode))
+    return NULL;
   return fopen(filename,"r");
 }
 
@@ -344,7 +351,7 @@ void pc_resetsrc(void *handle,void *position)
 
 int pc_eofsrc(void *handle)
 {
-  return feof((FILE*)handle);
+  return feof((FILE*)handle) || ferror((FILE*)handle);
 }
 
 /* should return a pointer, which is used as a "magic cookie" to all I/O

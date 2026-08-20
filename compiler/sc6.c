@@ -1202,9 +1202,13 @@ static void append_dbginfo(FILE *fout)
       assert((unsigned)(str-name)<sizeof symname);
       strlcpy(symname,name,(int)(str-name)+1);
       dbghdr.size+=(int32_t)(sizeof(AMX_DBG_SYMBOL)+strlen(symname));
-      if ((prevstr=strchr(name,'['))!=NULL)
-        while ((prevstr=strchr(prevstr+1,':'))!=NULL)
+      if ((prevstr=strchr(name,'['))!=NULL) {
+        prevstr++;
+        while (*(prevstr=skipwhitespace(prevstr))!=']') {
+          hex2ucell(prevstr,&prevstr);
           dbghdr.size+=sizeof(AMX_DBG_SYMDIM);
+        } /* while */
+      } /* if */
     } /* if */
   } /* for */
 
@@ -1314,6 +1318,7 @@ static void append_dbginfo(FILE *fout)
       str=skipwhitespace(str);
       if (*str=='[') {
         while (*(str=skipwhitespace(str+1))!=']') {
+          dbgidxtag[dbgsym.dim].tag=0;
           dbgidxtag[dbgsym.dim].size=(uint32_t)hex2ucell(str,&str);
           dbgsym.dim++;
         } /* while */

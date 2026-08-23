@@ -390,8 +390,9 @@ SC_FUNC int levenshtein_distance(const char *s,const char*t)
   int *d;
   int n=(int)strlen(s);
   int m=(int)strlen(t);
-  assert(n>0 && m>0);
-  d=(int*)malloc((sizeof(int))*(m+1)*(n+1));
+  /* an empty string is valid input: the distance is then the other's length */
+  if ((d=(int*)malloc((sizeof(int))*(m+1)*(n+1)))==NULL)
+    return INT_MAX;
   m++;
   n++;
   //Step 2
@@ -423,12 +424,19 @@ static int find_closestsymbol_table(const char *name,const symbol *root,int symb
   assert(closestsym!=NULL);
   *closestsym=NULL;
   assert(name!=NULL);
+  /* an empty name has no nearest match to offer (as error() checks too) */
+  if (strlen(name)==0)
+    return INT_MAX;
   critdist=(int)strlen(name)/2;  /* for short names, allow only a single edit */
   if (critdist>MAX_EDIT_DIST)
     critdist=MAX_EDIT_DIST;
   while (sym!=NULL) {
     int ident;
     funcdisplayname(symname,sym->name);
+    if (strlen(symname)==0) {   /* nothing to suggest */
+      sym=sym->next;
+      continue;
+    } /* if */
     ident=sym->ident;
     if (symboltype==iARRAY && ident==iREFARRAY)
       ident=iARRAY;     /* reference arrays match arrays */

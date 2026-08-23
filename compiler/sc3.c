@@ -926,6 +926,9 @@ SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *staten
   assert(state!=NULL);
   assert(automaton!=NULL);
   *automaton=NULL;
+  /* the caller uses the name even when this function fails */
+  if (statename!=NULL)
+    *statename='\0';
   if ((islabel=matchtoken(tLABEL))==0 && !needtoken(tSYMBOL))
     return 0;
 
@@ -1246,11 +1249,17 @@ static int hier13(value *lval)
        */
       heaplist_node=push_heaplist(0,0); /* save the pointer to write the actual data later */
     } else if (sc_status==statWRITE || sc_status==statSKIP) {
-      #if !defined NDEBUG
-        int result=
-      #endif
+      /* The browse pass pushes an entry here and this pass pops it, which
+       * balances only as long as both passes walk the same code. They do not
+       * after a syntax error: symbols that error recovery creates in the first
+       * pass change how the second one parses the same text, and the list then
+       * runs out. That cannot be asserted against either, because errors are
+       * only counted while writing output (see error(), sc5.c), so no counter
+       * distinguishes the two situations at this point. An exhausted list
+       * leaves the zeroes assigned above, which is what the branch below
+       * expects anyway.
+       */
       popfront_heaplist(&heap1,&heap2);
-      assert(result);           /* pop off equally many items than were pushed */
     } /* if */
     jmp_eq0(flab1);             /* go to second expression if primary register==0 */
     save_allowtags=sc_allowtags;
@@ -1915,15 +1924,12 @@ restart:
           if (lval2.constval<0 || sym->dim.array.length!=0 && sym->dim.array.length<=lval2.constval)
             error(32,sym->name);        /* array index out of bounds */
           if (lval2.constval!=0) {
-            /* don't add offsets for zero subscripts */
-            if (pc_cellsize==2) {
-              ldconst(lval2.constval<<1,sALT);
-            } else if (pc_cellsize==4) {
-              ldconst(lval2.constval<<2,sALT);
-            } else {
-              assert(pc_cellsize==8);
-              ldconst(lval2.constval<<3,sALT);
-            } /* if */
+            /* don't add offsets for zero subscripts; scale by multiplication,
+             * because a negative subscript still reaches here and shifting
+             * one left is undefined
+             */
+            assert(pc_cellsize==2 || pc_cellsize==4 || pc_cellsize==8);
+            ldconst(lval2.constval*pc_cellsize,sALT);
             ob_add();
           } /* if */
         } else {
@@ -1987,9 +1993,12 @@ restart:
        * field and get the size of the field too; otherwise, the
        * tag is the one from the array symbol
        */
-      if (lval2.ident==iCONSTEXPR && sym->dim.array.names!=NULL) {
+      /* cval is only resolved when a named index was matched above; when it
+       * was not, error 94 has been given and there is no field to size
+       */
+      if (lval2.ident==iCONSTEXPR && sym->dim.array.names!=NULL && cval!=NULL) {
         lval1->tag=lval2.tag;
-        assert(cval!=NULL && cval->next!=NULL);
+        assert(cval->next!=NULL);
         lval1->constval=cval->next->value - cval->value;
         if (lval1->constval>1)
           lval1->ispacked=lval2.ispacked;   /* copy packed/unpacked status */
@@ -2940,7 +2949,7 @@ static int constant(value *lval)
           error(43,(long)item); /* constant exceeds range */
         assert(packcount<pc_cellsize);
         packcount++;
-        packitem|=(item & 0xff) << ((pc_cellsize-packcount)*sCHARBITS);
+        packitem|=(cell)(((ucell)item & 0xff) << ((pc_cellsize-packcount)*sCHARBITS));
         if (packcount==pc_cellsize) {
           litadd(packitem);     /* store collected values in literal table */
           packitem=0;

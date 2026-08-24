@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7597 2026-02-22 20:41:53Z thiadmer $
+ *  Version: $Id: sc1.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -34,55 +34,58 @@
 #include <string.h>
 #include <sys/stat.h>
 #if !defined S_ISDIR
-  #define S_ISDIR(mode) (((mode) & _S_IFDIR) != 0)
+# define S_ISDIR(mode) (((mode) & _S_IFDIR) != 0)
 #endif
 
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
-  #include <conio.h>
-  #include <io.h>
-  #include <process.h>
+# include <conio.h>
+# include <io.h>
+# include <process.h>
 #else
-  #include <spawn.h>
+# include <spawn.h>
 #endif
 #if defined __GNUC__ || defined __clang__
-  #include <unistd.h>
+# include <unistd.h>
 #endif
 
 #if defined FORTIFY
-  #include <alloc/fortify.h>
+# include <alloc/Fortify.h>
 #endif
 
 #if defined __BORLANDC__ || defined __WATCOMC__
-  #include <dos.h>
+# include <dos.h>
   static unsigned total_drives; /* dummy variable */
-  #define dos_setdrive(i)       _dos_setdrive(i,&total_drives)
+# define dos_setdrive(i)       _dos_setdrive(i,&total_drives)
 #elif defined _MSC_VER && defined _WIN32
-  #include <direct.h>           /* for _chdrive() */
-  #define dos_setdrive(i)       _chdrive(i)
+# include <direct.h>           /* for _chdrive() */
+# define dos_setdrive(i)       _chdrive(i)
 #endif
 #if defined __BORLANDC__
-  #include <dir.h>              /* for chdir() */
+# include <dir.h>              /* for chdir() */
 #elif defined __WATCOMC__
-  #include <direct.h>           /* for chdir() */
+# include <direct.h>           /* for chdir() */
 #endif
 #if defined __WIN32__ || defined _WIN32 || defined _Windows
-  #include <windows.h>
+# include <windows.h>
 #endif
 
 #if defined __WIN32__ || defined _WIN32 || defined WIN32 || defined __NT__
-  #define DLLEXPORT __declspec (dllexport)
+# define DLLEXPORT __declspec (dllexport)
 #elif defined HAVE_VISIBILITY
-  #define DLLEXPORT __attribute__ ((visibility("default")))
+# define DLLEXPORT __attribute__ ((visibility("default")))
 #endif
 
 #include "lstring.h"
 #include "sc.h"
 #if defined __LINUX__ || defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__ || defined __APPLE__
-  #include <sys/wait.h>
-  #include <sclinux.h>
-  #include <binreloc.h> /* from BinReloc, see www.autopackage.org */
-  #include <installpath.h> 
-  #include <sys/wait.h>
+# include <sys/wait.h>
+# include <sclinux.h>
+# include <sys/wait.h>
+#endif
+#if defined __LINUX__
+# include <binreloc.h> /* from BinReloc, see www.autopackage.org */
+#elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+# include <installpath.h>
 #endif
 
 #include "svnrev.h"
@@ -93,6 +96,7 @@
 static void resetglobals(void);
 static void initglobals(void);
 static char *get_extension(const char *filename);
+static char *add_path_prefix(char *fullpath,size_t maxsize,const char *path,const char *filename);
 static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
                    char *rname,char *codepage);
 static void setconfig(const char *root);
@@ -102,7 +106,7 @@ static void setconstants(void);
 static void plungeprefix(char *prefixname);
 static void parse(void);
 static void dumplits(void);
-static void dumpzero(int count);
+static void dumpzero(int count,const char *label);
 static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst);
 static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,
                     int fstock,int fconst);
@@ -118,7 +122,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
 static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
                        constvalue *dimnames,int *errorfound);
 static cell init(int ident,int usage,int *tag,int *errorfound,int *packcount,cell *packitem);
-static int getstates(const char *funcname);
+static int getstates(const char *symname);
 static statelist *attachstatelist(symbol *sym,int state_id);
 static void funcstub(int fnative);
 static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,int stock);
@@ -168,7 +172,7 @@ static int skipinput  =0;       /* number of lines to skip from the first input 
 static int verbosity  =1;       /* verbosity level, 0=quiet, 1=normal, 2=verbose */
 static int sc_reparse =0;       /* needs 3th parse because of changed prototypes? */
 static int sc_parsenum=0;       /* number of the extra parses */
-static int undefined_vars=FALSE;/* if TRUE, undefined symbols were found */
+static int undefined_vars=false;/* if true, undefined symbols were found */
 static int pc_enumsequence=0;   /* sequence number of enumerated constant lists, for reporting these lists */
 static int wq_glb[wqTABSZ];     /* "while queue", internal stack for nested loops */
 static int *wq_ptr;             /* pointer to next entry */
@@ -177,7 +181,7 @@ static int *wq_ptr;             /* pointer to next entry */
   static char sc_binpath[_MAX_PATH];  /* path for the binaries, often sc_rootpath + /bin */
   static char *pc_globaldoc=NULL;/* main documentation */
   static char *pc_recentdoc=NULL;/* documentation from the most recent comment block */
-  int pc_docstring_suspended=FALSE;
+  int pc_docstring_suspended=false;
 #endif
 
 #if !defined NO_MAIN
@@ -359,56 +363,56 @@ int pc_eofsrc(void *handle)
  */
 void *pc_openasm(const char *filename)
 {
-  #if defined __MSDOS__ || defined PAWN_LIGHT
+# if defined __MSDOS__ || defined PAWN_LIGHT
     return fopen(filename,"w+");
-  #else
+# else
     return mfcreate(filename);
-  #endif
+# endif
 }
 
 void pc_closeasm(void *handle, int deletefile)
 {
-  #if defined __MSDOS__ || defined PAWN_LIGHT
+# if defined __MSDOS__ || defined PAWN_LIGHT
     if (handle!=NULL)
       fclose((FILE*)handle);
     if (deletefile)
       remove(outfname);
-  #else
+# else
     if (handle!=NULL) {
       if (!deletefile)
         mfdump((memfile_t*)handle);
       mfclose((memfile_t*)handle);
     } /* if */
-  #endif
+# endif
 }
 
 void pc_resetasm(void *handle)
 {
   assert(handle!=NULL);
-  #if defined __MSDOS__ || defined PAWN_LIGHT
+# if defined __MSDOS__ || defined PAWN_LIGHT
     fflush((FILE*)handle);
     fseek((FILE*)handle,0,SEEK_SET);
-  #else
+# else
     mfseek((memfile_t*)handle,0,SEEK_SET);
-  #endif
+# endif
 }
 
 int pc_writeasm(void *handle,const char *string)
 {
-  #if defined __MSDOS__ || defined PAWN_LIGHT
+# if defined __MSDOS__ || defined PAWN_LIGHT
     return fputs(string,(FILE*)handle) >= 0;
-  #else
+# else
     return mfputs((memfile_t*)handle,string);
-  #endif
+# endif
 }
 
 char *pc_readasm(void *handle, char *string, int maxchars)
 {
-  #if defined __MSDOS__ || defined PAWN_LIGHT
+# if defined __MSDOS__ || defined PAWN_LIGHT
     return fgets(string,maxchars,(FILE*)handle);
-  #else
+# else
     return mfgets((memfile_t*)handle,string,maxchars);
-  #endif
+# endif
 }
 
 /* Should return a pointer, which is used as a "magic cookie" to all I/O
@@ -452,7 +456,7 @@ long pc_lengthbin(void *handle)
 #if !(defined __MSDOS__ || defined __WIN32__ || defined _Windows)
 int posix_spawnl(char *pgm,...)
 {
-  #define SPAWN_MAX_ARGS  10
+# define SPAWN_MAX_ARGS  10
   pid_t pid;
   va_list ap;
   char *ptr;
@@ -490,9 +494,9 @@ int pc_compile(int argc, char *argv[])
   FILE *binf;
   void *inpfmark;
   int lcl_tabsize;
-  #if !defined PAWN_LIGHT
+# if !defined PAWN_LIGHT
     int hdrsize=0;
-  #endif
+# endif
   char *ptr;
 
   /* set global variables to their initial value */
@@ -501,7 +505,7 @@ int pc_compile(int argc, char *argv[])
   initglobals();
   errorset(sRESET,0);
   errorset(sEXPRRELEASE,0);
-  if (!lexinit(FALSE))
+  if (!lexinit(false))
     error(103);         /* insufficient memory */
   pc_clearpossrc();
 
@@ -526,23 +530,23 @@ int pc_compile(int argc, char *argv[])
   strcpy(binfname,outfname);
   ptr=get_extension(binfname);
   if (ptr!=NULL && stricmp(ptr,".asm")==0)
-    set_extension(binfname,".amx",TRUE);
+    set_extension(binfname,".amx",true);
   else
-    set_extension(binfname,".amx",FALSE);
+    set_extension(binfname,".amx",false);
   /* set output names that depend on the input name */
   if (sc_listing)
-    set_extension(outfname,".lst",TRUE);
+    set_extension(outfname,".lst",true);
   else
-    set_extension(outfname,".asm",TRUE);
+    set_extension(outfname,".asm",true);
   if (strlen(errfname)!=0)
     remove(errfname);   /* delete file on startup */
   else if (verbosity>0)
-    setcaption(TRUE);
+    setcaption(true);
   lcl_tabsize=pc_tabsize;
-  #if !defined PAWN_NO_CODEPAGE
+# if !defined PAWN_NO_CODEPAGE
     if (!cp_set(codepage))      /* set codepage */
       error(108);               /* codepage mapping file not found */
-  #endif
+# endif
   /* optionally create a temporary input file that is a collection of all
    * input files
    */
@@ -552,16 +556,16 @@ int pc_compile(int argc, char *argv[])
     const char *sname;
     FILE *ftmp;
     int fidx;
-    #if defined __WIN32__ || defined _WIN32
+#   if defined __WIN32__ || defined _WIN32
       tmpname=_tempnam(NULL,"pawn");
-    #elif defined __MSDOS__ || defined _Windows
+#   elif defined __MSDOS__ || defined _Windows
       tmpname=tempnam(NULL,"pawn");
-    #elif defined(MACOS) && !defined(__MACH__)
+#   elif defined(MACOS) && !defined(__MACH__)
       /* tempnam is not supported for the Macintosh CFM build. */
       error(104,get_sourcefile(1));
       tmpname=NULL;
       sname=NULL;
-    #else
+#   else
       char mask[] = "pawn.XXXXXX";
       int tmpfd = mkstemp(mask);
       char *procname = alloca(64);
@@ -569,7 +573,7 @@ int pc_compile(int argc, char *argv[])
       sprintf(procname, "/proc/self/fd/%d", tmpfd);
       readlink(procname, tmpname, PATH_MAX);
       close(tmpfd);
-    #endif
+#   endif
     ftmp=(FILE*)pc_createsrc(tmpname);
     for (fidx=0; (sname=get_sourcefile(fidx))!=NULL; fidx++) {
       unsigned char tstring[128];
@@ -598,7 +602,7 @@ int pc_compile(int argc, char *argv[])
   inpf_org=(FILE*)pc_opensrc(inpfname);
   if (inpf_org==NULL)
     error(100,inpfname);
-  freading=TRUE;
+  freading=true;
   sc_is_utf8=(short)scan_utf8(inpf_org,inpfname);
   outf=(FILE*)pc_openasm(outfname); /* first write to assembler file (may be temporary) */
   if (outf==NULL)
@@ -631,11 +635,11 @@ int pc_compile(int argc, char *argv[])
   do {
     /* reset "defined" flag of all functions and global variables */
     reduce_referrers(&glbtab);
-    delete_symbols(&glbtab,0,TRUE,FALSE);
+    delete_symbols(&glbtab,0,true,false);
     delete_heaplisttable();
-    #if !defined NO_DEFINE
+#   if !defined NO_DEFINE
       delete_substtable();
-    #endif
+#   endif
     delete_inputfiletable();
     delete_undefsymboltable();
     resetglobals();
@@ -643,10 +647,10 @@ int pc_compile(int argc, char *argv[])
     errorset(sRESET,0);
     /* reset the source file */
     inpf=inpf_org;
-    freading=TRUE;
+    freading=true;
     pc_resetsrc(inpf,inpfmark); /* reset file position */
     pc_curline=skipinput;       /* reset line number */
-    sc_reparse=FALSE;           /* assume no extra passes */
+    sc_reparse=false;           /* assume no extra passes */
     sc_status=statBROWSE;       /* resetglobals() resets it to IDLE */
 
     insert_inputfile(inpfname); /* save for the error system and the report mechanism */
@@ -655,7 +659,7 @@ int pc_compile(int argc, char *argv[])
     parse();                    /* process all input */
     sc_parsenum++;
     if (test_skippedundef()>0)
-      sc_reparse=TRUE;          /* conditional compiled code sections may have changed */
+      sc_reparse=true;          /* conditional compiled code sections may have changed */
   } while (sc_reparse);
 
   /* after the "discovery" passes, test the global symbol table for undefined
@@ -668,7 +672,7 @@ int pc_compile(int argc, char *argv[])
   state_conflict(&glbtab);
 
   /* write a report, if requested */
-  #if !defined PAWN_LIGHT
+# if !defined PAWN_LIGHT
     if (sc_makereport) {
       if (strlen(reportname)>0) {
         int makestategraph=0;
@@ -682,14 +686,14 @@ int pc_compile(int argc, char *argv[])
           char dotname[_MAX_PATH];
           char pgmname[_MAX_PATH];
           strcpy(dotname,reportname);
-          set_extension(dotname,".dot",TRUE);
-          #if defined __MSDOS__ || defined __WIN32__ || defined _Windows
-            sprintf(pgmname,"%s%cstategraph.exe",sc_binpath,DIRSEP_CHAR);
+          set_extension(dotname,".dot",true);
+          add_path_prefix(pgmname,countof(pgmname),sc_binpath,"stategraph");
+#         if defined __MSDOS__ || defined __WIN32__ || defined _Windows
+            set_extension(pgmname,".exe",true);
             spawnl(P_WAIT,pgmname,pgmname,reportname,dotname,NULL);
-          #else
-            snprintf(pgmname,sizearray(pgmname),"%s%cstategraph",sc_binpath,DIRSEP_CHAR);
+#         else
             posix_spawnl(pgmname,reportname,dotname,(void*)0);
-          #endif
+#         endif
         }
       } /* if */
       if (pc_globaldoc!=NULL) {
@@ -698,13 +702,13 @@ int pc_compile(int argc, char *argv[])
       } /* if */
       assert(pc_recentdoc==NULL);
     } /* if */
-  #endif
+# endif
   if (sc_listing)
     goto cleanup;
 
-  #if !defined NO_DEFINE
+# if !defined NO_DEFINE
     delete_substtable();
-  #endif
+# endif
   delete_inputfiletable();
   delete_undefsymboltable();
   litarray_deleteall();         /* this list should already be empty */
@@ -713,10 +717,10 @@ int pc_compile(int argc, char *argv[])
   errorset(sRESET,0);
   /* reset the source file */
   inpf=inpf_org;
-  freading=TRUE;
+  freading=true;
   pc_resetsrc(inpf,inpfmark);   /* reset file position */
   pc_curline=skipinput;         /* reset line number */
-  if (!lexinit(FALSE))          /* clear internal flags of lex() */
+  if (!lexinit(false))          /* clear internal flags of lex() */
     error(103);                 /* insufficient memory */
   sc_status=statWRITE;          /* allow to write --this variable was reset by resetglobals() */
   writeleader(&glbtab,&lbl_nostate,&lbl_exitstate);
@@ -724,7 +728,7 @@ int pc_compile(int argc, char *argv[])
   gen_ovlinfo(&glbtab);         /* generate overlay information */
   writestatetables(&glbtab,lbl_nostate,lbl_exitstate);  /* create state tables and additional overlay information */
   /* reset "defined" flag of all functions and global variables */
-  delete_symbols(&glbtab,0,TRUE,FALSE);
+  delete_symbols(&glbtab,0,true,false);
   insert_dbgfile(inpfname);     /* attach to debug information */
   insert_inputfile(inpfname);   /* save for the error system */
   plungeprefix(incfname);       /* jump into "default.inc" or alternative prefix file */
@@ -733,7 +737,7 @@ int pc_compile(int argc, char *argv[])
   /* inpf is already closed when readline() attempts to pop of a file */
   writetrailer();               /* write remaining stuff */
 
-  entry=testsymbols(&glbtab,0,TRUE,FALSE);  /* test for unused or undefined
+  entry=testsymbols(&glbtab,0,true,false);  /* test for unused or undefined
                                              * functions and variables */
   if (!entry)
     error(13);                  /* no entry point (no public functions) */
@@ -745,9 +749,9 @@ cleanup:
   if (!(sc_asmfile || sc_listing) && errnum==0 && jmpcode==0) {
     assert(binf!=NULL);
     pc_resetasm(outf);          /* flush and loop back, for reading */
-    #if !defined PAWN_LIGHT
+#   if !defined PAWN_LIGHT
       hdrsize=
-    #endif
+#   endif
     assemble(binf,outf);        /* assembler file is now input */
   } /* if */
   if (outf!=NULL) {
@@ -759,7 +763,7 @@ cleanup:
     binf=NULL;
   } /* if */
 
-  #if !defined PAWN_LIGHT
+# if !defined PAWN_LIGHT
     if (errnum==0 && strlen(errfname)==0) {
       int recursion;
       int flag_exceed=0;
@@ -777,7 +781,7 @@ cleanup:
         totalsize+=(long)(glb_declared+pc_stksize)*pc_cellsize;
       if (pc_amxlimit>0 && totalsize>=pc_amxlimit)
         flag_exceed=1;
-      if (pc_amxram>0 && (glb_declared+pc_stksize)*pc_cellsize>=(unsigned long)pc_amxram)
+      if (pc_amxram>0 && (glb_declared+pc_stksize)*pc_cellsize>=pc_amxram)
         flag_exceed=1;
       if ((sc_debug & sSYMBOLIC)!=0 || verbosity>=2 || stacksize+32>=(long)pc_stksize || flag_exceed) {
         if (errnum>0 || warnnum>0)
@@ -813,20 +817,20 @@ cleanup:
       if (flag_exceed)
         error(106,pc_amxlimit+pc_amxram); /* this causes a jump back to label "cleanup" */
     } /* if */
-  #endif
+# endif
 
   if (tmpname!=NULL) {
     remove(tmpname);
-    #if defined FORTIFY
+#   if defined FORTIFY
       /* Fortify does not know about the memory allocated by tempnam(), so
        * it should not check the "free()" call for that memory
        */
       Fortify_Enable(FORTIFY_OFF);
-    #endif
+#   endif
     free(tmpname);
-    #if defined FORTIFY
+#   if defined FORTIFY
       Fortify_Enable(FORTIFY_ENABLED);
-    #endif
+#   endif
   } /* if */
   if (inpfname!=NULL)
     free(inpfname);
@@ -846,15 +850,15 @@ cleanup:
     assert(inpf!=NULL && inpf!=(FILE*)-1);
     pc_closesrc(inpf);
   } /* if */
-  lexinit(TRUE);                          /* reset and release buffers */
+  lexinit(true);                          /* reset and release buffers */
   phopt_cleanup();
   stgbuffer_cleanup();
   clearstk();
   assert(jmpcode!=0 || loctab.next==NULL);/* on normal flow, local symbols
                                            * should already have been deleted */
-  delete_symbols(&loctab,0,TRUE,TRUE);    /* delete local variables if not yet
+  delete_symbols(&loctab,0,true,true);    /* delete local variables if not yet
                                            * done (i.e. on a fatal error) */
-  delete_symbols(&glbtab,0,TRUE,TRUE);
+  delete_symbols(&glbtab,0,true,true);
   delete_consttable(&tagname_tab);
   delete_consttable(&libname_tab);
   delete_consttable(&ntvindex_tab);
@@ -868,16 +872,16 @@ cleanup:
   delete_undefsymboltable();
   delete_dbgstringtable();
   litarray_deleteall();
-  #if !defined NO_DEFINE
+# if !defined NO_DEFINE
     delete_substtable();
-  #endif
-  #if !defined PAWN_LIGHT
+# endif
+# if !defined PAWN_LIGHT
     delete_docstringtable();
     if (pc_globaldoc!=NULL)
       free(pc_globaldoc);
     if (pc_recentdoc!=NULL)
       free(pc_recentdoc);
-  #endif
+# endif
   delete_autolisttable();
   delete_heaplisttable();
   clear_warningstack();
@@ -894,12 +898,12 @@ cleanup:
       pc_printf("Completed successfully\n");
     retcode = jmpcode;
   } /* if */
-  #if defined __LINUX__ 
+# if defined __LINUX__
     br_deinit();
-  #endif
-  #if defined FORTIFY
+# endif
+# if defined FORTIFY
     Fortify_ListAllMemory();
-  #endif
+# endif
   return retcode;
 }
 
@@ -970,18 +974,18 @@ static void resetglobals(void)
   code_idx=0;           /* number of bytes with generated code */
   ntv_funcid=0;         /* incremental number of native function */
   curseg=0;             /* 1 if currently parsing CODE, 2 if parsing DATA */
-  freading=FALSE;       /* no input file ready yet */
+  freading=false;       /* no input file ready yet */
   pc_curline=0;         /* the line number in the current file */
   fnumber=0;            /* the file number in the file table (debugging) */
   fcurrent=0;           /* current file being processed (debugging) */
   pc_sideeffect=0;      /* true if an expression causes a side-effect */
   pc_stmtindent=0;      /* current indent of the statement */
-  indent_nowarn=FALSE;  /* do not skip warning "217 loose indentation" */
-  sc_allowtags=TRUE;    /* allow/detect tagnames */
+  indent_nowarn=false;  /* do not skip warning "217 loose indentation" */
+  sc_allowtags=true;    /* allow/detect tagnames */
   sc_status=statIDLE;
-  sc_allowproccall=FALSE;
-  sc_alignnext=FALSE;
-  pc_docexpr=FALSE;
+  sc_allowproccall=false;
+  sc_alignnext=false;
+  pc_docexpr=false;
   pc_deprecate=NULL;
   sc_curstates=0;
   pc_memflags=0;
@@ -994,8 +998,8 @@ static void initglobals(void)
 
   resetglobals();
 
-  sc_asmfile=FALSE;     /* do not create .ASM file */
-  sc_listing=FALSE;     /* do not create .LST file */
+  sc_asmfile=false;     /* do not create .ASM file */
+  sc_listing=false;     /* do not create .LST file */
   skipinput=0;          /* number of lines to skip from the first input file */
   litmax=sDEF_LITMAX;   /* current size of the literal table */
   errnum=0;             /* number of errors */
@@ -1006,14 +1010,14 @@ static void initglobals(void)
   pc_cellsize=4;        /* default cell size = 4 bytes, 32-bits */
   sc_dataalign=pc_cellsize;
   pc_stksize=sDEF_AMXSTACK;/* default stack size */
-  pc_addlibtable=TRUE;  /* by default, add a "library table" to the output file */
+  pc_addlibtable=true;  /* by default, add a "library table" to the output file */
   pc_amxlimit=0;        /* no limit on size of the abstract machine */
   pc_amxram=0;          /* no limit on data size of the abstract machine */
   pc_tabsize=8;         /* assume a TAB is 8 spaces */
   pc_matchedtabsize=0;  /* allow auto-adjust of TAB size (no space indents detected yet) */
   sc_rationaltag=0;     /* assume no support for rational numbers */
   rational_digits=0;    /* number of fractional digits */
-  undefined_vars=FALSE; /* if TRUE, undefined symbols were found */
+  undefined_vars=false; /* if true, undefined symbols were found */
   pc_overlays=0;        /* do not generate for overlays */
   for (i=0; i<ovlFIRST; i++)
     pc_ovl0size[i][0]=pc_ovl0size[i][1]=0;
@@ -1040,8 +1044,8 @@ static void initglobals(void)
 #if !defined PAWN_LIGHT
   pc_globaldoc=NULL;
   pc_recentdoc=NULL;
-  sc_makereport=FALSE;  /* do not generate a cross-reference report */
-  pc_docstring_suspended=FALSE;
+  sc_makereport=false;  /* do not generate a cross-reference report */
+  pc_docstring_suspended=false;
 #endif
 }
 
@@ -1057,6 +1061,25 @@ static char *get_extension(const char *filename)
       ptr=NULL;
   } /* if */
   return ptr;
+}
+
+static char *add_path_prefix(char *fullpath,size_t maxsize,const char *path,const char *filename)
+{
+  size_t len;
+
+  assert(fullpath!=NULL);
+  assert(path!=NULL);
+  assert(filename!=NULL);
+  assert(maxsize>0);
+  if (fullpath!=path)
+    strlcpy(fullpath,path,maxsize);
+  len=strlen(fullpath);
+  if (len<maxsize-1) {
+    fullpath[len]=DIRSEP_CHAR;
+    fullpath[len+1]='\0';
+  }
+  strlcat(fullpath,filename,maxsize);
+  return fullpath;
 }
 
 /* set_extension
@@ -1088,10 +1111,10 @@ static int toggle_option(const char *optptr, int option)
     option=!option;
     break;
   case '-':
-    option=FALSE;
+    option=false;
     break;
   case '+':
-    option=TRUE;
+    option=true;
     break;
   default:
     about();
@@ -1117,11 +1140,11 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
   int arg,i,isoption;
 
   for (arg=1; arg<argc; arg++) {
-    #if DIRSEP_CHAR=='/'
+#   if DIRSEP_CHAR=='/'
       isoption= argv[arg][0]=='-';
-    #else
+#   else
       isoption= argv[arg][0]=='/' || argv[arg][0]=='-';
-    #endif
+#   endif
     if (isoption) {
       ptr=&argv[arg][1];
       switch (*ptr) {
@@ -1135,7 +1158,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
       case 'a':
         if (*(ptr+1)!='\0')
           about();
-        sc_asmfile=TRUE;        /* skip last pass of making binary file */
+        sc_asmfile=true;        /* skip last pass of making binary file */
         if (verbosity>1)
           verbosity=1;
         break;
@@ -1231,14 +1254,14 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
       case 'l':
         if (*(ptr+1)!='\0')
           about();
-        sc_listing=TRUE;        /* skip second pass & code generation */
+        sc_listing=true;        /* skip second pass & code generation */
         break;
       case 'N':
         strlcpy(str,option_value(ptr),sizeof str);
         if ((ptr=strchr(str,'='))!=NULL && (i=atoi(ptr+1))<0) {
           *(char*)ptr='\0';
           append_constval(&ntvindex_tab,str,i,0);
-          pc_addlibtable=FALSE; /* no library table, for hard-coded natives */
+          pc_addlibtable=false; /* no library table, for hard-coded natives */
         } /* if */
         break;
       case 'o':
@@ -1255,9 +1278,9 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
 #if !defined PAWN_LIGHT
       case 'r':
         strlcpy(rname,option_value(ptr),_MAX_PATH); /* set name of report file */
-        sc_makereport=TRUE;
+        sc_makereport=true;
         if (strlen(rname)>0)
-          set_extension(rname,".xml",FALSE);
+          set_extension(rname,".xml",false);
         break;
 #endif
       case 'S':
@@ -1327,9 +1350,9 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
         about();
       } /* switch */
     } else if (argv[arg][0]=='@') {
-      #if !defined PAWN_LIGHT
+#     if !defined PAWN_LIGHT
         parserespf(&argv[arg][1],oname,ename,pname,rname,codepage);
-      #endif
+#     endif
     } else if ((ptr=strchr(argv[arg],'='))!=NULL) {
       i=(int)(ptr-argv[arg]);
       if (i>sNAMEMAX) {
@@ -1341,7 +1364,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
       add_constant(str,i,sGLOBAL,0);
     } else {
       strlcpy(str,argv[arg],sizeof(str)-2); /* -2 because default extension is ".p" */
-      set_extension(str,".p",FALSE);
+      set_extension(str,".p",false);
       insert_sourcefile(str);
       /* The output name is the first input name with a different extension,
        * but it is stored in a different directory
@@ -1354,7 +1377,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
         assert(strlen(ptr)<_MAX_PATH);
         strcpy(oname,ptr);
       } /* if */
-      set_extension(oname,".asm",TRUE);
+      set_extension(oname,".asm",true);
     } /* if */
   } /* for */
 #if !defined PAWN_LIGHT
@@ -1377,7 +1400,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
       /* a specific output filename is set, use it for the report name too */
       strcpy(rname,oname);
     } /* if */
-    set_extension(rname,".xml",TRUE);
+    set_extension(rname,".xml",true);
   } /* if */
 #endif
 }
@@ -1449,36 +1472,41 @@ static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
   *codepage='\0';
   strcpy(pname,sDEF_PREFIX);
 
-  #if !defined PAWN_LIGHT
+# if !defined PAWN_LIGHT
     /* first parse a "config" file with default options */
     if (sc_rootpath[0]!='\0') {
       char cfgfile[_MAX_PATH];
       const char *ptr;
       char *base;
       int i,isoption,found;
+      size_t pathlen;
       /* copy the default config file name, but keep a pointer to the location
        * of the base name
        */
-      assert((strlen(sc_rootpath)+8)<sizeof cfgfile); /* +7 for "/target/" */
-      snprintf(cfgfile,sizearray(cfgfile),"%s%ctarget%c",sc_rootpath,DIRSEP_CHAR,DIRSEP_CHAR);
-      base=strchr(cfgfile,'\0');
-      assert(base!=NULL);
-      strcpy(base,"default.cfg");
+      add_path_prefix(cfgfile,countof(cfgfile),sc_rootpath,"target");
+      pathlen=strlen(cfgfile);
+      if (pathlen<countof(cfgfile)-1) {
+        cfgfile[pathlen++]=DIRSEP_CHAR; /* append '/' after 'target' subdirectory */
+        cfgfile[pathlen]='\0';
+      }
+      base=cfgfile+pathlen;
+      assert(*base=='\0');
+      strlcpy(base,"default.cfg",countof(cfgfile)-pathlen);
       /* run through the argument list to see whether a -T option is present */
       found=0;
       for (i=1; i<argc; i++) {
-        #if DIRSEP_CHAR=='/'
+#       if DIRSEP_CHAR=='/'
           isoption= argv[i][0]=='-';
-        #else
+#       else
           isoption= argv[i][0]=='/' || argv[i][0]=='-';
-        #endif
+#       endif
         if (isoption && argv[i][1]=='T') {
           found=1;
           ptr=option_value(&argv[i][1]);
           if (strchr(ptr,DIRSEP_CHAR)!=NULL)
-            strlcpy(cfgfile,ptr,_MAX_PATH); /* assume full path */
+            strlcpy(cfgfile,ptr,countof(cfgfile));      /* assume full path */
           else
-            strlcpy(base,ptr,_MAX_PATH);    /* no path */
+            strlcpy(base,ptr,countof(cfgfile)-pathlen); /* no path, only base filename */
           ptr=strrchr(cfgfile,'.');
           if (ptr==NULL || strchr(ptr,DIRSEP_CHAR)!=NULL)
             strlcat(cfgfile,".cfg",_MAX_PATH);
@@ -1490,12 +1518,12 @@ static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
         error(100,cfgfile);  /* config. file was explicitly specified, but cannot be read */
       } else if (sc_binpath[0]!='\0') {
         /* for compatibility, try the old name */
-        snprintf(cfgfile,sizearray(cfgfile),"%s%cpawn.cfg",sc_binpath,DIRSEP_CHAR);
+        add_path_prefix(cfgfile,countof(cfgfile),sc_binpath,"pawn.cfg");
         if (access(cfgfile,4)==0)
           parserespf(cfgfile,oname,ename,pname,rname,codepage);
       }
     } /* if */
-  #endif
+# endif
   parseoptions(argc,argv,oname,ename,pname,rname,codepage);
   if (get_sourcefile(0)==NULL)
     about();
@@ -1503,33 +1531,32 @@ static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
     error(104,"-k","cell size < 32-bits");
 }
 
-#if defined __BORLANDC__ || defined __WATCOMC__
-  #pragma argsused
-#endif
 static void setconfig(const char *root)
 {
   char path[_MAX_PATH]="";
   char *ptr,*base;
   size_t len;
 
-  #if defined macintosh
+# if defined macintosh || defined __APPLE__
     /* on OS X, use argv[0] */
     (void)root;
     getcwd(path,sizeof path);
-  #elif defined __WIN32__ || defined _WIN32
+# elif defined __WIN32__ || defined _WIN32
     (void)root;
     GetModuleFileName(NULL,path,_MAX_PATH);
-  #elif defined __LINUX__ 
+# elif defined __LINUX__
+    (void)root;
     /* see www.autopackage.org (now Listaller) for the BinReloc module */
     br_init(NULL);
     ptr=br_find_exe("/opt/Pawn/bin/pawncc");
     strlcpy(path,ptr,sizeof path);
     free(ptr);
-  #elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+# elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+    (void)root;
     ptr=get_install_path();
     strlcpy(path,ptr,sizeof path);
     free(ptr);
-  #else
+# else
     if (root!=NULL) {
       strlcpy(path,root,sizeof path); /* path + filename (hopefully) */
     } else {
@@ -1541,20 +1568,20 @@ static void setconfig(const char *root)
       *ptr=DIRSEP_CHAR;
       *(ptr+1)='\0';
     } /* if */
-  #endif
-  #if defined __MSDOS__
+# endif
+# if defined __MSDOS__
     /* strip the options (appended to the path + filename) */
     if ((ptr=strpbrk(path," \t/"))!=NULL)
       *ptr='\0';
-  #endif
-  #if defined macintosh
+# endif
+# if defined macintosh
     /* add a final ':' to the path */
     ptr=strchr(path,'\0');
     assert(ptr!=NULL);
     assert((ptr-path)<sizeof path-1);
     *ptr=DIRSEP_CHAR;
     *(ptr+1)='\0';
-  #else
+# else
     /* "path" contains path + filename, terminate just behind last \, / or : */
     if ((ptr=strrchr(path,DIRSEP_CHAR))!=NULL || (ptr=strchr(path,':'))!=NULL) {
       /* If there is no "\" or ":", the string probably does not contain the
@@ -1562,13 +1589,13 @@ static void setconfig(const char *root)
        */
       *(ptr+1)='\0';
     } /* if */
-  #endif
+# endif
 
   if (strlen(path)>0) {
-    #if !defined PAWN_LIGHT
+#   if !defined PAWN_LIGHT
       assert(sizeof sc_binpath==sizeof path);
       strcpy(sc_binpath,path);
-    #endif
+#   endif
     base=strchr(path,'\0')-1; /* base points to last character in the string (probably a directory separator) */
     strcat(path,"include");
     len=strlen(path);
@@ -1594,18 +1621,18 @@ static void setconfig(const char *root)
     } /* if */
     insert_path(path);
     /* same for the codepage root */
-    #if !defined PAWN_NO_CODEPAGE
+#   if !defined PAWN_NO_CODEPAGE
       if (ptr!=NULL) {
         *ptr = '\0';
           if (!cp_path(path,"codepage"))
             error(109,path);        /* codepage path */
       }
-    #endif
+#   endif
     /* also copy the root path (for the XML documentation and target host files) */
-    #if !defined PAWN_LIGHT
+#   if !defined PAWN_LIGHT
       *ptr='\0';
       strlcpy(sc_rootpath,path,sizeof sc_rootpath);
-    #endif
+#   endif
   } /* if */
 }
 
@@ -1619,7 +1646,7 @@ static void setcaption(int linespacing)
 static void about(void)
 {
   if (strlen(errfname)==0) {
-    setcaption(FALSE);
+    setcaption(false);
     pc_printf("\t\t\t\t\tCopyright (c) 1982-1983, J.E. Hendrix\n");
     pc_printf("\t\t\t\t\tCopyright (c) 1980, Ron Cain\n\n");
     pc_printf("Usage:   pawncc <filename> [filename...] [options]\n\n");
@@ -1783,7 +1810,7 @@ void sc_attachdocumentation(symbol *sym,int onlylastblock)
   } /* if */
 
   if (onlylastblock)
-    pc_docstring_suspended=FALSE;
+    pc_docstring_suspended=false;
   else if (pc_docstring_suspended)
     return;
 
@@ -1846,8 +1873,8 @@ static void insert_docstring_separator(void)
   insert_docstring(sep,1);
 }
 #else
-  #define sc_attachdocumentation(s,f)    (void)(s)
-  #define insert_docstring_separator()
+# define sc_attachdocumentation(s,f)    (void)(s)
+# define insert_docstring_separator()
 #endif
 
 static void plungeprefix(char *prefixname)
@@ -1857,7 +1884,7 @@ static void plungeprefix(char *prefixname)
     int ok;
     if (strchr(prefixname,DIRSEP_CHAR)==NULL) {
       /* no path, search the prefix file in the include directory */
-      ok=plungefile(prefixname,FALSE,TRUE);
+      ok=plungefile(prefixname,false,true);
     } else {
       /* when a path is given for the prefix file, it must be absolute */
       ok=plungequalifiedfile(prefixname);
@@ -1880,22 +1907,22 @@ static int getclassspec(int initialtok,int *fpublic,int *fstatic,int *fstock,int
   assert(fstock!=NULL);
   assert(fstatic!=NULL);
   assert(fpublic!=NULL);
-  *fconst=FALSE;
-  *fstock=FALSE;
-  *fstatic=FALSE;
-  *fpublic=FALSE;
+  *fconst=false;
+  *fstock=false;
+  *fstatic=false;
+  *fpublic=false;
   switch (initialtok) {
   case tCONST:
-    *fconst=TRUE;
+    *fconst=true;
     break;
   case tSTOCK:
-    *fstock=TRUE;
+    *fstock=true;
     break;
   case tSTATIC:
-    *fstatic=TRUE;
+    *fstatic=true;
     break;
   case tPUBLIC:
-    *fpublic=TRUE;
+    *fpublic=true;
     break;
   } /* switch */
 
@@ -1906,22 +1933,22 @@ static int getclassspec(int initialtok,int *fpublic,int *fstatic,int *fstock,int
     case tCONST:
       if (*fconst)
         err=42;          /* invalid combination of class specifiers */
-      *fconst=TRUE;
+      *fconst=true;
       break;
     case tSTOCK:
       if (*fstock)
         err=42;          /* invalid combination of class specifiers */
-      *fstock=TRUE;
+      *fstock=true;
       break;
     case tSTATIC:
       if (*fstatic)
         err=42;          /* invalid combination of class specifiers */
-      *fstatic=TRUE;
+      *fstatic=true;
       break;
     case tPUBLIC:
       if (*fpublic)
         err=42;          /* invalid combination of class specifiers */
-      *fpublic=TRUE;
+      *fpublic=true;
       break;
     default:
       lexpush();
@@ -1932,7 +1959,7 @@ static int getclassspec(int initialtok,int *fpublic,int *fstatic,int *fstock,int
   /* extra checks */
   if (*fstatic && *fpublic) {
     err=42;              /* invalid combination of class specifiers */
-    *fstatic=*fpublic=FALSE;
+    *fstatic=*fpublic=false;
   } /* if */
 
   if (err)
@@ -2005,17 +2032,17 @@ static void parse(void)
       if (tok==tEXIT)
         lexsettoken(tSYMBOL,_EXITFUNC);
       lexpush();
-      if (!newfunc(NULL,-1,FALSE,FALSE,FALSE)) {
+      if (!newfunc(NULL,-1,false,false,false)) {
         error(10);              /* illegal function or declaration */
-        lexclr(TRUE);           /* drop the rest of the line */
+        lexclr(true);           /* drop the rest of the line */
         litidx=0;               /* drop the literal queue too */
       } /* if */
       break;
     case tNATIVE:
-      funcstub(TRUE);           /* create a dummy function */
+      funcstub(true);           /* create a dummy function */
       break;
     case tFORWARD:
-      funcstub(FALSE);
+      funcstub(false);
       break;
     case '}':
       error(54);                /* unmatched closing brace */
@@ -2026,12 +2053,12 @@ static void parse(void)
     default:
       if (freading) {
         error(10);              /* illegal function or declaration */
-        lexclr(TRUE);           /* drop the rest of the line */
+        lexclr(true);           /* drop the rest of the line */
         litidx=0;               /* drop any literal arrays (strings) */
       } /* if */
     } /* switch */
   } /* while */
-  sc_attachdocumentation(NULL,FALSE);  /* attach any trailing comment to the main documentation */
+  sc_attachdocumentation(NULL,false);  /* attach any trailing comment to the main documentation */
 }
 
 /*  dumplits
@@ -2052,7 +2079,7 @@ static void dumplits(void)
     assert(curseg==2);
     defstorage();
     while (j && k<litidx){
-      outval(litq[k],TRUE,FALSE);
+      outval(litq[k],true,false);
       stgwrite(" ");
       k++;
       j--;
@@ -2072,20 +2099,30 @@ static void dumplits(void)
  *  allocated on the stack (and the stack is cleared when creating a new
  *  variable).
  */
-static void dumpzero(int count)
+static void dumpzero(int count,const char *label)
 {
-  int i,cellsperline;
+  int i,cellsperline,firstline;
 
   if (sc_status==statSKIP || count<=0)
     return;
-  assert(curseg==2);
+  assert(curseg==sIN_DSEG);
   cellsperline=32/pc_cellsize;
+  firstline=true;
   defstorage();
   i=0;
   while (count-- > 0) {
-    outval(0,TRUE,FALSE);
+    outval(0,true,false);
     i=(i+1) % cellsperline;
-    stgwrite((i==0 || count==0) ? "\n" : " ");
+    if (i==0 || count==0) {
+      if (firstline && label!=NULL) {
+        stgwrite("\t; ");
+        stgwrite(label);
+      }
+      stgwrite("\n");
+      firstline=false;
+    } else {
+      stgwrite(" ");
+    }
     if (i==0 && count>0)
       defstorage();
   } /* while */
@@ -2128,7 +2165,7 @@ static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst)
   if (tok!=tSYMBOL && tok!=tOPERATOR) {
     lexpush();
     needtoken(tSYMBOL);
-    lexclr(TRUE);       /* drop the rest of the line */
+    lexclr(true);       /* drop the rest of the line */
     litidx=0;           /* drop the literal queue too */
     return;
   } /* if */
@@ -2136,7 +2173,7 @@ static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst)
     lexpush();          /* push "operator" keyword back (for later analysis) */
     if (!newfunc(NULL,tag,fpublic,fstatic,fstock)) {
       error(10);        /* illegal function or declaration */
-      lexclr(TRUE);     /* drop the rest of the line */
+      lexclr(true);     /* drop the rest of the line */
       litidx=0;         /* drop the literal queue too */
     } /* if */
   } else {
@@ -2174,17 +2211,17 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
   constvalue *dimnames[sDIMEN_MAX];
   short filenum;
   symbol *sym;
-  #if !defined NDEBUG
+# if !defined NDEBUG
     cell glbdecl=0;
-  #endif
+# endif
 
   assert(!fpublic || !fstatic);         /* may not both be set */
   insert_docstring_separator();         /* see comment in newfunc() */
   filenum=fcurrent;                     /* save file number at the start of the declaration */
   do {
-    #if !defined PAWN_LIGHT
-      pc_docstring_suspended=TRUE;      /* suspend attaching documentation to global/recent blocks */
-    #endif
+#   if !defined PAWN_LIGHT
+      pc_docstring_suspended=true;      /* suspend attaching documentation to global/recent blocks */
+#   endif
     size=1;                             /* single size (no array) */
     numdim=0;                           /* no dimensions */
     ident=iVARIABLE;
@@ -2204,7 +2241,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
     } /* if */
     ispublic=fpublic;
     if (name[0]==PUBLIC_CHAR) {
-      ispublic=TRUE;                    /* implicitly public variable */
+      ispublic=true;                    /* implicitly public variable */
       assert(!fstatic);
     } /* if */
     while (matchtoken('[')) {
@@ -2214,10 +2251,10 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
         return;
       } /* if */
       size=needsub(']',&dimnames[numdim]); /* get size; size==0 for "var[]" */
-      #if INT_MAX < LONG_MAX
+#     if INT_MAX < LONG_MAX
         if (size>INT_MAX)
           error(105);                   /* overflow, exceeding capacity */
-      #endif
+#     endif
       dim[numdim++]=(int)size;
     } /* while */
     usage=0;
@@ -2230,10 +2267,10 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
       } /* if */
       size=needsub('}',&dimnames[numdim]);/* get size; size==0 for "var{}" */
       size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
-      #if INT_MAX < LONG_MAX
+#     if INT_MAX < LONG_MAX
         if (size>INT_MAX)
           error(105);                   /* overflow, exceeding capacity */
-      #endif
+#     endif
       dim[numdim++]=(int)size;
     } /* if */
     if (matchtoken('['))
@@ -2285,9 +2322,9 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
     if (sc_status==statWRITE && sym!=NULL && (sym->usage & (uREAD | uWRITTEN))==0) {
       sc_status=statSKIP;
       cidx=code_idx;
-      #if !defined NDEBUG
+#     if !defined NDEBUG
         glbdecl=glb_declared;
-      #endif
+#     endif
     } /* if */
     begdseg();          /* real (initialized) data in data segment */
     assert(litidx==0);  /* literal queue should be empty */
@@ -2295,7 +2332,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
       litidx=0;
       aligndata(sc_dataalign);
       dumplits();       /* dump the literal queue */
-      sc_alignnext=FALSE;
+      sc_alignnext=false;
       litidx=0;         /* global initial data is dumped, so restart at zero */
     } /* if */
     assert(litidx==0);  /* literal queue should be empty (again) */
@@ -2407,14 +2444,14 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
     } /* if */
     if (address==(ucell)pc_cellsize*glb_declared) {
       dumplits();       /* dump the literal queue */
-      dumpzero((int)size-litidx);
+      dumpzero((int)size-litidx,(litidx==0) ? name : NULL);
     } /* if */
     litidx=0;
     if (strlen(name)==0)
       continue;
     if (sym==NULL) {    /* define only if not yet defined */
       sym=addvariable(name,address,ident,sGLOBAL,tag,dim,dimnames,numdim,usage);
-      sc_attachdocumentation(sym,TRUE);/* attach any documenation to the variable */
+      sc_attachdocumentation(sym,true);/* attach any documenation to the variable */
       if (sc_curstates>0)
         attachstatelist(sym,sc_curstates);
     } else {            /* if declared but not yet defined, adjust the variable's address */
@@ -2474,7 +2511,7 @@ static int declloc(int fstatic)
   int numdim;
   constvalue *dimnames[sDIMEN_MAX];
   int fconst;
-  int staging_start;
+  unsigned staging_start;
 
   fconst=matchtoken(tCONST);
   do {
@@ -2483,7 +2520,7 @@ static int declloc(int fstatic)
     numdim=0;                           /* no dimensions */
     tag=pc_addtag(NULL);
     if (!needtoken(tSYMBOL)) {
-      lexclr(TRUE);                     /* drop the rest of the line... */
+      lexclr(true);                     /* drop the rest of the line... */
       litidx=0;                         /* ...clear literal pool... */
       return 0;                         /* ...and quit */
     } /* if */
@@ -2512,10 +2549,10 @@ static int declloc(int fstatic)
         return ident;
       } /* if */
       size=needsub(']',&dimnames[numdim]);/* get size; size==0 for "var[]" */
-      #if INT_MAX < LONG_MAX
+#     if INT_MAX < LONG_MAX
         if (size > INT_MAX)
           error(105);                   /* overflow, exceeding capacity */
-      #endif
+#     endif
       dim[numdim++]=(int)size;
     } /* while */
     usage=0;
@@ -2528,10 +2565,10 @@ static int declloc(int fstatic)
       } /* if */
       size=needsub('}',&dimnames[numdim]);/* get size; size==0 for "var{}" */
       size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
-      #if INT_MAX < LONG_MAX
+#     if INT_MAX < LONG_MAX
         if (size > INT_MAX)
           error(105);                   /* overflow, exceeding capacity */
-      #endif
+#     endif
       dim[numdim++]=(int)size;
     } /* if */
     if (matchtoken('['))
@@ -2542,7 +2579,7 @@ static int declloc(int fstatic)
     if (ident==iARRAY || fstatic) {
       if (sc_alignnext) {
         aligndata(sc_dataalign);
-        sc_alignnext=FALSE;
+        sc_alignnext=false;
       } /* if */
       cur_lit=litidx;           /* save current index in the literal table */
       initials(ident,usage,tag,&size,dim,numdim,dimnames);
@@ -2564,7 +2601,7 @@ static int declloc(int fstatic)
                       dim,dimnames,numdim,usage);
       if (ident==iVARIABLE) {
         assert(!staging);
-        stgset(TRUE);           /* start stage-buffering */
+        stgset(true);           /* start stage-buffering */
         assert(stgidx==0);
         staging_start=stgidx;
       } /* if */
@@ -2585,10 +2622,10 @@ static int declloc(int fstatic)
       if (ident==iVARIABLE) {
         /* simple variable, also supports initialization */
         int ctag = tag;         /* set to "tag" by default */
-        int explicit_init=FALSE;/* is the variable explicitly initialized? */
+        int explicit_init=false;/* is the variable explicitly initialized? */
         if (matchtoken('=')) {
-          doexpr(FALSE,FALSE,FALSE,FALSE,&ctag,NULL,TRUE,FALSE);
-          explicit_init=TRUE;
+          doexpr(false,false,false,false,&ctag,NULL,true,false);
+          explicit_init=true;
         } else {
           ldconst(0,sPRI);      /* uninitialized variable, set to zero */
         } /* if */
@@ -2602,8 +2639,8 @@ static int declloc(int fstatic)
         markexpr(sEXPR,NULL,0); /* full expression ends after the store */
         assert(staging);        /* end staging phase (optimize expression) */
         stgout(staging_start);
-        stgset(FALSE);
-        if (!matchtag(tag,ctag,TRUE))
+        stgset(false);
+        if (!matchtag(tag,ctag,true))
           error(213);           /* tag mismatch */
         /* if the variable was not explicitly initialized, reset the
          * "uWRITTEN" flag that store() set */
@@ -2655,11 +2692,11 @@ static int declloc(int fstatic)
  */
 static cell calc_arraysize(int dim[],int numdim,int cur)
 {
-  #if UINT_MAX > 0xffffffffLu
-    #define ARRAY_MAX 0xffffffffLu  /* array is max. 4 GiB */
-  #else
-    #define ARRAY_MAX UINT_MAX
-  #endif
+# if UINT_MAX > 0xffffffffLu
+#   define ARRAY_MAX 0xffffffffLu  /* array is max. 4 GiB */
+# else
+#   define ARRAY_MAX UINT_MAX
+# endif
   cell subsize;
   ucell newsize;
 
@@ -2675,7 +2712,7 @@ static cell calc_arraysize(int dim[],int numdim,int cur)
       || newsize*pc_cellsize>=ARRAY_MAX)
     return CELL_MAX;
   return newsize;
-  #undef ARRAY_MAX
+# undef ARRAY_MAX
 }
 
 static cell adjust_indirectiontables(int dim[],int numdim,int cur,cell increment,
@@ -2779,14 +2816,14 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
   if (ident==iVARIABLE) {
     assert(*size==1);
     init(ident,usage,&ctag,NULL,NULL,NULL);
-    if (!matchtag(tag,ctag,TRUE))
+    if (!matchtag(tag,ctag,true))
       error(213);       /* tag mismatch */
   } else {
     assert(numdim>0);
     if (numdim==1) {
-      *size=initvector(ident,usage,tag,dim[0],FALSE,dimnames[0],NULL);
+      *size=initvector(ident,usage,tag,dim[0],false,dimnames[0],NULL);
     } else {
-      int errorfound=FALSE;
+      int errorfound=false;
       int counteddim[sDIMEN_MAX];
       int idx;
       constvalue lastdim={NULL,"",0,0,0};   /* sizes of the final dimension */
@@ -2853,7 +2890,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
   assert(cur>=0 && cur<numdim);
   assert(startlit>=0);
   assert(cur+2<=numdim);/* there must be 2 dimensions or more to do */
-  assert(errorfound!=NULL && *errorfound==FALSE);
+  assert(errorfound!=NULL && *errorfound==false);
   /* check for a quick exit */
   if (matchtoken(']')) {
     lexpush();
@@ -2862,7 +2899,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
   totalsize=0;
   if (!needtoken('['))
     startlit=0; /* because literal pool is cleared on a mismatch in needtoken() */
-  for (idx=0,abortparse=FALSE; !abortparse; idx++) {
+  for (idx=0,abortparse=false; !abortparse; idx++) {
     /* We need to store the offset to the newly detected sub-array into the
      * indirection table; i.e. this table needs to be expanded and updated.
      * In the current design, the indirection vectors for a multi-dimensional
@@ -2875,7 +2912,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
       dsize=initarray(ident,usage,tag,dim,numdim,cur+1,startlit,counteddim,
                       lastdim,dimnames,errorfound);
     } else {
-      dsize=initvector(ident,usage,tag,dim[cur+1],TRUE,dimnames[cur+1],errorfound);
+      dsize=initvector(ident,usage,tag,dim[cur+1],true,dimnames[cur+1],errorfound);
       /* The final dimension may be variable length. We need to save the
        * lengths of the final dimensions in order to set the indirection
        * vectors for the next-to-last dimension.
@@ -2905,7 +2942,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
     } /* if */
     totalsize+=dsize;
     if (*errorfound || !matchtoken(','))
-      abortparse=TRUE;
+      abortparse=true;
   } /* for */
   needtoken(']');
   assert(counteddim!=NULL);
@@ -2928,7 +2965,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
                        constvalue *dimnames,int *errorfound)
 {
   cell prev1=0,prev2=0;
-  int ellips=FALSE;
+  int ellips=false;
   int curlit=litidx;
   int ctag;
   int match=0;
@@ -3026,7 +3063,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
       } else {
         ftag=tag;
       } /* if */
-      if (!matchtag(ftag,ctag,TRUE))
+      if (!matchtag(ftag,ctag,true))
         error(213);             /* tag mismatch */
     } while (matchtoken(','));
     if (packcount!=0 && match=='}' && !ellips)
@@ -3041,7 +3078,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
     assert(!ellips);
   } else {
     init(ident,usage,&ctag,errorfound,NULL,NULL);
-    if (!matchtag(tag,ctag,TRUE))
+    if (!matchtag(tag,ctag,true))
       error(213);               /* tagname mismatch */
   } /* if */
   /* fill up the literal queue with a series */
@@ -3125,7 +3162,7 @@ static cell init(int ident,int usage,int *tag,int *errorfound,int *packcount,cel
     } /* if */
   } else {
     if (errorfound!=NULL)
-      *errorfound=TRUE;
+      *errorfound=true;
   } /* if */
   return i;
 }
@@ -3176,10 +3213,10 @@ static cell needsub(char match,constvalue **namelist)
       } else {
         size=1;
       } /* if */
-      #if INT_MAX < LONG_MAX
+#     if INT_MAX < LONG_MAX
         if (size>INT_MAX)
           error(105);           /* overflow, exceeding capacity */
-      #endif
+#     endif
       if (matchtoken('[') || matchtoken('{'))
         error(53);              /* exceeding maximum number of dimensions */
       if (size<=0)
@@ -3250,9 +3287,9 @@ static void decl_const(int scope)
 
   insert_docstring_separator();         /* see comment in newfunc() */
   do {
-    #if !defined PAWN_LIGHT
-      pc_docstring_suspended=TRUE;      /* suspend attaching documentation to global/recent blocks */
-    #endif
+#   if !defined PAWN_LIGHT
+      pc_docstring_suspended=true;      /* suspend attaching documentation to global/recent blocks */
+#   endif
     defaulttag=pc_addtag(NULL);
     enumerate=matchtoken('{') ? ++pc_enumsequence : 0;
     first=1;
@@ -3282,14 +3319,14 @@ static void decl_const(int scope)
       }
       first=0;
       defaultval=val;
-      if (exprtag!=0 && !matchtag(tag,exprtag,FALSE)) {
+      if (exprtag!=0 && !matchtag(tag,exprtag,false)) {
         errorset(sSETLINE,symbolline);  /* temporarily reset the line number to where the symbol was defined */
         error(213);                     /* tagname mismatch */
       } /* if */
       /* add_constant() checks for duplicate definitions */
       sym=add_constant(constname,val,scope,tag);
       if (sym!=NULL) {
-        sc_attachdocumentation(sym,TRUE); /* attach any documenation to the constant */
+        sc_attachdocumentation(sym,true); /* attach any documenation to the constant */
         sym->x.enumlist=enumerate;
       } /* if */
     } while (enumerate!=0 && matchtoken(tSEPARATOR));
@@ -3300,7 +3337,7 @@ static void decl_const(int scope)
   matchtoken(';');                      /* eat an optional ; */
 }
 
-static int getstates(const char *funcname)
+static int getstates(const char *symname)
 {
   char fsaname[sNAMEMAX+1],statename[sNAMEMAX+1];
   cell val;
@@ -3346,7 +3383,7 @@ static int getstates(const char *funcname)
       automaton=automaton_add(fsaname);
       assert(automaton!=NULL);
       if (fsa>=0 && automaton->index!=fsa)
-        error(83,funcname); /* multiple automatons for a single function/variable */
+        error(83,symname); /* multiple automatons for a single function/variable */
       fsa=automaton->index;
     } /* if */
     state=state_add(statename,fsa);
@@ -3374,7 +3411,7 @@ static int getstates(const char *funcname)
 static statelist *attachstatelist(symbol *sym,int state_id)
 {
   assert(sym!=NULL);
-  if ((sym->usage & uDEFINE)!=0 && (sym->states==NULL || state_id==0))
+  if (sym->ident==iFUNCTN && (sym->usage & uDEFINE)!=0 && (sym->states==NULL || state_id==0))
     error(21,sym->name); /* function already defined, either without states or the current definition has no states */
 
   if (state_id!=0) {
@@ -3551,7 +3588,7 @@ static int operatoradjust(int opertok,symbol *sym,char *opername,int resulttag)
   symbol *oldsym;
 
   if (opertok==0)
-    return TRUE;
+    return true;
 
   assert(sym!=NULL && sym->ident==iFUNCTN && sym->dim.arglist!=NULL);
   /* count arguments and save (first two) tags */
@@ -3623,7 +3660,7 @@ static int operatoradjust(int opertok,symbol *sym,char *opername,int resulttag)
   if (opertok!='~')
     sym->usage |= uRETVALUE;
 
-  return TRUE;
+  return true;
 }
 
 static int check_operatortag(int opertok,int resulttag,char *opername)
@@ -3639,17 +3676,17 @@ static int check_operatortag(int opertok,int resulttag,char *opername)
   case tlGE:
     if (resulttag!=pc_addtag("bool")) {
       error(63,opername,"bool:"); /* operator X requires a "bool:" result tag */
-      return FALSE;
+      return false;
     } /* if */
     break;
   case '~':
     if (resulttag!=0) {
       error(63,opername,"_:");    /* operator "~" requires a "_:" result tag */
-      return FALSE;
+      return false;
     } /* if */
     break;
   } /* switch */
-  return TRUE;
+  return true;
 }
 
 static char *tag2str(char *dest,int tag)
@@ -3687,7 +3724,7 @@ static int parse_funcname(const char *fname,int *tag1,int *tag2,char *opname)
    */
   if (*fname=='-') {
     *tag1=0;
-    unary=TRUE;
+    unary=true;
     ptr=fname;
   } else {
     *tag1=(int)strtol(fname,(char**)&ptr,16);
@@ -3795,10 +3832,10 @@ static void funcstub(int fnative)
     size=needsub(']',&dimnames[numdim]);/* get size; size==0 for "var[]" */
     if (size==0)
       error(9);                 /* invalid array size */
-    #if INT_MAX < LONG_MAX
+#   if INT_MAX < LONG_MAX
       if (size>INT_MAX)
         error(105);             /* overflow, exceeding capacity */
-    #endif
+#   endif
     dim[numdim++]=(int)size;
   } /* while */
   usage=0;
@@ -3812,10 +3849,10 @@ static void funcstub(int fnative)
     if (size==0)
       error(9);                 /* invalid array size */
     size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
-    #if INT_MAX < LONG_MAX
+#   if INT_MAX < LONG_MAX
       if (size>INT_MAX)
         error(105);             /* overflow, exceeding capacity */
-    #endif
+#   endif
     dim[numdim++]=(int)size;
   } /* if */
   if (matchtoken('['))
@@ -3827,7 +3864,7 @@ static void funcstub(int fnative)
   if (sym==NULL)
     return;
   if ((sym->flags & flgENTRYPOINT)!=0)
-    fpublic=FALSE;
+    fpublic=false;
   if (fnative) {
     sym->usage=(char)(uNATIVE | uRETVALUE | uDEFINE | (sym->usage & uPROTOTYPED));
     sym->x.lib=curlibrary;
@@ -3839,9 +3876,9 @@ static void funcstub(int fnative)
   } /* if */
   sym->usage|=uFORWARD;
 
-  declargs(sym,FALSE);
+  declargs(sym,false);
   /* "declargs()" found the ")" */
-  sc_attachdocumentation(sym,TRUE);  /* attach any documenation to the function */
+  sc_attachdocumentation(sym,true);  /* attach any documenation to the function */
   if (!operatoradjust(opertok,sym,symbolname,tag))
     sym->usage &= ~uDEFINE;
 
@@ -3908,7 +3945,7 @@ static void funcstub(int fnative)
   } /* if */
 
   litidx=0;                     /* clear the literal pool */
-  delete_symbols(&loctab,0,TRUE,TRUE);/* clear local variables queue */
+  delete_symbols(&loctab,0,true,true);/* clear local variables queue */
 }
 
 /*  newfunc    - begin a function
@@ -3957,12 +3994,12 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     if (tok==tOPERATOR) {
       opertok=operatorname(symbolname);
       if (opertok==0)
-        return TRUE;            /* error message already given */
+        return true;            /* error message already given */
       check_operatortag(opertok,tag,symbolname);
     } else {
       if (tok!=tSYMBOL && freading) {
         error_suggest(20,str,iFUNCTN);  /* invalid symbol name */
-        return FALSE;
+        return false;
       } /* if */
       assert(strlen(str)<=sNAMEMAX);
       strcpy(symbolname,str);
@@ -3970,23 +4007,23 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   } /* if */
   /* check whether this is a function or a variable declaration */
   if (!matchtoken('('))
-    return FALSE;
+    return false;
   /* so it is a function, proceed */
   funcline=pc_curline;          /* save line at which the function is defined */
   if (symbolname[0]==PUBLIC_CHAR) {
-    fpublic=TRUE;               /* implicitly public function */
+    fpublic=true;               /* implicitly public function */
     if (stock)
       error(42);                /* invalid combination of class specifiers */
   } /* if */
   sym=fetchfunc(symbolname,tag);/* get a pointer to the function entry */
   if (sym==NULL || (sym->usage & uNATIVE)!=0)
-    return TRUE;                /* it was recognized as a function declaration, but not as a valid one */
+    return true;                /* it was recognized as a function declaration, but not as a valid one */
   sym->lnumber=pc_curline;
   sym->fnumber=fcurrent;
   /* attach a preceding comment to the function's documentation */
-  sc_attachdocumentation(sym,TRUE);
+  sc_attachdocumentation(sym,true);
   if ((sym->usage & uPUBLIC)!=0 && !fpublic) {
-    fpublic=TRUE;               /* earlier (forward) declaration said this is a public function */
+    fpublic=true;               /* earlier (forward) declaration said this is a public function */
     error(25);                  /* function definition does not match prototype */
   } /* if */
   if (fpublic && (sym->flags & flgENTRYPOINT)==0)
@@ -4004,7 +4041,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     sc_status=statWRITE;  /* temporarily set status to WRITE, so the warning isn't blocked */
     error(208,symbolname);
     sc_status=curstatus;
-    sc_reparse=TRUE;      /* must add another pass to "initial scan" phase */
+    sc_reparse=true;      /* must add another pass to "initial scan" phase */
   } /* if */
   if ((sym->flags & flgENTRYPOINT)!=0) {
     /* verify that there are not two functions with an entry point flag */
@@ -4025,7 +4062,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
       error(235,symbolname);
   }
   /* declare all arguments */
-  argcnt=declargs(sym,TRUE);
+  argcnt=declargs(sym,true);
   opererror=!operatoradjust(opertok,sym,symbolname,tag);
   if ((sym->flags & flgENTRYPOINT)!=0
       || strcmp(symbolname,_ENTRYFUNC)==0 || strcmp(symbolname,_EXITFUNC)==0)
@@ -4043,8 +4080,8 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   if (matchtoken(';')) {
     sym->usage|=uFORWARD;
     error(218);         /* old style prototypes used with optional semicolons */
-    delete_symbols(&loctab,0,TRUE,TRUE);  /* prototype is done; forget everything */
-    return TRUE;
+    delete_symbols(&loctab,0,true,true);  /* prototype is done; forget everything */
+    return true;
   } /* if */
   /* so it is not a prototype, proceed */
   /* if this is a function that is not referred to (this can only be detected
@@ -4081,16 +4118,16 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   } /* if */
   startfunc(sym->name,ovl_index); /* creates stack frame */
   insert_dbgline(funcline);
-  setline(FALSE);
+  setline(false);
   if (sc_alignnext) {
     alignframe(sc_dataalign);
-    sc_alignnext=FALSE;
+    sc_alignnext=false;
   } /* if */
   declared=0;           /* number of local cells */
   rettype=(sym->usage & uRETVALUE);      /* set "return type" variable */
   curfunc=sym;
   define_args();        /* add the symbolic info for the function arguments */
-  #if !defined PAWN_LIGHT
+# if !defined PAWN_LIGHT
     if (matchtoken('{')) {
       lexpush();
     } else {
@@ -4103,9 +4140,9 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
        */
       insert_docstring_separator();
     } /* if */
-  #endif
+# endif
   sc_curstates=state_id;/* set state id, for accessing global state variables */
-  statement(NULL,FALSE);
+  statement(NULL,false);
   sc_curstates=0;
   if ((rettype & uRETVALUE)!=0)
     sym->usage|=uRETVALUE;
@@ -4136,7 +4173,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     sym->codeaddr=code_idx;
   else
     stlist->endaddr=code_idx;
-  #if !defined PAWN_LIGHT
+# if !defined PAWN_LIGHT
     if (sc_status==statBROWSE && stlist!=NULL && stlist->id!=FALLBACK) {
       /* run through the documentation strings, to check for transitions (but
          ignore it if this function is marked as the fallback; there is no
@@ -4165,16 +4202,16 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
         }
       }
     }
-  #endif
-  sc_attachdocumentation(sym,FALSE);  /* attach collected documentation to the function */
+# endif
+  sc_attachdocumentation(sym,false);  /* attach collected documentation to the function */
   if (litidx) {                 /* if there are literals defined */
     glb_declared+=litidx;
     begdseg();                  /* flip to DATA segment */
     dumplits();                 /* dump literal strings */
     litidx=0;
   } /* if */
-  testsymbols(&loctab,0,TRUE,TRUE);     /* test for unused arguments and labels */
-  delete_symbols(&loctab,0,TRUE,TRUE);  /* clear local variables queue */
+  testsymbols(&loctab,0,true,true);     /* test for unused arguments and labels */
+  delete_symbols(&loctab,0,true,true);  /* clear local variables queue */
   assert(loctab.next==NULL);
   curfunc=NULL;
   if (sc_status==statSKIP) {
@@ -4182,7 +4219,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     code_idx=cidx;
     glb_declared=glbdecl;
   } /* if */
-  return TRUE;
+  return true;
 }
 
 static int argcompare(arginfo *a1,arginfo *a2)
@@ -4238,7 +4275,7 @@ static int argcompare(arginfo *a1,arginfo *a2)
  */
 static int declargs(symbol *sym,int chkshadow)
 {
-  #define MAXTAGS 16
+# define MAXTAGS 16
   char *ptr;
   int argcnt,oldargcnt,numtags;
   cell val;
@@ -4257,7 +4294,7 @@ static int declargs(symbol *sym,int chkshadow)
   argcnt=0;                             /* zero aruments up to now */
   ident=iVARIABLE;
   numtags=0;
-  fconst=FALSE;
+  fconst=false;
   fpublic= (sym->usage & uPUBLIC)!=0;
   assert(litidx==0);                    /* literal queue should be empty */
   /* the '(' parantheses has already been parsed */
@@ -4280,7 +4317,7 @@ static int declargs(symbol *sym,int chkshadow)
       case tCONST:
         if (ident!=iVARIABLE || numtags>0)
           error(1,"-identifier-","const");
-        fconst=TRUE;
+        fconst=true;
         break;
       case tLABEL:
         if (numtags>0)
@@ -4355,7 +4392,7 @@ static int declargs(symbol *sym,int chkshadow)
         argcnt++;
         ident=iVARIABLE;
         numtags=0;
-        fconst=FALSE;
+        fconst=false;
         break;
       case tELLIPS:
         if (ident!=iVARIABLE)
@@ -4370,7 +4407,7 @@ static int declargs(symbol *sym,int chkshadow)
           memset(&sym->dim.arglist[argcnt+1],0,sizeof(arginfo));  /* keep the list terminated */
           sym->dim.arglist[argcnt].ident=iVARARGS;
           sym->dim.arglist[argcnt].name[0]='\0';
-          sym->dim.arglist[argcnt].hasdefault=FALSE;
+          sym->dim.arglist[argcnt].hasdefault=false;
           sym->dim.arglist[argcnt].defvalue.val=0;
           sym->dim.arglist[argcnt].defvalue_tag=0;
           sym->dim.arglist[argcnt].numtags=numtags;
@@ -4465,7 +4502,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
   int usage,matchbrace;
 
   strcpy(arg->name,name);
-  arg->hasdefault=FALSE;        /* preset (most common case) */
+  arg->hasdefault=false;        /* preset (most common case) */
   arg->defvalue.val=0;          /* clear */
   arg->defvalue_tag=0;
   arg->numdim=0;
@@ -4486,10 +4523,10 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
           return;
         } /* if */
         size=needsub(']',&arg->dimnames[arg->numdim]);/* may be zero here, it is a pointer anyway */
-        #if INT_MAX < LONG_MAX
+#       if INT_MAX < LONG_MAX
           if (size>INT_MAX)
             error(105);           /* overflow, exceeding capacity */
-        #endif
+#       endif
         arg->dim[arg->numdim]=(int)size;
         arg->numdim+=1;
       } while (matchtoken('['));
@@ -4504,10 +4541,10 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       usage=uPACKED;
       size=needsub('}',&arg->dimnames[arg->numdim]);/* may be zero here, it is a pointer anyway */
       size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
-      #if INT_MAX < LONG_MAX
+#     if INT_MAX < LONG_MAX
         if (size>INT_MAX)
           error(105);           /* overflow, exceeding capacity */
-      #endif
+#     endif
       arg->dim[arg->numdim]=(int)size;
       arg->numdim+=1;
     } /* if */
@@ -4526,7 +4563,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       if (arg->defvalue.array.data!=NULL) {
         int i;
         memcpy(arg->defvalue.array.data,litq,litidx*sizeof(cell));
-        arg->hasdefault=TRUE;   /* argument has default value */
+        arg->hasdefault=true;   /* argument has default value */
         arg->defvalue.array.size=litidx;
         arg->defvalue.array.addr=-1;
         /* calulate size to reserve on the heap */
@@ -4542,7 +4579,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
     if (matchtoken('=')) {
       unsigned char size_tag_token;
       assert(ident==iVARIABLE || ident==iREFERENCE);
-      arg->hasdefault=TRUE;     /* argument has a default value */
+      arg->hasdefault=true;     /* argument has a default value */
       size_tag_token=(unsigned char)(matchtoken(tSIZEOF) ? uSIZEOF : 0);
       if (size_tag_token==0)
         size_tag_token=(unsigned char)(matchtoken(tTAGOF) ? uTAGOF : 0);
@@ -4575,7 +4612,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       } else {
         constexpression(&arg->defvalue.val,&arg->defvalue_tag,NULL);
         assert(numtags>0);
-        if (!matchtag(tags[0],arg->defvalue_tag,TRUE))
+        if (!matchtag(tags[0],arg->defvalue_tag,true))
           error(213);           /* tagname mismatch */
       } /* if */
     } /* if */
@@ -4647,7 +4684,7 @@ static int find_xmltag(char *source,
   while ((ptr=strchr(ptr,'<'))!=NULL) {
     int match;
     *outer_start=ptr;           /* be optimistic... */
-    match=FALSE;                /* ...and pessimistic at the same time */
+    match=false;                /* ...and pessimistic at the same time */
     ptr++;                      /* skip '<' */
     while (*ptr!='\0' && *ptr<=' ')
       ptr++;                    /* skip white space */
@@ -4673,11 +4710,11 @@ static int find_xmltag(char *source,
                     || *(ptr+xmlvalue_len)=='>'
                     || *(ptr+xmlvalue_len)=='"'
                     || *(ptr+xmlvalue_len)=='\''))
-              match=TRUE;       /* found it */
+              match=true;       /* found it */
           } /* if */
         } /* if */
       } else {
-        match=TRUE;             /* don't check the parameter */
+        match=true;             /* don't check the parameter */
       } /* if */
     } /* if */
     if (match) {
@@ -4714,10 +4751,10 @@ static int find_xmltag(char *source,
           } /* if */
         } /* if */
       } /* while */
-      return TRUE;
+      return true;
     } /* if */
   } /* while */
-  return FALSE; /* not found */
+  return false; /* not found */
 }
 
 static char *xmlencode(char *dest,char *source)
@@ -4792,12 +4829,12 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
 
   /* adapt the installation directory */
   strcpy(symname,sc_rootpath);
-  #if DIRSEP_CHAR=='\\'
+# if DIRSEP_CHAR=='\\'
     while ((ptr=strchr(symname,':'))!=NULL)
       *ptr='|';
     while ((ptr=strchr(symname,DIRSEP_CHAR))!=NULL)
       *ptr='/';
-  #endif
+# endif
 
   /* the XML header */
   fprintf(log,"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n");
@@ -5400,7 +5437,7 @@ static int checkundefined(symbol *root)
 static int testsymbols(symbol *root,int level,int testlabs,int testconst)
 {
   char symname[2*sNAMEMAX+16];
-  int entry=FALSE;
+  int entry=false;
 
   symbol *sym=root->next;
   while (sym!=NULL && sym->compound>=level) {
@@ -5426,7 +5463,7 @@ static int testsymbols(symbol *root,int level,int testlabs,int testconst)
         } /* if */
       } /* if */
       if (((sym->usage & uPUBLIC)!=0 || (sym->flags & flgENTRYPOINT)!=0) && (sym->usage & uDEFINE)!=0)
-        entry=TRUE;                 /* there is an entry point */
+        entry=true;                 /* there is an entry point */
       /* also mark the function to the debug information */
       if (((sym->usage & uREAD)!=0 || (sym->usage & uPUBLIC)!=0 && (sym->usage & uDEFINE)!=0)
           && (sym->usage & uNATIVE)==0)
@@ -5534,7 +5571,7 @@ static cell calc_array_datasize(symbol *sym, cell *offset)
 static void destructsymbols(symbol *root,int level)
 {
   cell offset=0;
-  int savepri=FALSE;
+  int savepri=false;
   symbol *sym=root->next;
   while (sym!=NULL && sym->compound>=level) {
     if (sym->ident==iVARIABLE || sym->ident==iARRAY) {
@@ -5547,7 +5584,7 @@ static void destructsymbols(symbol *root,int level)
         /* save PRI, in case of a return statment */
         if (!savepri) {
           pushreg(sPRI);        /* right-hand operand is in PRI */
-          savepri=TRUE;
+          savepri=true;
         } /* if */
         /* if the variable is an array, get the number of elements */
         if (sym->ident==iARRAY) {
@@ -5647,12 +5684,12 @@ static int delete_constval(constvalue *table,char *name)
     if (strcmp(name,cur->name)==0) {
       prev->next=cur->next;
       free(cur);
-      return TRUE;
+      return true;
     } /* if */
     prev=cur;
     cur=cur->next;
   } /* while */
-  return FALSE;
+  return false;
 }
 #endif
 
@@ -5694,23 +5731,23 @@ SC_FUNC int compare_consttable(constvalue *table1,constvalue *table2)
   constvalue *cur1,*cur2;
 
   if (table1==NULL && table2==NULL)
-    return TRUE;
+    return true;
   else if (table1==NULL || table2==NULL)
-    return FALSE;
+    return false;
 
   assert(table1!=NULL && table2!=NULL);
   cur1=table1->next;
   cur2=table2->next;
   while (cur1!=NULL && cur2!=NULL) {
     if (cur1->index!=cur2->index || cur1->value!=cur2->value)
-      return FALSE;
+      return false;
     if (strcmp(cur1->name,cur2->name)!=0)
-      return FALSE;
+      return false;
     cur1=cur1->next;
     cur2=cur2->next;
   } /* while */
 
-  return TRUE;
+  return true;
 }
 
 /*  add_constant
@@ -5770,7 +5807,7 @@ static void statement(int *lastindent,int allow_decl)
   tok=lex(&val,&st);
   if (tok!='{') {
     insert_dbgline(pc_curline);
-    setline(TRUE);
+    setline(true);
   } /* if */
   /* lex() has set pc_stmtindent */
   if (lastindent!=NULL && tok!=tLABEL) {
@@ -5779,7 +5816,7 @@ static void statement(int *lastindent,int allow_decl)
         error(217);             /* loose indentation */
     } /* if */
     *lastindent=pc_stmtindent;
-    indent_nowarn=FALSE;        /* if warning was blocked, re-enable it */
+    indent_nowarn=false;        /* if warning was blocked, re-enable it */
   } /* if */
   switch (tok) {
   case 0:
@@ -5788,7 +5825,7 @@ static void statement(int *lastindent,int allow_decl)
   case tNEW:
   case tVAR:
     if (allow_decl) {
-      declloc(FALSE);
+      declloc(false);
       lastst=tVAR;
     } else {
       error(3);                 /* declaration only valid in a block */
@@ -5796,7 +5833,7 @@ static void statement(int *lastindent,int allow_decl)
     break;
   case tSTATIC:
     if (allow_decl) {
-      declloc(TRUE);
+      declloc(true);
       lastst=tVAR;
     } else {
       error(3);                 /* declaration only valid in a block */
@@ -5871,15 +5908,15 @@ static void statement(int *lastindent,int allow_decl)
     decl_const(sLOCAL);
     break;
   default:          /* non-empty expression */
-    sc_allowproccall=TRUE;
+    sc_allowproccall=true;
     lexpush();      /* analyze token later */
-    doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE,FALSE);
+    doexpr(true,true,true,true,NULL,NULL,false,false);
     if (matchtoken('}'))
       lexpush();    /* a closing brace terminates the expression, but must be re-analysed */
     else
       needtoken(tTERM);
     lastst=tEXPR;
-    sc_allowproccall=FALSE;
+    sc_allowproccall=false;
   } /* switch */
 }
 
@@ -5915,7 +5952,7 @@ static void compound(int stmt_sameline)
     } else {
       if (count_stmt>0 && (lastst==tRETURN || lastst==tBREAK || lastst==tCONTINUE || lastst==tENDLESS))
         error(225);             /* unreachable code */
-      statement(&indent,TRUE);  /* do a statement */
+      statement(&indent,true);  /* do a statement */
       count_stmt++;
     } /* if */
   } /* while */
@@ -5923,9 +5960,9 @@ static void compound(int stmt_sameline)
     destructsymbols(&loctab,nestlevel);
   if (lastst!=tRETURN && lastst!=tGOTO)
     modstk((int)(declared-save_decl)*pc_cellsize);  /* delete local variable space */
-  testsymbols(&loctab,nestlevel,FALSE,TRUE);        /* look for unused block locals */
+  testsymbols(&loctab,nestlevel,false,true);        /* look for unused block locals */
   declared=save_decl;
-  delete_symbols(&loctab,nestlevel,FALSE,TRUE);     /* erase local symbols, but
+  delete_symbols(&loctab,nestlevel,false,true);     /* erase local symbols, but
                                                      * retain block local labels
                                                      * (within the function) */
   nestlevel-=1;                 /* decrease compound statement level */
@@ -5938,13 +5975,14 @@ static void compound(int stmt_sameline)
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
                   int *tag,symbol **symptr,int chkfuncresult,int in_test)
 {
-  int index,ident;
-  int localstaging=FALSE;
+  unsigned index;
+  int ident;
+  int localstaging=false;
   cell val;
 
   if (!staging) {
-    stgset(TRUE);               /* start stage-buffering */
-    localstaging=TRUE;
+    stgset(true);               /* start stage-buffering */
+    localstaging=true;
     assert(stgidx==0);
   } /* if */
   index=stgidx;
@@ -5953,7 +5991,7 @@ static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
     /* on second round through, mark the end of the previous expression */
     if (index!=stgidx)
       markexpr(sEXPR,NULL,0);
-    pc_sideeffect=FALSE;
+    pc_sideeffect=false;
     ident=expression(&val,tag,symptr,NULL,chkfuncresult,in_test);
     if (!allowarray && (ident==iARRAY || ident==iREFARRAY))
       error(33,"-unknown-");    /* array must be indexed */
@@ -5964,14 +6002,14 @@ static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
       else
         error(215);             /* expression has no effect */
     }
-    sc_allowproccall=FALSE;     /* cannot use "procedure call" syntax anymore */
+    sc_allowproccall=false;     /* cannot use "procedure call" syntax anymore */
   } while (comma && matchtoken(',')); /* more? */
   if (mark_endexpr)
     markexpr(sEXPR,NULL,0);     /* optionally, mark the end of the expression */
   errorset(sEXPRRELEASE,0);
   if (localstaging) {
     stgout(index);
-    stgset(FALSE);              /* stop staging */
+    stgset(false);              /* stop staging */
   } /* if */
   return ident;
 }
@@ -5980,15 +6018,17 @@ static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
  */
 SC_FUNC int constexpression(cell *val,int *tag,symbol **symptr)
 {
-  int ident,index;
+  unsigned index;
+  int ident;
   cell cidx;
 
-  stgset(TRUE);         /* start stage-buffering */
+  assert(!staging);
+  stgset(true);         /* start stage-buffering */
   stgget(&index,&cidx); /* mark position in code generator */
   errorset(sEXPRMARK,0);
-  ident=expression(val,tag,symptr,NULL,FALSE,FALSE);
+  ident=expression(val,tag,symptr,NULL,false,false);
   stgdel(index,cidx);   /* scratch generated code */
-  stgset(FALSE);        /* stop stage-buffering */
+  stgset(false);        /* stop stage-buffering */
   if (ident!=iCONSTEXPR) {
     error(8);           /* must be constant expression */
     litidx=0;           /* clear the literal pool */
@@ -6012,39 +6052,39 @@ SC_FUNC int constexpression(cell *val,int *tag,symbol **symptr)
  */
 static int test(int label,int invert,int test_true,int *parenthesized)
 {
-  int index,tok;
+  unsigned index;
   cell cidx;
-  int ident,tag;
+  int ident,tag,tok;
   int parens,simple_true;
   cell constval;
   symbol *sym;
-  int localstaging=FALSE;
+  int localstaging=false;
 
   if (!staging) {
-    stgset(TRUE);               /* start staging */
-    localstaging=TRUE;
-    #if !defined NDEBUG
+    stgset(true);               /* start staging */
+    localstaging=true;
+#   if !defined NDEBUG
       stgget(&index,&cidx);     /* should start at zero if started locally */
       assert(index==0);
-    #endif
+#   endif
   } /* if */
 
-  parens=TRUE;
-  simple_true= test_true ? NOT_SET : FALSE;
+  parens=true;
+  simple_true= test_true ? NOT_SET : false;
   do {
     int subparens;
     stgget(&index,&cidx);       /* mark position (of last expression) in
                                  * code generator */
-    ident=expression(&constval,&tag,&sym,&subparens,TRUE,TRUE);
+    ident=expression(&constval,&tag,&sym,&subparens,true,true);
     parens=parens && subparens;
     if (simple_true==NOT_SET)
       simple_true= (ident==iCONSTEXPR && sym!=NULL && strcmp(sym->name,"true")==0);
     tok=matchtoken(',');
     if (tok) {
       markexpr(sEXPR,NULL,0);
-      sc_allowproccall=FALSE;   /* cannot use "procedure call" syntax anymore */
-      parens=FALSE;             /* expression is not fully parenthesized if comma was found */
-      simple_true=FALSE;
+      sc_allowproccall=false;   /* cannot use "procedure call" syntax anymore */
+      parens=false;             /* expression is not fully parenthesized if comma was found */
+      simple_true=false;
     }
   } while (tok); /* do */
   if (parenthesized!=NULL)
@@ -6057,7 +6097,7 @@ static int test(int label,int invert,int test_true,int *parenthesized)
     int testtype=0;
     stgdel(index,cidx);
     if (constval) {             /* code always executed */
-      if (simple_true!=TRUE)
+      if (simple_true!=true)
         error(206);             /* redundant test: always non-zero */
       testtype=tENDLESS;
     } else {
@@ -6067,7 +6107,7 @@ static int test(int label,int invert,int test_true,int *parenthesized)
     } /* if */
     if (localstaging) {
       stgout(0);                /* write "jumplabel" code */
-      stgset(FALSE);            /* stop staging */
+      stgset(false);            /* stop staging */
     } /* if */
     return testtype;
   } /* if */
@@ -6081,8 +6121,8 @@ static int test(int label,int invert,int test_true,int *parenthesized)
   markexpr(sEXPR,NULL,0);       /* end expression (give optimizer a chance) */
   if (localstaging) {
     stgout(0);                  /* output queue from the very beginning (see
-                                 * assert() when localstaging is set to TRUE) */
-    stgset(FALSE);              /* stop staging */
+                                 * assert() when localstaging is set to true) */
+    stgset(false);              /* stop staging */
   } /* if */
   return 0;
 }
@@ -6092,10 +6132,10 @@ static int doif(void)
   int ifindent=pc_stmtindent;   /* save the indent of the "if" instruction */
   int flab1=getlabel();         /* get label number for false branch */
   int parens;
-  test(flab1,FALSE,FALSE,&parens); /* get expression, branch to flab1 if false */
+  test(flab1,false,false,&parens); /* get expression, branch to flab1 if false */
   if (!parens && lexpeek()!='{')
     needtoken(tTERM);           /* if expression is not parenthesized and not followed by '{', must end with newline */
-  statement(NULL,FALSE);        /* if true, do a statement */
+  statement(NULL,false);        /* if true, do a statement */
   if (!matchtoken(tELSE)) {     /* if...else ? */
     setlabel(flab1);            /* no, simple if..., print false label */
   } else {
@@ -6109,7 +6149,7 @@ static int doif(void)
       jumplabel(flab2);         /* "true" branch jumps around "else" clause, unless the "true" branch statement already jumped */
     lastst=tELSE;               /* flag this as an "else" clause, for testing expressions */
     setlabel(flab1);            /* print false label */
-    statement(NULL,FALSE);      /* do "else" clause */
+    statement(NULL,false);      /* do "else" clause */
     setlabel(flab2);            /* print true label */
     /* if both the "true" branch and the "false" branch ended with the same
      * kind of statement, set the last statement id to that kind, rather than
@@ -6134,11 +6174,11 @@ static int dowhile(void)
    * a loop. To make sure that each loop has a break opcode, even for the
    * tiniest loop, set it below the top of the loop
    */
-  setline(TRUE);
-  endlessloop=test(wq[wqEXIT],FALSE,TRUE,&parens);/* branch to wq[wqEXIT] if false */
+  setline(true);
+  endlessloop=test(wq[wqEXIT],false,true,&parens);/* branch to wq[wqEXIT] if false */
   if (!parens && lexpeek()!='{')
     needtoken(tTERM);           /* if expression is not parenthesized and not followed by '{', must end with newline */
-  statement(NULL,FALSE);        /* if so, do a statement */
+  statement(NULL,false);        /* if so, do a statement */
   jumplabel(wq[wqLOOP]);        /* and loop to "while" start */
   setlabel(wq[wqEXIT]);         /* exit label */
   delwhile();                   /* delete queue entry */
@@ -6150,7 +6190,7 @@ static int dowhile(void)
 
 /*
  *  Note that "continue" will in this case not jump to the top of the loop, but
- *  to the end: just before the TRUE-or-FALSE testing code.
+ *  to the end: just before the true-or-false testing code.
  */
 static int dodo(void)
 {
@@ -6162,12 +6202,12 @@ static int dodo(void)
   addwhile(wq);           /* see "dowhile" for more info */
   top=getlabel();         /* make a label first */
   setlabel(top);          /* loop label */
-  statement(NULL,FALSE);
+  statement(NULL,false);
   needtoken(tWHILE);
   setlabel(wq[wqLOOP]);   /* "continue" always jumps to WQLOOP. */
-  setline(TRUE);
+  setline(true);
   parens=matchtoken('(');
-  endlessloop=test(wq[wqEXIT],FALSE,FALSE,NULL);
+  endlessloop=test(wq[wqEXIT],false,false,NULL);
   jumplabel(top);
   setlabel(wq[wqEXIT]);
   delwhile();
@@ -6183,7 +6223,7 @@ static int dofor(void)
   int wq[wqSIZE];
   cell save_decl;
   int save_nestlevel,save_endlessloop,skiplab;
-  int index,parens;
+  int result,parens;
   int *ptr;
 
   save_decl=declared;
@@ -6200,9 +6240,9 @@ static int dofor(void)
        * 'compound statement' level of it own.
        */
       nestlevel++;
-      declloc(FALSE);           /* declare local variable */
+      declloc(false);           /* declare local variable */
     } else {
-      doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE,FALSE);  /* expression 1 */
+      doexpr(true,true,true,true,NULL,NULL,false,false);  /* expression 1 */
       needtoken(';');
     } /* if */
   } /* if */
@@ -6217,43 +6257,42 @@ static int dofor(void)
   ptr[wqCONT]=(int)declared;
   jumplabel(skiplab);           /* skip expression 3 1st time */
   setlabel(wq[wqLOOP]);         /* "continue" goes to this label: expr3 */
-  setline(TRUE);
+  setline(true);
   /* Expressions 2 and 3 are reversed in the generated code: expression 3
    * precedes expression 2. When parsing, the code is buffered and marks for
    * the start of each expression are insterted in the buffer.
    */
   assert(!staging);
-  stgset(TRUE);                 /* start staging */
+  stgset(true);                 /* start staging */
   assert(stgidx==0);
-  index=stgidx;
   stgmark(sSTARTREORDER);
   stgmark((unsigned char)(sEXPRSTART+0));    /* mark start of 2nd expression in stage */
   setlabel(skiplab);                         /* jump to this point after 1st expression */
   if (matchtoken(';')) {
     endlessloop=1;
   } else {
-    endlessloop=test(wq[wqEXIT],FALSE,FALSE,NULL);/* expression 2 (jump to wq[wqEXIT] if false) */
+    endlessloop=test(wq[wqEXIT],false,false,NULL);/* expression 2 (jump to wq[wqEXIT] if false) */
     needtoken(';');
   } /* if */
   stgmark((unsigned char)(sEXPRSTART+1));    /* mark start of 3th expression in stage */
   if (parens) {
     if (!matchtoken(')')) {
-      doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE,FALSE);  /* expression 3 */
+      doexpr(true,true,true,true,NULL,NULL,false,false);  /* expression 3 */
       needtoken(')');
     } /* if */
   } else {
     if (matchtoken('{')==1) {
       lexpush();                /* analyzed again in statement() */
     } else {
-      doexpr(TRUE,TRUE,TRUE,TRUE,NULL,NULL,FALSE,FALSE);  /* expression 3 */
+      doexpr(true,true,true,true,NULL,NULL,false,false);  /* expression 3 */
       if (lexpeek()!='{')
         needtoken(tTERM);       /* if expression is not parenthesized and not followed by '{', must end with newline */
     } /* if */
   } /* if */
   stgmark(sENDREORDER);         /* mark end of reversed evaluation */
-  stgout(index);
-  stgset(FALSE);                /* stop staging */
-  statement(NULL,FALSE);
+  stgout(0);
+  stgset(false);                /* stop staging */
+  statement(NULL,false);
   jumplabel(wq[wqLOOP]);
   setlabel(wq[wqEXIT]);
   delwhile();
@@ -6265,15 +6304,15 @@ static int dofor(void)
      */
     destructsymbols(&loctab,nestlevel);
     modstk((int)(declared-save_decl)*pc_cellsize);
-    testsymbols(&loctab,nestlevel,FALSE,TRUE);  /* look for unused block locals */
+    testsymbols(&loctab,nestlevel,false,true);  /* look for unused block locals */
     declared=save_decl;
-    delete_symbols(&loctab,nestlevel,FALSE,TRUE);
+    delete_symbols(&loctab,nestlevel,false,true);
     nestlevel=save_nestlevel;     /* reset 'compound statement' nesting level */
   } /* if */
 
-  index=endlessloop ? tENDLESS : tFOR;
+  result=endlessloop ? tENDLESS : tFOR;
   endlessloop=save_endlessloop;
-  return index;
+  return result;
 }
 
 /* The switch statement is incompatible with its C sibling:
@@ -6301,7 +6340,7 @@ static void doswitch(void)
   int parens;
 
   parens=matchtoken('(');
-  doexpr(TRUE,FALSE,FALSE,FALSE,NULL,NULL,TRUE,TRUE);/* evaluate switch expression */
+  doexpr(true,false,false,false,NULL,NULL,true,true);/* evaluate switch expression */
   if (parens)
     needtoken(')');
   /* generate the code for the switch statement, the label is the address
@@ -6309,21 +6348,21 @@ static void doswitch(void)
    */
   lbl_table=getlabel();
   lbl_case=0;                   /* just to avoid a compiler warning */
-  ffswitch(lbl_table,FALSE);
+  ffswitch(lbl_table,false);
 
   needtoken('{');
   lbl_exit=getlabel();          /* get label number for jumping out of switch */
-  swdefault=FALSE;
+  swdefault=false;
   casecount=0;
   do {
     tok=lex(&val,&str);         /* read in (new) token */
     switch (tok) {
     case tCASE:
-      if (swdefault!=FALSE)
+      if (swdefault!=false)
         error(15);        /* "default" case must be last in switch statement */
       lbl_case=getlabel();
       PUSHSTK_I(sc_allowtags);
-      sc_allowtags=FALSE; /* do not allow tagnames here */
+      sc_allowtags=false; /* do not allow tagnames here */
       do {
         casecount++;
         constexpression(&val,NULL,NULL);
@@ -6341,9 +6380,9 @@ static void doswitch(void)
          * size of an identifier must be at least 1/4th of a cell size in bits
          * (there are 8 hexadecimal digits in a 32-bit number).
          */
-        #if sNAMEMAX < PAWN_CELL_SIZE / 4
-          #error Length of identifier (sNAMEMAX) too small.
-        #endif
+#       if sNAMEMAX < PAWN_CELL_SIZE / 4
+#         error Length of identifier (sNAMEMAX) too small.
+#       endif
         assert(csp!=NULL);
         assert(csp->next==cse);
         insert_constval(csp,cse,itoh(lbl_case),val,0);
@@ -6370,17 +6409,17 @@ static void doswitch(void)
       needtoken(':');                   /* ':' ends the case */
       sc_allowtags=(short)POPSTK_I();   /* reset */
       setlabel(lbl_case);
-      statement(NULL,FALSE);
+      statement(NULL,false);
       jumplabel(lbl_exit);
       break;
     case tDEFAULT:
-      if (swdefault!=FALSE)
+      if (swdefault!=false)
         error(16);         /* multiple defaults in switch */
       lbl_case=getlabel();
       setlabel(lbl_case);
       needtoken(':');
-      swdefault=TRUE;
-      statement(NULL,FALSE);
+      swdefault=true;
+      statement(NULL,false);
       /* Jump to lbl_exit, even thouh this is the last clause in the
        * switch, because the jump table is generated between the last
        * clause of the switch and the exit label.
@@ -6390,33 +6429,33 @@ static void doswitch(void)
     default:
       if (tok!='}') {
         error(2);
-        indent_nowarn=TRUE; /* disable this check */
+        indent_nowarn=true; /* disable this check */
         tok='}';     /* break out of the loop after an error */
       } /* if */
     } /* switch */
   } while (tok!='}');
 
-  #if !defined NDEBUG
+# if !defined NDEBUG
     /* verify that the case table is sorted (unfortunatly, duplicates can
      * occur; there really shouldn't be duplicate cases, but the compiler
      * may not crash or drop into an assertion for a user error). */
     for (cse=caselist.next; cse!=NULL && cse->next!=NULL; cse=cse->next)
       assert(cse->value <= cse->next->value);
-  #endif
+# endif
   /* generate the table here, before lbl_exit (general jump target) */
   setlabel(lbl_table);
-  assert(swdefault==FALSE || swdefault==TRUE);
-  if (swdefault==FALSE) {
+  assert(swdefault==false || swdefault==true);
+  if (swdefault==false) {
     /* store lbl_exit as the "none-matched" label in the switch table */
     label=lbl_exit;
   } else {
     /* lbl_case holds the label of the "default" clause */
     label=lbl_case;
   } /* if */
-  ffcase(casecount,label,TRUE,FALSE);
+  ffcase(casecount,label,true,false);
   /* generate the rest of the table */
   for (cse=caselist.next; cse!=NULL; cse=cse->next)
-    ffcase(cse->value,strtol(cse->name,NULL,16),FALSE,FALSE);
+    ffcase(cse->value,strtol(cse->name,NULL,16),false,false);
 
   setlabel(lbl_exit);
   delete_consttable(&caselist); /* clear list of case labels */
@@ -6426,21 +6465,21 @@ static void doassert(void)
 {
   if ((sc_debug & sCHKBOUNDS)!=0) {
     int flab1=getlabel();       /* get label number for "OK" branch */
-    int pass=test(flab1,TRUE,FALSE,NULL);/* get expression and branch to flab1 if true */
+    int pass=test(flab1,true,false,NULL);/* get expression and branch to flab1 if true */
     insert_dbgline(pc_curline); /* make sure we can find the correct line number */
     if (pass==0)
       ffabort(xASSERTION);      /* don't halt on constant non-zero expression */
     setlabel(flab1);
   } else {
-    int index;
+    unsigned index;
     cell cidx;
-    stgset(TRUE);               /* start staging */
+    stgset(true);               /* start staging */
     stgget(&index,&cidx);       /* mark position in code generator */
     do {
-      expression(NULL,NULL,NULL,NULL,FALSE,TRUE);
+      expression(NULL,NULL,NULL,NULL,false,true);
       stgdel(index,cidx);       /* just scrap the code */
     } while (matchtoken(','));
-    stgset(FALSE);              /* stop staging */
+    stgset(false);              /* stop staging */
   } /* if */
   needtoken(tTERM);
 }
@@ -6536,7 +6575,7 @@ static void doreturn(void)
     int ident;
     if ((rettype & uRETNONE)!=0)
       error(78);                        /* mix "return;" and "return value;" */
-    ident=doexpr(TRUE,FALSE,TRUE,FALSE,&tag,&sym,TRUE,FALSE);
+    ident=doexpr(true,false,true,false,&tag,&sym,true,false);
     needtoken(tTERM);
     if (ident==iARRAY && sym==NULL) {
       /* returning a literal string is not supported (it must be a variable) */
@@ -6557,7 +6596,7 @@ static void doreturn(void)
     rettype|=uRETVALUE;                 /* function returns a value */
     /* check tagname with function tagname */
     assert(curfunc!=NULL);
-    if (!matchtag(curfunc->tag,tag,TRUE))
+    if (!matchtag(curfunc->tag,tag,true))
       error(213);                       /* tagname mismatch */
     if (ident==iARRAY || ident==iREFARRAY) {
       int dim[sDIMEN_MAX];
@@ -6639,7 +6678,7 @@ static void doreturn(void)
          * need an additional pass.
          */
         if ((curfunc->usage & uREAD)!=0)
-          sc_reparse=TRUE;
+          sc_reparse=true;
       } /* if */
       /* get the hidden parameter, copy the array (the array is on the heap;
        * it stays on the heap for the moment, and it is removed -usually- at
@@ -6715,7 +6754,7 @@ static void doexit(void)
   int tag=0;
 
   if (matchtoken(tTERM)==0){
-    doexpr(TRUE,FALSE,FALSE,FALSE,&tag,NULL,TRUE,FALSE);
+    doexpr(true,false,false,false,&tag,NULL,true,false);
     needtoken(tTERM);
   } else {
     ldconst(0,sPRI);
@@ -6731,7 +6770,7 @@ static void dosleep(void)
   int tag=0;
 
   if (matchtoken(tTERM)==0){
-    doexpr(TRUE,FALSE,FALSE,FALSE,&tag,NULL,TRUE,FALSE);
+    doexpr(true,false,false,false,&tag,NULL,true,false);
     needtoken(tTERM);
   } else {
     ldconst(0,sPRI);
@@ -6750,33 +6789,33 @@ static void dostate(void)
   constvalue *automaton;
   constvalue *state;
   statelist *stlist;
-  int flabel,result;
-  int curautomaton;
+  int label_failcond;
+  int curautomaton,result;
   symbol *sym;
   constvalue dummyautomaton,dummystate;
-  #if !defined PAWN_LIGHT
+# if !defined PAWN_LIGHT
     size_t length;
     int index,listid,listindex,stateindex;
     char *doc;
-  #endif
+# endif
 
   /* check for an optional condition */
   if (matchtoken('(')) {
-    flabel=getlabel();          /* get label number for "false" branch */
-    pc_docexpr=TRUE;            /* attach expression as a documentation string */
-    test(flabel,FALSE,FALSE,NULL);  /* get expression, branch to flabel if false */
-    pc_docexpr=FALSE;
+    label_failcond=getlabel();          /* get label number for "false" branch */
+    pc_docexpr=true;            /* attach expression as a documentation string */
+    test(label_failcond,false,false,NULL);  /* get expression, branch to flabel if false */
+    pc_docexpr=false;
     needtoken(')');
   } else {
-    flabel=-1;
+    label_failcond=-1;
   } /* if */
 
   result=sc_getstateid(&automaton,&state,name);
   needtoken(tTERM);
   if (!result) {
     /* the state is unknown, it may be used before definition;
-     * since the report is built after the first state, create a dummy state,
-     * so that the transitions can be documented
+     * since the report is built after the first compile pass, create a dummy
+     * state, so that the transitions can be documented
      */
     if (sc_status==statBROWSE) {
       memset(&dummyautomaton,0,sizeof dummyautomaton);
@@ -6809,12 +6848,71 @@ static void dostate(void)
     ffcall(sym,NULL,0);
   } /* if */
 
+  /* check whether variables need to be cleared */
+  for (sym=glbtab.next; sym!=NULL; sym=sym->next) {
+    assert(sym->states==NULL || sym->states->next!=NULL);
+    if (sym->ident==iVARIABLE
+        && sym->parent==NULL
+        && sym->states!=NULL
+        && state_getfsa(sym->states->next->id)==automaton->index
+        && state_inlist(sym->states->next->id,state->value)
+        && (sym->fvisible==NOT_SET || sym->fvisible==fnumber))
+    {
+      /* state variable that belongs to the same automaton and whose state-list
+       * contains the target state
+       */
+      /* step 1: build a list of all states in the automaton that are absent
+       * from the variable's state list
+       */
+      int count=0,alt_loaded=false,idx;
+      int top=state_top_id(automaton->index);
+      int *slist=malloc((top+1)*sizeof(int));
+      if (slist==NULL)
+        error(103);                     /* insufficient memory */
+      for (idx=1; idx<=top; idx++) {
+        if (state_findid(idx,automaton->index)!=NULL && !state_inlist(sym->states->next->id,idx)) {
+          assert(count<=top);
+          slist[count++]=idx;
+        }
+      }
+      /* step 2: if we move out of a state that is in the list we just collected,
+       * this variable has to be cleared (zero'ed out) --but make an exception
+       * if the list is empty
+       */
+      if (count>0) {
+        assert(!staging);
+        stgset(true);                   /* start staging */
+        assert(stgidx==0);
+        if (!alt_loaded) {
+          assert(automaton!=NULL);
+          loadreg(automaton->value,sALT); /* read current state */
+          alt_loaded=true;
+        }
+        for (idx=0; idx<count; idx++) {
+          int label=getlabel();
+          ob_eq_val(slist[idx]);        /* is ALT (current state) equal to this state in the list? */
+          jmp_eq0(label);               /* if not, skip */
+          storeconst(sym->addr,0);      /* if so, clear */
+          setlabel(label);
+        }
+        stgout(0);                      /* optimize and write */
+        stgset(false);                  /* stop staging */
+      }
+      free(slist);
+    } /* if */
+  } /* for */
+
   /* store the new state id */
+  assert(!staging);
+  stgset(true);                   /* start staging */
+  assert(stgidx==0);
   assert(state!=NULL);
   ldconst(state->value,sPRI);
   assert(automaton!=NULL);
   assert(automaton->index==0 && automaton->name[0]=='\0' || automaton->index>0);
   storereg(automaton->value,sPRI);
+  stgout(0);                      /* optimize and write */
+  stgset(false);                  /* stop staging */
 
   /* find the optional entry() function for the state */
   sym=findglb(_ENTRYFUNC,sGLOBAL);
@@ -6838,10 +6936,10 @@ static void dostate(void)
     } /* if */
   } /* if */
 
-  if (flabel>=0)
-    setlabel(flabel);           /* condition was false, jump around the state switch */
+  if (label_failcond>=0)
+    setlabel(label_failcond);           /* condition was false, jump around the state switch */
 
-  #if !defined PAWN_LIGHT
+# if !defined PAWN_LIGHT
     /* mark for documentation */
     if (sc_status==statBROWSE) {
       const char *str;
@@ -6899,7 +6997,7 @@ static void dostate(void)
         free(doc);
       } /* if */
     } /* if */
-  #endif
+# endif
   delete_autolisttable();
 }
 

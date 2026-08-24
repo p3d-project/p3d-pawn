@@ -20,16 +20,17 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sclist.c 7481 2025-08-20 09:52:36Z thiadmer $
+ *  Version: $Id: sclist.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include "lstring.h"
 #include "sc.h"
 
 #if defined FORTIFY
-  #include <alloc/fortify.h>
+  #include <alloc/Fortify.h>
 #endif
 
 /* a "private" implementation of strdup(), so that porting
@@ -123,11 +124,11 @@ static int delete_stringpair(stringpair *root,stringpair *item)
       free(item->first);
       free(item->second);
       free(item);
-      return TRUE;
+      return true;
     } /* if */
     cur=cur->next;
   } /* while */
-  return FALSE;
+  return false;
 }
 
 /* ----- string list functions ----------------------------------- */
@@ -207,9 +208,9 @@ static int delete_string(stringlist *root,int index)
     assert(item->text!=NULL);
     free(item->text);
     free(item);
-    return TRUE;
+    return true;
   } /* if */
-  return FALSE;
+  return false;
 }
 
 SC_FUNC void delete_stringtable(stringlist *root)
@@ -331,17 +332,17 @@ SC_FUNC int delete_subst(const char *name,int length)
   if (item!=NULL)
     item=(stringpair*)find_stringpair(item,name,length);
   if (item==NULL)
-    return FALSE;
+    return false;
   delete_stringpair(&substpair,item);
   adjustindex(*name);
-  return TRUE;
+  return true;
 }
 
 SC_FUNC void delete_substtable(void)
 {
   unsigned i;
   delete_stringpairtable(&substpair);
-  for (i=0; i<sizearray(substindex); i++)
+  for (i=0; i<countof(substindex); i++)
     substindex[i]=NULL;
 }
 
@@ -641,31 +642,32 @@ SC_FUNC stringlist *insert_dbgsymbol(const symbol *sym)
     funcdisplayname(symname,sym->name);
     /* address tag:name codestart codeend ident scope [tag:dim ...] */
     if (sym->ident==iFUNCTN) {
-      sprintf(string,"S:%" PRIxC " %x:%s %" PRIxC " %" PRIxC " %x %x",
+      snprintf(string,countof(string),"S:%" PRIxC " %x:%s %" PRIxC " %" PRIxC " %x %x",
               CELLCAST(sym->addr),sym->tag,symname,CELLCAST(sym->addr),
               CELLCAST(sym->codeaddr),sym->ident,sym->scope);
     } else {
-      sprintf(string,"S:%" PRIxC " %x:%s %" PRIxC " %" PRIxC " %x %x",
+      snprintf(string,countof(string),"S:%" PRIxC " %x:%s %" PRIxC " %" PRIxC " %x %x",
               CELLCAST(sym->addr),sym->tag,symname,CELLCAST(sym->codeaddr),
               CELLCAST(code_idx),sym->ident,sym->scope);
     } /* if */
     if (sym->ident==iARRAY || sym->ident==iREFARRAY) {
-      #if !defined NDEBUG
-        int count=sym->dim.array.level;
-      #endif
+      int count=sym->dim.array.level;
       const symbol *sub;
-      strcat(string," [ ");
+      strlcat(string," [ ",countof(string));
       for (sub=sym; sub!=NULL; sub=finddepend(sub)) {
-        #if !defined NDEBUG
-          assert(sub->dim.array.level==count);
-          count-=1;
-        #endif
-        sprintf(string+strlen(string),"%x ",(unsigned)sub->dim.array.length);
-        /* ??? also indicate whether the last dimension is packed */
+        size_t len=strlen(string);
+        assert(sub->dim.array.level==count);
+        snprintf(string+len,countof(string)-len,"%x ",(unsigned)sub->dim.array.length);
+        /* ??? also dump index tag */
         /* ??? also dump the index field names (but need a dynamically growing string for this) */
+        if (count==0) {
+          /* ??? also indicate whether the last dimension is packed */
+        }
+        count-=1;
       } /* for */
-      strcat(string,"]");
+      strlcat(string,"]",countof(string));
     } /* if */
+    //??? if (strlen(string)>=countof(string)-1) error(???)
 
     return insert_string(&dbgstrings,string,1);
   } /* if */

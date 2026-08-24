@@ -26,7 +26,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sci18n.c 6966 2023-07-20 18:46:01Z thiadmer $
+ *  Version: $Id: sci18n.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -35,10 +35,6 @@
 #include <string.h>
 #include "sc.h"
 
-#if !defined TRUE
-  #define FALSE         0
-  #define TRUE          1
-#endif
 #if !defined _MAX_PATH
   #define _MAX_PATH     250
 #endif
@@ -119,7 +115,7 @@ SC_FUNC int cp_path(const char *root, const char *directory)
   len2= (directory!=NULL) ? strlen(directory) : 0;
   add_slash2= (len2>0 && root[len2-1]!=DIRSEP_CHAR);
   if (len1+add_slash1+len2+add_slash2>=(_MAX_PATH-MAXCODEPAGE))
-    return FALSE;       /* full filename may not fit */
+    return false;       /* full filename may not fit */
   if (root!=NULL)
     strcpy(cprootpath,root);
   if (add_slash1) {
@@ -135,7 +131,7 @@ SC_FUNC int cp_path(const char *root, const char *directory)
     cprootpath[len1+add_slash1+len2+1]='\0';
   } /* if */
   cp_set(NULL);         /* start with a "linear" table (no translation) */
-  return TRUE;
+  return true;
 }
 
 /* cp_set() loads a codepage from a file. The name parameter may be a
@@ -166,7 +162,7 @@ SC_FUNC int cp_set(const char *name)
     } /* if */
     for (index=0; index<ELEMENTS(bytetable); index++)
       bytetable[index]=(wchar_t)index;
-    return TRUE;
+    return true;
   } /* if */
 
   /* try to open the file as-is */
@@ -208,7 +204,7 @@ SC_FUNC int cp_set(const char *name)
     fp=fopen(filename,"rt");
   } /* if */
   if (fp==NULL)
-    return FALSE;       /* all failed */
+    return false;       /* all failed */
 
   /* clear the tables */
   for (index=0; index<ELEMENTS(bytetable); index++)
@@ -270,7 +266,7 @@ SC_FUNC int cp_set(const char *name)
   } /* while */
 
   fclose(fp);
-  return TRUE;
+  return true;
 }
 
 SC_FUNC cell cp_translate(const unsigned char *string,const unsigned char **endptr)
@@ -392,8 +388,8 @@ SC_FUNC int scan_utf8(FILE *fp,const char *filename)
     return 0;
   #else
     static void *resetpos=NULL;
-    int utf8=TRUE;
-    int firstchar=TRUE,bom_found=FALSE;
+    int utf8=true;
+    int firstchar=true,bom_found=false;
     const unsigned char *ptr;
 
     resetpos=pc_getpossrc(fp,resetpos);
@@ -406,7 +402,7 @@ SC_FUNC int scan_utf8(FILE *fp,const char *filename)
         cell c=get_utf8_char(ptr,&ptr);
         bom_found= (c==0xfeff);
         utf8= (c>=0);
-        firstchar=FALSE;
+        firstchar=false;
       } /* if */
       while (utf8 && *ptr!='\0')
         utf8= (get_utf8_char(ptr,&ptr)>=0);

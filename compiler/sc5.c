@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7487 2025-08-21 18:37:33Z thiadmer $
+ *  Version: $Id: sc5.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #include <assert.h>
 #if defined	__WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -29,7 +29,7 @@
 #include <stdarg.h>     /* ANSI standardized variable argument list functions */
 #include <string.h>
 #if defined FORTIFY
-  #include <alloc/fortify.h>
+  #include <alloc/Fortify.h>
 #endif
 
 #if defined __WIN32__ || defined _WIN32 || defined WIN32 || defined __NT__
@@ -116,19 +116,19 @@ static short lastfile;
   } /* if */
 
   if (number<100){
-    assert(number>0 && number<sizearray(errmsg));
+    assert(number>0 && number<countof(errmsg));
     msg=errmsg[number];
     pre=prefix[0];
-    errflag=TRUE;       /* set errflag (skip rest of erroneous expression) */
+    errflag=true;       /* set errflag (skip rest of erroneous expression) */
     errnum++;
     warnignore=pc_curline;
   } else if (number<200) {
-    assert(((int)number-100)>=0 && (number-100)<sizearray(fatalmsg));
+    assert(((int)number-100)>=0 && (number-100)<countof(fatalmsg));
     msg=fatalmsg[number-100];
     pre=prefix[1];
     errnum++;           /* a fatal error also counts as an error */
   } else {
-    assert(((int)number-200)>=0 && (number-200)<sizearray(warnmsg));
+    assert(((int)number-200)>=0 && (number-200)<countof(warnmsg));
     if (pc_curline==warnignore)
       return 0;         /* an error was already given for this line, gobble up the (probably incorrect) warning*/
     warnignore=-1;
@@ -140,7 +140,7 @@ static short lastfile;
   strexpand(string,(const unsigned char*)msg,sizeof string-2,SCPACK_TABLE);
   if (notice>0) {
     int len;
-    assert(notice<sizearray(noticemsg));
+    assert(notice<countof(noticemsg));
     strcat(string,"; ");
     len=(int)strlen(string);
     strexpand(string+len,(unsigned char *)noticemsg[notice],sizeof string-len-1,SCPACK_TABLE);
@@ -169,7 +169,7 @@ static short lastfile;
     int start= (errstart==errline) ? -1 : errstart;
     if (pc_error((int)number,string,filename,start,errline,argptr)) {
       if (outf!=NULL) {
-        pc_closeasm(outf,TRUE);
+        pc_closeasm(outf,true);
         outf=NULL;
       } /* if */
       longjmp(errbuf,3);        /* user abort */
@@ -194,7 +194,7 @@ static short lastfile;
       va_end(argptr);
     } /* if */
     if (outf!=NULL) {
-      pc_closeasm(outf,TRUE);
+      pc_closeasm(outf,true);
       outf=NULL;
     } /* if */
     longjmp(errbuf,2);          /* fatal error, quit */
@@ -261,10 +261,10 @@ SC_FUNC void errorset(int code,int line)
 {
   switch (code) {
   case sRESET:
-    errflag=FALSE;      /* start reporting errors, line=ignored */
+    errflag=false;      /* start reporting errors, line=ignored */
     break;
   case sFORCESET:
-    errflag=TRUE;       /* stop reporting errors, line=ignored */
+    errflag=true;       /* stop reporting errors, line=ignored */
     break;
   case sEXPRMARK:
     errstart=pc_curline;/* save start line number */
@@ -304,10 +304,10 @@ int pc_enablewarning(unsigned number,int enable)
   unsigned char mask;
 
   if (number<200)
-    return FALSE;       /* errors and fatal errors cannot be disabled */
+    return false;       /* errors and fatal errors cannot be disabled */
   number -= 200;
   if (number>=NUM_WARNINGS)
-    return FALSE;
+    return false;
 
   index=number/8;
   mask=(unsigned char)(1 << (number%8));
@@ -323,7 +323,7 @@ int pc_enablewarning(unsigned number,int enable)
     break;
   } /* switch */
 
-  return TRUE;
+  return true;
 }
 
 /* pushwarnings()

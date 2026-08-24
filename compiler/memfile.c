@@ -2,7 +2,7 @@
  *  memory.
  *
  *  Copyright (c) faluco / http://www.amxmodx.org/, 2006
- *  Version: $Id: memfile.c 6932 2023-04-03 13:56:19Z thiadmer $
+ *  Version: $Id: memfile.c 7679 2026-08-03 15:59:04Z thiadmer $
  */
 
 #include <assert.h>
@@ -15,7 +15,7 @@
   #include <stdlib.h>
 #endif
 #if defined FORTIFY
-  #include <alloc/fortify.h>
+  #include <alloc/Fortify.h>
 #endif
 
 #include "sc.h"

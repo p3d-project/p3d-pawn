@@ -1,6 +1,6 @@
 /*  Pawn compiler - Binary code generation (the "assembler")
  *
- *  Copyright (c) CompuPhase, 1997-2025
+ *  Copyright (c) CompuPhase, 1997-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc6.c 7481 2025-08-20 09:52:36Z thiadmer $
+ *  Version: $Id: sc6.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -23,7 +23,7 @@
 #include <string.h>
 #include <ctype.h>
 #if defined FORTIFY
-  #include <alloc/fortify.h>
+  #include <alloc/Fortify.h>
 #endif
 #include "lstring.h"
 #include "sc.h"
@@ -61,7 +61,7 @@ static char *skipwhitespace(const char *str)
 SC_FUNC ucell hex2ucell(const char *s,const char **n)
 {
   ucell result=0L;
-  int negate=FALSE;
+  int negate=false;
   int digit;
 
   /* ignore leading whitespace */
@@ -70,7 +70,7 @@ SC_FUNC ucell hex2ucell(const char *s,const char **n)
 
   /* allow a negation sign to create the two's complement of numbers */
   if (*s=='-') {
-    negate=TRUE;
+    negate=true;
     s++;
   } /* if */
 
@@ -356,7 +356,7 @@ static cell do_call(FILE *fbin,const char *params,cell opcode,cell cip)
      */
     sym=findglb(name,sGLOBAL);
     assert(sym!=NULL);
-    assert(sym->ident==iFUNCTN || sym->ident==iREFFUNC);
+    assert(sym->ident==iFUNCTN);
     assert(sym->scope==sGLOBAL);
     p=sym->addr-cip;            /* make relative address */
   } /* if */
@@ -676,7 +676,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
       unsigned char opcodearray[MAX_OPCODE+1];
       assert(opcodelist[1].name!=NULL);
       memset(opcodearray,0,sizeof opcodearray);
-      for (i=2; i<(int)sizearray(opcodelist); i++) {
+      for (i=2; i<(int)countof(opcodelist); i++) {
         assert(opcodelist[i].name!=NULL);
         assert(stricmp(opcodelist[i].name,opcodelist[i-1].name)>0);
         /* also verify that no opcode number appears twice */
@@ -687,7 +687,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
     }
   #endif
 
-  writeerror=FALSE;
+  writeerror=false;
   nametablesize=sizeof(int16_t);
   numpublics=0;
   numnatives=0;
@@ -1203,10 +1203,9 @@ static void append_dbginfo(FILE *fout)
       strlcpy(symname,name,(int)(str-name)+1);
       dbghdr.size+=(int32_t)(sizeof(AMX_DBG_SYMBOL)+strlen(symname));
       if ((prevstr=strchr(name,'['))!=NULL) {
-        prevstr++;
-        while (*(prevstr=skipwhitespace(prevstr))!=']') {
-          hex2ucell(prevstr,&prevstr);
+        while (*(prevstr=skipwhitespace(prevstr+1))!=']') {
           dbghdr.size+=sizeof(AMX_DBG_SYMDIM);
+          hex2ucell(prevstr,&prevstr);
         } /* while */
       } /* if */
     } /* if */
@@ -1318,8 +1317,8 @@ static void append_dbginfo(FILE *fout)
       str=skipwhitespace(str);
       if (*str=='[') {
         while (*(str=skipwhitespace(str+1))!=']') {
-          dbgidxtag[dbgsym.dim].tag=0;
           dbgidxtag[dbgsym.dim].size=(uint32_t)hex2ucell(str,&str);
+          dbgidxtag[dbgsym.dim].tag=0;  /* index tag currently unused in debug info */
           dbgsym.dim++;
         } /* while */
       } /* if */

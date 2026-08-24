@@ -7,8 +7,8 @@
  *  the ouput of evaluated expressions (which is used for the reversed
  *  evaluation of arguments in functions).
  *  Initially, stgwrite() writes to the file directly, but after a call to
- *  stgset(TRUE), output is redirected to the buffer. After a call to
- *  stgset(FALSE), stgwrite()'s output is directed to the file again. Thus
+ *  stgset(true), output is redirected to the buffer. After a call to
+ *  stgset(false), stgwrite()'s output is directed to the file again. Thus
  *  only one routine is used for writing to the output, which can be
  *  buffered output or direct output.
  *
@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7599 2026-02-23 10:25:02Z thiadmer $
+ *  Version: $Id: sc7.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -49,7 +49,7 @@
 #include <string.h>
 #include <ctype.h>
 #if defined FORTIFY
-  #include <alloc/fortify.h>
+  #include <alloc/Fortify.h>
 #endif
 #include "sc.h"
 
@@ -80,16 +80,16 @@ static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *
 #define sSTG_MAX    20480
 
 static char *stgbuf=NULL;
-static int stgmax=0;    /* current size of the staging buffer */
+static unsigned stgmax=0;   /* current size of the staging buffer */
 
 static char *stgpipe=NULL;
-static int pipemax=0;   /* current size of the stage pipe, a second staging buffer */
-static int pipeidx=0;
+static unsigned pipemax=0;  /* current size of the stage pipe, a second staging buffer */
+static unsigned pipeidx=0;
 
-#define CHECK_STGBUFFER(index) if ((int)(index)>=stgmax)  grow_stgbuffer(&stgbuf, &stgmax, (index)+1)
-#define CHECK_STGPIPE(index)   if ((int)(index)>=pipemax) grow_stgbuffer(&stgpipe, &pipemax, (index)+1)
+#define CHECK_STGBUFFER(index) if ((index)>=stgmax)  grow_stgbuffer(&stgbuf, &stgmax, (index)+1)
+#define CHECK_STGPIPE(index)   if ((index)>=pipemax) grow_stgbuffer(&stgpipe, &pipemax, (index)+1)
 
-static void grow_stgbuffer(char **buffer, int *curmax, int requiredsize)
+static void grow_stgbuffer(char **buffer, unsigned *curmax, unsigned requiredsize)
 {
   char *p;
   int clear= (*buffer==NULL); /* if previously none, empty buffer explicitly */
@@ -158,6 +158,7 @@ SC_FUNC void stgmark(char mark)
 static int rebuffer(char *str)
 {
   if (sc_status==statWRITE) {
+    assert(pipeidx==0 || stgpipe!=NULL);
     if (pipeidx>=2 && stgpipe[pipeidx-1]=='\0' && stgpipe[pipeidx-2]!='\n')
       pipeidx-=1;                      /* overwrite last '\0' */
     while (*str!='\0') {               /* copy to staging buffer */
@@ -167,14 +168,14 @@ static int rebuffer(char *str)
     CHECK_STGPIPE(pipeidx);
     stgpipe[pipeidx++]='\0';
   } /* if */
-  return TRUE;
+  return true;
 }
 
 static int filewrite(char *str)
 {
   if (sc_status==statWRITE)
     return pc_writeasm(outf,str);
-  return TRUE;
+  return true;
 }
 
 /*  stgwrite
@@ -207,10 +208,10 @@ SC_FUNC void stgwrite(const char *st)
     CHECK_STGBUFFER(stgidx);
     stgbuf[stgidx++]='\0';
   } else {
-    int len=(stgbuf!=NULL) ? (int)strlen(stgbuf) : 0;
+    unsigned len=(stgbuf!=NULL) ? strlen(stgbuf) : 0;
     CHECK_STGBUFFER(len+(int)strlen(st)+1);
     strcat(stgbuf,st);
-    len=(int)strlen(stgbuf);
+    len=strlen(stgbuf);
     if (len>0 && stgbuf[len-1]=='\n') {
       filewrite(stgbuf);
       stgbuf[0]='\0';
@@ -228,13 +229,14 @@ SC_FUNC void stgwrite(const char *st)
  *                     stgbuf  (referred to only)
  *                     staging (referred to only)
  */
-SC_FUNC void stgout(int index)
+SC_FUNC void stgout(unsigned index)
 {
   if (!staging)
     return;
   assert(pipeidx==0);
 
   /* first pass: sub-expressions */
+  assert(index<=stgidx);
   if (sc_status==statWRITE)
     stgstring(&stgbuf[index],&stgbuf[stgidx]);
   stgidx=index;
@@ -244,8 +246,10 @@ SC_FUNC void stgout(int index)
      pass stops at level sOPTIMIZE_MACRO); skip when the pipe is empty, which
      happens on the error-recovery path where the first pass staged nothing and
      "stgpipe" was never allocated */
-  if (sc_status==statWRITE && pipeidx>0)
-    stgopt(stgpipe,stgpipe+pipeidx,TRUE,filewrite);
+  if (sc_status==statWRITE && pipeidx>0) {
+    assert(stgpipe!=NULL);
+    stgopt(stgpipe,stgpipe+pipeidx,true,filewrite);
+  }
 
   pipeidx=0;  /* reset second pipe */
 }
@@ -331,7 +335,7 @@ static int stgstring(char *start,char *end)
       ptr=start;
       while (ptr<end && *ptr!=sSTARTREORDER)
         ptr+=strlen(ptr)+1;
-      stgopt(start,ptr,FALSE,rebuffer);
+      stgopt(start,ptr,false,rebuffer);
       start=ptr;
     } /* if */
   } /* while (start<end) */
@@ -345,7 +349,7 @@ static int stgstring(char *start,char *end)
  *  Global references: stgidx (altered)
  *                     staging (reffered to only)
  */
-SC_FUNC void stgdel(int index,cell code_index)
+SC_FUNC void stgdel(unsigned index,cell code_index)
 {
   if (staging) {
     stgidx=index;
@@ -353,7 +357,7 @@ SC_FUNC void stgdel(int index,cell code_index)
   } /* if */
 }
 
-SC_FUNC int stgget(int *index,cell *code_index)
+SC_FUNC int stgget(unsigned *index,cell *code_index)
 {
   if (staging) {
     *index=stgidx;
@@ -362,11 +366,9 @@ SC_FUNC int stgget(int *index,cell *code_index)
   return staging;
 }
 
-/*  stgset
- *
- *  Sets staging on or off. If it's turned off, the staging buffer must be
- *  initialized to an empty string. If it's turned on, the routine makes sure
- *  the index ("stgidx") is set to 0 (it should already be 0).
+/** stgset() set staging on or off. If it's turned on, the routine makes sure
+ *  the index (`stgidx`) is set to 0 (it should already be 0). In either case,
+ *  the staging buffer (`stgbuf`) is cleared.
  *
  *  Global references: staging  (altered)
  *                     stgidx   (altered)
@@ -374,18 +376,20 @@ SC_FUNC int stgget(int *index,cell *code_index)
  */
 SC_FUNC void stgset(int onoff)
 {
-  staging=onoff;
-  if (staging){
-    assert(stgidx==0);
-    stgidx=0;
-    CHECK_STGBUFFER(stgidx);
-    /* write any contents that may be put in the buffer by stgwrite()
-     * when "staging" was 0
-     */
-    if (strlen(stgbuf)>0)
-      filewrite(stgbuf);
-  } /* if */
-  stgbuf[0]='\0';
+  if (onoff!=staging) {
+    staging=onoff;
+    if (staging) {
+      assert(stgidx==0);
+      stgidx=0;
+      CHECK_STGBUFFER(stgidx);
+      /* write any contents that may be put in the buffer by stgwrite()
+       * when "staging" was 0
+       */
+      if (strlen(stgbuf)>0)
+        filewrite(stgbuf);
+    } /* if */
+    *stgbuf='\0';
+  }
 }
 
 /* phopt_init
@@ -406,7 +410,7 @@ SC_FUNC int phopt_init(void)
   number++;             /* include an item for the NULL terminator */
 
   if ((sequences=(SEQUENCE*)malloc(number * sizeof(SEQUENCE)))==NULL)
-    return FALSE;
+    return false;
 
   /* pre-initialize all to NULL (in case of failure) */
   for (i=0; i<number; i++) {
@@ -436,7 +440,7 @@ SC_FUNC int phopt_init(void)
       return phopt_cleanup();
   } /* for */
 
-  return TRUE;
+  return true;
 }
 
 SC_FUNC int phopt_cleanup(void)
@@ -453,7 +457,7 @@ SC_FUNC int phopt_cleanup(void)
     free(sequences);
     sequences=NULL;
   } /* if */
-  return FALSE;
+  return false;
 }
 
 #define MAX_OPT_VARS    5
@@ -468,15 +472,17 @@ static int matchsequence(char *start,const char *end,const char *pattern,
                          char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1],
                          int *match_length)
 {
-  int var,i,optsym,start_sym;
+  int var,i,start_sym;
   char str[MAX_ALIAS+1];
   char *start_org=start;
   cell value;
   char *ptr;
+  #if !defined NDEBUG
+    int optsym=false;
+  #endif
 
   *match_length=0;
-  optsym=FALSE;
-  start_sym=TRUE;
+  start_sym=true;
   for (var=0; var<=MAX_OPT_VARS; var++)
     symbols[var][0]='\0';
 
@@ -484,7 +490,7 @@ static int matchsequence(char *start,const char *end,const char *pattern,
     start++;
   while (*pattern) {
     if (start>=end)
-      return FALSE;
+      return false;
     switch (*pattern) {
     case '%':   /* new "symbol" */
       pattern++;
@@ -509,7 +515,7 @@ static int matchsequence(char *start,const char *end,const char *pattern,
         if ((v2 & ((ucell)1<<pc_cellsize*8-1))!=0)
           v2|=~(ucell)0<<pc_cellsize*8;
         if (*varptr>' ' || v2>=((ucell)1<<((pc_cellsize*4)-1)) && v2<=~((ucell)1<<((pc_cellsize*4)-1)))
-          return FALSE;
+          return false;
         /* reconvert the value to a string (without signs or expressions) */
         varptr=itoh(v);
         #if !defined NDEBUG
@@ -531,31 +537,33 @@ static int matchsequence(char *start,const char *end,const char *pattern,
       } /* if */
       if (symbols[var][0]!='\0') {
         if (strcmp(symbols[var],str)!=0)
-          return FALSE; /* symbols should be identical */
+          return false; /* symbols should be identical */
       } else {
         strcpy(symbols[var],str);
       } /* if */
-      optsym=FALSE;
-      start_sym=FALSE;
+      start_sym=false;
+      #if !defined NDEBUG
+        optsym=false;
+      #endif
       break;
     case '-':
       value=-hex2cell(pattern+1,&pattern);
       ptr=itoh((ucell)value);
       while (*ptr!='\0') {
         if (tolower(*start) != tolower(*ptr))
-          return FALSE;
+          return false;
         start++;
         ptr++;
       } /* while */
       pattern--;  /* there is an increment following at the end of the loop */
-      start_sym=TRUE;
+      start_sym=true;
       break;
     case '+':
       value=hex2cell(pattern+1,&pattern);
       ptr=itoh((ucell)value);
       while (*ptr!='\0') {
         if (tolower(*start) != tolower(*ptr))
-          return FALSE;
+          return false;
         start++;
         ptr++;
       } /* while */
@@ -563,16 +571,18 @@ static int matchsequence(char *start,const char *end,const char *pattern,
       break;
     case ' ':     /* required whitespace */
       if (*start!='\t' && *start!=' ')
-        return FALSE;
+        return false;
       while (start<end && (*start=='\t' || *start==' '))
         start++;
-      start_sym=TRUE;
+      start_sym=true;
       break;
     case '~':     /* optional whitespace (followed by optional symbol) */
       while (start<end && (*start=='\t' || *start==' '))
         start++;
-      optsym= (pattern[1]=='%');
-      start_sym=TRUE;
+      start_sym=true;
+      #if !defined NDEBUG
+        optsym= (pattern[1]=='%');
+      #endif
       break;
     case '!':
       while (start<end && (*start=='\t' || *start==' '))
@@ -581,13 +591,13 @@ static int matchsequence(char *start,const char *end,const char *pattern,
         while (start<end && *start!='\n')
           start++;              /* skip trailing comment */
       if (*start!='\n')
-        return FALSE;
+        return false;
       assert(*(start+1)=='\0');
       start+=2;                 /* skip '\n' and '\0' */
       if (*(pattern+1)!='\0')
         while (start<end && *start=='\t' || *start==' ')
           start++;              /* skip leading white space of next instruction */
-      start_sym=TRUE;
+      start_sym=true;
       break;
     default:
       if (start_sym && isdigit(*pattern) && *start=='0') {
@@ -598,22 +608,26 @@ static int matchsequence(char *start,const char *end,const char *pattern,
           start++;
       }
       if (tolower(*start) != tolower(*pattern))
-        return FALSE;
+        return false;
       start++;
-      start_sym=FALSE;
+      start_sym=false;
     } /* switch */
     pattern++;
   } /* while */
 
   *match_length=(int)(start-start_org);
-  return TRUE;
+  return true;
 }
 
 static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1],int *repl_length)
 {
   char *sptr;
-  int var,optsym;
+  int var;
   char *buffer;
+
+  #if !defined NDEBUG
+    int optsym=false;
+  #endif
 
   /* calculate the length of the new buffer
    * this is the length of the pattern plus the length of all symbols (note
@@ -622,7 +636,6 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
    */
   assert(repl_length!=NULL);
   *repl_length=0;
-  optsym=FALSE;
   sptr=(char*)pattern;
   while (*sptr) {
     switch (*sptr) {
@@ -634,7 +647,9 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
       assert(symbols[var][0]!='\0' || optsym);  /* variable should be defined */
       assert(var!=0 || strlen(symbols[var])==(size_t)pc_cellsize || (symbols[var][0]=='-' && strlen(symbols[var])==(size_t)pc_cellsize+1) || atoi(symbols[var])==0);
       *repl_length+=(int)strlen(symbols[var]);
-      optsym=FALSE;
+      #if !defined NDEBUG
+        optsym=false;
+      #endif
       break;
     case '~': /* optional space followed by optional symbol */
       assert(sptr[1]=='%');
@@ -642,9 +657,10 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
       var=atoi(sptr+2);
       assert(var>=0 && var<=MAX_OPT_VARS);
       if (symbols[var][0]!='\0')
-        *repl_length+=1;/* copy space if following symbol is valid */
-      else
-        optsym=TRUE;    /* don't copy space, and symbol is optional */
+        *repl_length+=1;  /* copy space if following symbol is valid */
+      #if !defined NDEBUG
+        else optsym=true; /* don't copy space, and symbol is optional */
+      #endif
       break;
     case '#':
       sptr++;           /* skip '#' */
@@ -679,7 +695,9 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
   } /* if */
 
   /* replace the pattern into this temporary buffer */
-  optsym=FALSE;
+  #if !defined NDEBUG
+    optsym=false;
+  #endif
   sptr=buffer;
   if (!(*pattern==';' && *(pattern+1)=='!'))
     *sptr++='\t';       /* the "replace" patterns do not have tabs (but there is no \t for an empty replacement */
@@ -696,7 +714,9 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
       assert(symbols[var][0]=='\0' || !optsym); /* but optional variable should be undefined */
       strcpy(sptr,symbols[var]);
       sptr+=strlen(symbols[var]);
-      optsym=FALSE;
+      #if !defined NDEBUG
+        optsym=false;
+      #endif
       break;
     case '~':
       assert(pattern[1]=='%');
@@ -705,8 +725,9 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
       assert(var>=0 && var<=MAX_OPT_VARS);
       if (symbols[var][0]!='\0')
         *sptr++=' ';      /* replace ~ by a space */
-      else
-        optsym=TRUE;      /* don't copy space, and symbol is optional */
+      #if !defined NDEBUG
+        else optsym=true; /* don't copy space, and symbol is optional */
+      #endif
       break;
     case '#': {
       ucell v=hex2ucell(pattern+1,NULL);

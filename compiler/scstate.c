@@ -9,13 +9,13 @@
  *  - A list of states for each automaton: a name, an automaton id (in the
  *    "index" field) and a unique id for the state (unique in the automaton;
  *    states belonging to different automatons may have the same id).
- *  - A list of state combinations. Each function may belong to a set of states.
- *    This list assigns a unique id to the combination of the automaton and all
- *    states.
+ *  - A list of state combinations. Each function (and variable) may belong to
+ *    a set of states. This list assigns a unique id to the combination of the
+ *    automaton and all states.
  *
  *  A fourth list is partially maintained here: it is attached to the "symbol"
  *  structure of a function/variable that has states. This list contains the
- *  code label, the id of the state combinations (the state list id) and the
+ *  code label, the id of the state combinations (the state-list id) and the
  *  code addresses at which the function starts and ends. These addresses are
  *  currently only used for state functions in an overlay system.
  *
@@ -25,7 +25,7 @@
  *  function. This happens in SC4.C.
  *
  *
- *  Copyright (c) CompuPhase, 2005-2016
+ *  Copyright (c) CompuPhase, 2005-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -39,7 +39,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scstate.c 7152 2024-03-23 20:47:23Z thiadmer $
+ *  Version: $Id: scstate.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -52,7 +52,7 @@
 #endif
 
 #if defined FORTIFY
-  #include <alloc/fortify.h>
+  #include <alloc/Fortify.h>
 #endif
 
 typedef struct s_statepool {
@@ -122,53 +122,73 @@ SC_FUNC constvalue *automaton_findid(int id)
 }
 
 
-static constvalue *find_state(const char *name,int fsa,int *last,char *closestmatch)
+/** state_top_id() returns the highest state ID for the given automaton. This
+ *  is used to auto-number state IDs. Note that since state IDs are numbered
+ *  sequentially, that is this function return 'n', the number of states in the
+ *  automaton is at most 'n'.
+ */
+SC_FUNC int state_top_id(int fsa_id)
 {
-  constvalue *ptr;
-  int dist,closestdist=INT_MAX;
+  int top=0;
+  constvalue *ptr=sc_state_tab.next;
 
-  assert(last!=NULL);
-  *last=0;
-  if (closestmatch!=NULL)
-    *closestmatch='\0';
-  ptr=sc_state_tab.next;
   while (ptr!=NULL) {
-    if (ptr->index==fsa) {
-      if (strcmp(name,ptr->name)==0)
-        return ptr;
-      if (closestmatch!=NULL && strlen(ptr->name)>0) {
-        dist=levenshtein_distance(name,ptr->name);
-        if (dist<closestdist && dist<=MAX_EDIT_DIST) {
-          strcpy(closestmatch,ptr->name);
-          closestdist=dist;
-        } /* if */
-      } /* if */
-      if ((int)ptr->value>*last)
-        *last=(int)ptr->value;
+    if (ptr->index==fsa_id) {
+      assert(ptr->value>0);
+      if ((int)ptr->value>top)
+        top=(int)ptr->value;
     } /* if */
     ptr=ptr->next;
   } /* while */
-  return NULL;
+  return top;
 }
 
 SC_FUNC constvalue *state_add(const char *name,int fsa_id)
 {
   constvalue *ptr;
-  int last;
 
   assert(strlen(name)<sizeof(ptr->name));
-  ptr=find_state(name,fsa_id,&last,NULL);
+  ptr=state_find(name,fsa_id,NULL);
   if (ptr==NULL) {
-    assert(fsa_id<=SHRT_MAX);
-    ptr=append_constval(&sc_state_tab,name,(cell)(last+1),(short)fsa_id);
+    int last=state_top_id(fsa_id);
+    ptr=append_constval(&sc_state_tab,name,(cell)(last+1),fsa_id);
   } /* if */
   return ptr;
 }
 
+/** state_find() finds a state by name, and optionally returns the closest
+ *  matching name if no match is found.
+ *
+ *  \param name           [in] The name of the state.
+ *  \param fsa_id         The automaton in which to look for the state.
+ *  \param closestmatch   [out] A buffer into which the closest match is copied,
+ *                        provided that this match is sufficiently close.
+ *                        This parameter may be `NULL`.
+ *
+ *  \return A pointer to the state structure, or `NULL` if not found.
+ */
 SC_FUNC constvalue *state_find(const char *name,int fsa_id,char *closestmatch)
 {
-  int last;     /* dummy */
-  return find_state(name,fsa_id,&last,closestmatch);
+  constvalue *ptr;
+  int closestdist=INT_MAX;
+  if (closestmatch!=NULL)
+    *closestmatch='\0';
+  ptr=sc_state_tab.next;
+  while (ptr!=NULL) {
+    if (ptr->index==fsa_id) {
+      if (strcmp(name,ptr->name)==0)
+        return ptr;
+      if (closestmatch!=NULL && strlen(ptr->name)>0) {
+        int dist=levenshtein_distance(name,ptr->name);
+        if (dist<closestdist && dist<=MAX_EDIT_DIST) {
+          strcpy(closestmatch,ptr->name);
+          closestdist=dist;
+        } /* if */
+      } /* if */
+    } /* if */
+    ptr=ptr->next;
+  } /* while */
+  return NULL;
 }
 
 SC_FUNC constvalue *state_findid(int state_id,int fsa_id)
@@ -284,6 +304,8 @@ SC_FUNC void state_deletetable(void)
   } /* while */
 }
 
+/** state_getfsa() returns the automaton ID for the state-list ID.
+ */
 SC_FUNC int state_getfsa(int listid)
 {
   statepool *ptr;
@@ -311,13 +333,25 @@ SC_FUNC int state_inlist(int listid,int state)
 
   ptr=state_getlist_ptr(listid);
   if (ptr==NULL)
-    return FALSE;       /* unknown list, state not in it */
+    return false;       /* unknown list, state not in it */
   for (i=0; i<ptr->numstates; i++)
     if (ptr->states[i]==state)
-      return TRUE;
-  return FALSE;
+      return true;
+  return false;
 }
 
+/** state_listitem() returns the state id in the list of states.
+ *  \param listid   The state-list id. This must be a valid id.
+ *  \param index    The index of the state id to return. This must be in the
+ *                  range of 0 to the number of states - 1.
+ *
+ *  \return The state id; always a valid number because the inputs must be
+ *          valid.
+ *
+ *  \note See `state_inlist()` to check whether a state is present in a state
+ *        list.
+ *  \note See `state_count()` to get the number of states in a state-list.
+ */
 SC_FUNC int state_listitem(int listid,int index)
 {
   statepool *ptr;
@@ -359,12 +393,12 @@ SC_FUNC void state_conflict(symbol *root)
       continue;                 /* this function has no states */
     for (srcptr=sym->states->next; srcptr!=NULL; srcptr=srcptr->next) {
       if (srcptr->id==-1)
-        continue;               /* state list id -1 is a special case */
+        continue;               /* state-list id -1 is a special case */
       psrc=state_getlist_ptr(srcptr->id);
       assert(psrc!=NULL);
       for (tgtptr=srcptr->next; tgtptr!=NULL; tgtptr=tgtptr->next) {
         if (tgtptr->id==-1)
-          continue;             /* state list id -1 is a special case */
+          continue;             /* state-list id -1 is a special case */
         ptgt=state_getlist_ptr(tgtptr->id);
         assert(ptgt!=NULL);
         if (psrc->fsa!=ptgt->fsa && strcmp(sym->name,_ENTRYFUNC)!=0)
@@ -376,8 +410,9 @@ SC_FUNC void state_conflict(symbol *root)
   } /* for (sym) */
 }
 
-/* check whether the two state lists (whose ids are passed in) share any
- * states
+/** state_conflict_id() checks whether the two state-lists (whose ids are passed
+ *  in) share any states. It returns `true` if and of the states in `listid1`
+ *  also exists in `listid2`.
  */
 SC_FUNC int state_conflict_id(int listid1,int listid2)
 {

@@ -15,7 +15,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.sch 7597 2026-02-22 20:41:53Z thiadmer $
+ *  Version: $Id: sc7.sch 7684 2026-08-23 20:30:23Z thiadmer $
  */
 
 /* Special characters in the strings of this file:
@@ -1003,23 +1003,6 @@ static const SEQUENCE sequences_cmp[] = {
       "\356",
     #endif
     3-1, 1-1
-  },
-  /* Logic expressions where the intermediate result is conditionally set to
-   * 0 or 1, may have redundant assignments: e.g. setting a register to zero
-   * that must already be zero to arrive at that point
-   *
-   *    jnz %1                  jnz %1
-   *    zero.pri                -
-   */
-  {
-    #ifdef SCPACK
-      "jnz %1!zero.pri!",
-      "jnz %1!",
-    #else
-      "jnz\215\344\241",
-      "jnz\215",
-    #endif
-    2-1, 1-1
   },
   /* Array comparison has a NOT instruction that can sometimes be optimized away
    *    not                     jnz %1
@@ -2097,6 +2080,23 @@ static const SEQUENCE sequences_cmp[] = {
     #else
       "\337\330jnz\215",
       "j\337\305\215",
+    #endif
+    2-1, 1-1
+  },
+  /* Logic expressions where the intermediate result is conditionally set to
+   * 0 or 1, may have redundant assignments: e.g. setting a register to zero
+   * that must already be zero to arrive at that point
+   *
+   *    jnz %1                  jnz %1
+   *    zero.pri                -
+   */
+  {
+    #ifdef SCPACK
+      "jnz %1!zero.pri!",
+      "jnz %1!",
+    #else
+      "jnz\215\344\241",
+      "jnz\215",
     #endif
     2-1, 1-1
   },

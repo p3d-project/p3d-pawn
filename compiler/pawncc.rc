@@ -14,13 +14,17 @@ AppIcon ICON "../bin/pawn.ico"
  *  for details on version information and the VERSIONINFO structure.
  */
 #define VERSION              4
-#define REVISION             0
+#define REVISION             1
 #define BUILD                SVNREV_NUM
 #define VERSIONSTR           "4.1." SVNREV_STR "\0"
 #if defined PAWNCC
 #define VERSIONNAME          "pawncc.exe\0"
 #define VERSIONDESCRIPTION   "Pawn Compiler\0"
 #define VERSIONPRODUCTNAME   "pawncc\0"
+#elif defined PAWNDISASM
+#define VERSIONNAME          "pawndisasm.exe\0"
+#define VERSIONDESCRIPTION   "Pawn Disassembler\0"
+#define VERSIONPRODUCTNAME   "pawndisasm\0"
 #elif defined PAWNRUN
 #define VERSIONNAME          "pawnrun.exe\0"
 #define VERSIONDESCRIPTION   "Pawn run-time\0"
@@ -31,7 +35,7 @@ AppIcon ICON "../bin/pawn.ico"
 #define VERSIONPRODUCTNAME   "pawn\0"
 #endif
 #define VERSIONCOMPANYNAME   "CompuPhase\0"
-#define VERSIONCOPYRIGHT     "Copyright \251 1998-2016 CompuPhase\0"
+#define VERSIONCOPYRIGHT     "Copyright \251 1998-2026 CompuPhase\0"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION    VERSION, REVISION, BUILD, 0

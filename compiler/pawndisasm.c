@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawndisasm.c 6970 2023-07-28 20:12:00Z thiadmer $
+ *  Version: $Id: pawndisasm.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #include <assert.h>
 #include <inttypes.h>
@@ -27,8 +27,8 @@
 #include "../amx/osdefs.h"
 #include "../amx/amx.h"
 
-#if !defined sizearray
-  #define sizearray(a)  (sizeof(a) / sizeof((a)[0]))
+#if !defined countof
+# define countof(a)     (sizeof(a) / sizeof((a)[0]))
 #endif
 
 static FILE *fpamx;
@@ -571,12 +571,12 @@ int main(int argc,char *argv[])
   } /* if */
   if (argc==2) {
     char *ptr;
-    strlcpy(name,argv[1],sizearray(name));
+    strlcpy(name,argv[1],countof(name));
     if ((ptr=strrchr(name,'.'))!=NULL && strpbrk(ptr,"\\/:")==NULL)
       *ptr='\0';          /* erase existing extension */
     strcat(name,".lst");  /* append new extension */
   } else {
-    strlcpy(name,argv[2],sizearray(name));
+    strlcpy(name,argv[2],countof(name));
   } /* if */
   if ((fpamx=fopen(argv[1],"rb"))==NULL) {
     printf("Unable to open input file \"%s\"\n",argv[1]);

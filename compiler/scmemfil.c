@@ -17,13 +17,13 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scmemfil.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: scmemfil.c 7679 2026-08-03 15:59:04Z thiadmer $
  */
 
 #include <assert.h>
 #include <string.h>
 #if defined FORTIFY
-  #include <alloc/fortify.h>
+  #include <alloc/Fortify.h>
 #endif
 #include "sc.h"
 

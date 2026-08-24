@@ -7,7 +7,7 @@
  *
  *  This version comes close to a complete rewrite.
  *
- *  Copyright CompuPhase, 1997-2024
+ *  Copyright CompuPhase, 1997-2026
  *  Copyright J.E. Hendrix, 1982, 1983
  *  Copyright R. Cain, 1980
  *
@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7505 2025-09-23 07:46:02Z thiadmer $
+ *  Version: $Id: sc.h 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -32,16 +32,16 @@
 #include <stdio.h>
 #if defined __BORLANDC__ && defined _Windows && !(defined __32BIT__ || defined __WIN32__)
   /* setjmp() and longjmp() not well supported in 16-bit windows */
-  #include <windows.h>
+# include <windows.h>
   typedef int jmp_buf[9];
-  #define setjmp(b)     Catch(b)
-  #define longjmp(b,e)  Throw(b,e)
+# define setjmp(b)     Catch(b)
+# define longjmp(b,e)  Throw(b,e)
 #else
-  #include <setjmp.h>
+# include <setjmp.h>
 #endif
 
 #if !defined PAWN_CELL_SIZE
-  #define PAWN_CELL_SIZE 64 /* by default, maximum cell size = 64-bit */
+# define PAWN_CELL_SIZE 64 /* by default, maximum cell size = 64-bit */
 #endif
 #include "../amx/osdefs.h"
 #include "../amx/amx.h"
@@ -186,7 +186,7 @@ typedef struct s_symbol {
 #define iEXPRESSION 7   /* expression result, has no address (rvalue) */
 #define iCONSTEXPR  8   /* constant expression (or constant symbol) */
 #define iFUNCTN     9
-#define iREFFUNC    10
+#define iINTVAR     10  /* intrinsic variable */
 #define iVARARGS    11  /* function specified ... as argument(s) */
 
 /*  Possible values for "usage"
@@ -338,11 +338,11 @@ typedef struct s_arraymerge {
 #define opargs(n)       ((n)*pc_cellsize)   /* size of typical argument */
 
 /* general purpose macros */
-#if !defined sizearray
-  #define sizearray(a)  (sizeof(a) / sizeof((a)[0]))
+#if !defined countof
+# define countof(a)     (sizeof(a) / sizeof((a)[0]))
 #endif
 #if !defined makelong
-  #define makelong(low,high) ((long)(low) | ((long)(high) << (sizeof(long)*4)))
+# define makelong(low,high) ((long)(low) | ((long)(high) << (sizeof(long)*4)))
 #endif
 
 /*  Tokens recognized by lex()
@@ -460,9 +460,9 @@ typedef struct s_arraymerge {
 #define xSLEEP         12       /* sleep, exit code in PRI, tag in ALT */
 
 /* Miscellaneous  */
-#if !defined TRUE
-  #define FALSE         0
-  #define TRUE          1
+#if !defined true && !defined __cplusplus
+# define false          0
+# define true           1
 #endif
 #define NOT_SET         (-1)    /* special "boolean" value: no value set yet */
 #define sIN_CSEG        1       /* if parsing CODE */
@@ -499,11 +499,11 @@ typedef enum s_optmark {
 #define suSLEEP_INSTR 0x01      /* the "sleep" instruction was used */
 
 #if INT_MAX<0x8000u
-  #define PUBLICTAG   0x8000u
-  #define FIXEDTAG    0x4000u
+# define PUBLICTAG    0x8000u
+# define FIXEDTAG     0x4000u
 #else
-  #define PUBLICTAG   0x80000000Lu
-  #define FIXEDTAG    0x40000000Lu
+# define PUBLICTAG   0x80000000Lu
+# define FIXEDTAG    0x40000000Lu
 #endif
 #define TAGMASK       (~PUBLICTAG)
 #define CELL_MAX      (((ucell)1 << (sizeof(cell)*8-1)) - 1)
@@ -514,7 +514,7 @@ typedef enum s_optmark {
   extern "C" {
 #endif
 #if !defined DLLEXPORT
-  #define DLLEXPORT
+# define DLLEXPORT
 #endif
 
 /*
@@ -569,13 +569,13 @@ long pc_lengthbin(void *handle); /* return the length of the file */
  * files are "external"
  */
 #if !defined SC_FUNC
-  #define SC_FUNC
+# define SC_FUNC
 #endif
 #if !defined SC_VDECL
-  #define SC_VDECL  extern
+# define SC_VDECL  extern
 #endif
 #if !defined SC_VDEFINE
-  #define SC_VDEFINE
+# define SC_VDEFINE
 #endif
 
 /* function prototypes in SC1.C */
@@ -665,6 +665,7 @@ SC_FUNC void address(symbol *sym,regid reg);
 SC_FUNC void store(value *lval);
 SC_FUNC void loadreg(cell address,regid reg);
 SC_FUNC void storereg(cell address,regid reg);
+SC_FUNC void storeconst(cell address,cell value);
 SC_FUNC void memcopy(cell size);
 SC_FUNC void copyarray2d(int majordim,int minordim);
 SC_FUNC void fillarray(const symbol *sym,cell size,cell value);
@@ -700,7 +701,7 @@ SC_FUNC void addconst(cell value);
  *  Syntax: o[u|s|b]_name
  *          |   |   | +--- name of operator
  *          |   |   +----- underscore
- *          |   +--------- "u"nsigned operator, "s"igned operator or "b"oth
+ *          |   +--------- "u"nsigned operator, "s"igned operator or "b"oth ("a" for array operation)
  *          +------------- "o"perator
  */
 SC_FUNC void os_mult(void); /* multiplication (signed) */
@@ -723,8 +724,9 @@ SC_FUNC void os_ge(void);   /* greater or equal (signed) */
 SC_FUNC void os_lt(void);   /* less (signed) */
 SC_FUNC void os_gt(void);   /* greater (signed) */
 
-SC_FUNC void oa_eq(cell size);  /* equal, array operator */
-SC_FUNC void oa_ne(cell size);  /* not equal, array operator */
+SC_FUNC void ob_eq_val(cell value); /* compare ALT to constant value */
+SC_FUNC void oa_eq(cell size);      /* equal, array operator */
+SC_FUNC void oa_ne(cell size);      /* not equal, array operator */
 
 SC_FUNC void lneg(void);
 SC_FUNC void neg(void);
@@ -732,8 +734,8 @@ SC_FUNC void invert(void);
 SC_FUNC void nooperation(void);
 SC_FUNC void inc(value *lval);
 SC_FUNC void dec(value *lval);
-SC_FUNC void jmp_ne0(int number);
-SC_FUNC void jmp_eq0(int number);
+SC_FUNC void jmp_ne0(int label);
+SC_FUNC void jmp_eq0(int label);
 SC_FUNC void outval(cell val,int fullcell,int newline);
 
 /* function prototypes in SC5.C */
@@ -760,9 +762,9 @@ SC_FUNC ucell hex2ucell(const char *s,const char **n);
 SC_FUNC void stgbuffer_cleanup(void);
 SC_FUNC void stgmark(char mark);
 SC_FUNC void stgwrite(const char *st);
-SC_FUNC void stgout(int index);
-SC_FUNC void stgdel(int index,cell code_index);
-SC_FUNC int stgget(int *index,cell *code_index);
+SC_FUNC void stgout(unsigned index);
+SC_FUNC void stgdel(unsigned index,cell code_index);
+SC_FUNC int stgget(unsigned *index,cell *code_index);
 SC_FUNC void stgset(int onoff);
 SC_FUNC int phopt_init(void);
 SC_FUNC int phopt_cleanup(void);
@@ -833,6 +835,7 @@ SC_FUNC constvalue *automaton_add(const char *name);
 SC_FUNC constvalue *automaton_find(const char *name,char *closestmatch);
 SC_FUNC constvalue *automaton_findid(int id);
 SC_FUNC constvalue *state_add(const char *name,int fsa_id);
+SC_FUNC int state_top_id(int fsa_id);
 SC_FUNC constvalue *state_find(const char *name,int fsa_id,char *closestmatch);
 SC_FUNC constvalue *state_findid(int id,int fsa_id);
 SC_FUNC void state_buildlist(int **list,int *listsize,int *count,int stateid);
@@ -849,77 +852,77 @@ SC_FUNC void delete_statelisttable(statelist *root);
 
 /* external variables (defined in scvars.c) */
 #if !defined SC_SKIP_VDECL
-SC_VDECL symbol loctab;       /* local symbol table */
-SC_VDECL symbol glbtab;       /* global symbol table */
-SC_VDECL cell *litq;          /* the literal queue */
-SC_VDECL unsigned char *srcline;/* the line read from the input file */
-SC_VDECL const unsigned char *lexptr;/* points to the current position in "srcline" */
-SC_VDECL constvalue tagname_tab;/* tagname table */
-SC_VDECL constvalue libname_tab;/* library table (#pragma library "..." syntax) */
-SC_VDECL constvalue *curlibrary;/* current library */
-SC_VDECL int pc_addlibtable;  /* is the library table added to the AMX file? */
-SC_VDECL constvalue ntvindex_tab;/* native function index table */
-SC_VDECL symbol *curfunc;     /* pointer to current function */
-SC_VDECL char *inpfname;      /* name of the file currently read from */
-SC_VDECL char outfname[];     /* intermediate (assembler) file name */
-SC_VDECL char binfname[];     /* binary file name */
-SC_VDECL char errfname[];     /* error file name */
-SC_VDECL int litidx;          /* index to literal table */
-SC_VDECL int litmax;          /* current size of the literal table */
-SC_VDECL int stgidx;          /* index to the staging buffer */
-SC_VDECL int sc_labnum;       /* number of (internal) labels */
-SC_VDECL int staging;         /* true if staging output */
-SC_VDECL cell declared;       /* number of local cells declared */
-SC_VDECL cell glb_declared;   /* number of global cells declared */
-SC_VDECL cell code_idx;       /* number of bytes with generated code */
-SC_VDECL int ntv_funcid;      /* incremental number of native function */
-SC_VDECL int errnum;          /* number of errors */
-SC_VDECL int warnnum;         /* number of warnings */
-SC_VDECL int sc_debug;        /* debug/optimization options (bit field) */
-SC_VDECL int sc_asmfile;      /* create .ASM file? */
-SC_VDECL int sc_listing;      /* create .LST file? */
-SC_VDECL int sc_dataalign;    /* data alignment value */
-SC_VDECL int sc_alignnext;    /* must frame of the next function be aligned? */
-SC_VDECL int pc_docexpr;      /* must expression be attached to documentation comment? */
-SC_VDECL int curseg;          /* 1 if currently parsing CODE, 2 if parsing DATA */
-SC_VDECL cell pc_stksize;     /* stack size */
-SC_VDECL cell pc_amxlimit;    /* abstract machine size limit (code + data, or only code) */
-SC_VDECL cell pc_amxram;      /* abstract machine data size limit */
-SC_VDECL int freading;        /* is there an input file ready for reading? */
-SC_VDECL int pc_curline;      /* the line number in the current file */
-SC_VDECL short fnumber;       /* number of files in the input file table */
-SC_VDECL short fcurrent;      /* current file being processed */
-SC_VDECL int pc_sideeffect;   /* true if an expression causes a side-effect */
-SC_VDECL int pc_stmtindent;   /* current indent of the statement */
-SC_VDECL int indent_nowarn;   /* skip warning "217 loose indentation" */
-SC_VDECL int pc_tabsize;      /* number of spaces that a TAB represents */
-SC_VDECL int pc_matchedtabsize;/* if no tabsize explicitly set, try to detect the tab size */
-SC_VDECL short sc_allowtags;  /* allow/detect tagnames in lex() */
-SC_VDECL int sc_status;       /* read/write status */
-SC_VDECL int sc_rationaltag;  /* tag for rational numbers */
-SC_VDECL int rational_digits; /* number of fractional digits */
-SC_VDECL int sc_allowproccall;/* allow/detect tagnames in lex() */
-SC_VDECL short sc_is_utf8;    /* is this source file in UTF-8 encoding */
-SC_VDECL char *pc_deprecate;  /* if non-NULL, mark next declaration as deprecated */
-SC_VDECL int sc_curstates;    /* ID of the current state list */
-SC_VDECL int pc_optimize;     /* (peephole) optimization level */
-SC_VDECL int pc_memflags;     /* special flags for the stack/heap usage */
-SC_VDECL int pc_overlays;     /* generate overlay table + instructions? (abstract machine overay size limit) */
-SC_VDECL int pc_ovl0size[][2];/* size (in bytes) of the first (special) overlays */
-SC_VDECL int pc_cellsize;     /* size (in bytes) of a cell */
-SC_VDECL uint64_t pc_cryptkey;/* key for encryption of the generated script */
+SC_VDECL symbol loctab;         /**< local symbol table */
+SC_VDECL symbol glbtab;         /**< global symbol table */
+SC_VDECL cell *litq;            /**< the literal queue */
+SC_VDECL unsigned char *srcline;/**< the line read from the input file */
+SC_VDECL const unsigned char *lexptr;/**< points to the current position in "srcline" */
+SC_VDECL constvalue tagname_tab;/**< tagname table */
+SC_VDECL constvalue libname_tab;/**< library table (#pragma library "..." syntax) */
+SC_VDECL constvalue *curlibrary;/**< current library */
+SC_VDECL int pc_addlibtable;    /**< is the library table added to the AMX file? */
+SC_VDECL constvalue ntvindex_tab;/**< native function index table */
+SC_VDECL symbol *curfunc;       /**< pointer to current function */
+SC_VDECL char *inpfname;        /**< name of the file currently read from */
+SC_VDECL char outfname[];       /**< intermediate (assembler) file name */
+SC_VDECL char binfname[];       /**< binary file name */
+SC_VDECL char errfname[];       /**< error file name */
+SC_VDECL int litidx;            /**< index to literal table */
+SC_VDECL int litmax;            /**< current size of the literal table */
+SC_VDECL unsigned stgidx;       /**< index to the staging buffer */
+SC_VDECL int sc_labnum;         /**< number of (internal) labels */
+SC_VDECL int staging;           /**< true if staging output */
+SC_VDECL cell declared;         /**< number of local cells declared */
+SC_VDECL cell glb_declared;     /**< number of global cells declared */
+SC_VDECL cell code_idx;         /**< number of bytes with generated code */
+SC_VDECL int ntv_funcid;        /**< incremental number of native function */
+SC_VDECL int errnum;            /**< number of errors */
+SC_VDECL int warnnum;           /**< number of warnings */
+SC_VDECL int sc_debug;          /**< debug/optimization options (bit field) */
+SC_VDECL int sc_asmfile;        /**< create .ASM file? */
+SC_VDECL int sc_listing;        /**< create .LST file? */
+SC_VDECL int sc_dataalign;      /**< data alignment value */
+SC_VDECL int sc_alignnext;      /**< must frame of the next function be aligned? */
+SC_VDECL int pc_docexpr;        /**< must expression be attached to documentation comment? */
+SC_VDECL int curseg;            /**< 1 if currently parsing CODE, 2 if parsing DATA */
+SC_VDECL cell pc_stksize;       /**< stack size */
+SC_VDECL cell pc_amxlimit;      /**< abstract machine size limit (code + data, or only code) */
+SC_VDECL cell pc_amxram;        /**< abstract machine data size limit */
+SC_VDECL int freading;          /**< is there an input file ready for reading? */
+SC_VDECL int pc_curline;        /**< the line number in the current file */
+SC_VDECL short fnumber;         /**< number of files in the input file table */
+SC_VDECL short fcurrent;        /**< current file being processed */
+SC_VDECL int pc_sideeffect;     /**< true if an expression causes a side-effect */
+SC_VDECL int pc_stmtindent;     /**< current indent of the statement */
+SC_VDECL int indent_nowarn;     /**< skip warning "217 loose indentation" */
+SC_VDECL int pc_tabsize;        /**< number of spaces that a TAB represents */
+SC_VDECL int pc_matchedtabsize; /**< if no tabsize explicitly set, try to detect the tab size */
+SC_VDECL short sc_allowtags;    /**< allow/detect tagnames in lex() */
+SC_VDECL int sc_status;         /**< read/write status */
+SC_VDECL int sc_rationaltag;    /**< tag for rational numbers */
+SC_VDECL int rational_digits;   /**< number of fractional digits */
+SC_VDECL int sc_allowproccall;  /**< allow/detect tagnames in lex() */
+SC_VDECL short sc_is_utf8;      /**< is this source file in UTF-8 encoding */
+SC_VDECL char *pc_deprecate;    /**< if non-NULL, mark next declaration as deprecated */
+SC_VDECL int sc_curstates;      /**< ID of the current state list */
+SC_VDECL int pc_optimize;       /**< (peephole) optimization level */
+SC_VDECL int pc_memflags;       /**< special flags for the stack/heap usage */
+SC_VDECL int pc_overlays;       /**< generate overlay table + instructions? (abstract machine overay size limit) */
+SC_VDECL int pc_ovl0size[][2];  /**< size (in bytes) of the first (special) overlays */
+SC_VDECL int pc_cellsize;       /**< size (in bytes) of a cell */
+SC_VDECL uint64_t pc_cryptkey;  /**< key for encryption of the generated script */
 
-SC_VDECL constvalue sc_automaton_tab; /* automaton table */
-SC_VDECL constvalue sc_state_tab;     /* state table */
+SC_VDECL constvalue sc_automaton_tab; /**< automaton table */
+SC_VDECL constvalue sc_state_tab;     /**< state table */
 
-SC_VDECL FILE *inpf;          /* file read from (source or include) */
-SC_VDECL FILE *inpf_org;      /* main source file */
-SC_VDECL FILE *outf;          /* file written to */
+SC_VDECL FILE *inpf;            /**< file read from (source or include) */
+SC_VDECL FILE *inpf_org;        /**< main source file */
+SC_VDECL FILE *outf;            /**< file written to */
 
-SC_VDECL jmp_buf errbuf;      /* target of longjmp() on a fatal error */
+SC_VDECL jmp_buf errbuf;        /**< target of longjmp() on a fatal error */
 
 #if !defined PAWN_LIGHT
-  SC_VDECL int sc_makereport; /* generate a cross-reference report */
+  SC_VDECL int sc_makereport;   /**< generate a cross-reference report */
 #endif
 
 #endif /* SC_SKIP_VDECL */

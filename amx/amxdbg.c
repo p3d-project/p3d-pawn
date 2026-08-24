@@ -2,7 +2,7 @@
  *
  *  Support functions for debugger applications
  *
- *  Copyright (c) CompuPhase, 2005-2020
+ *  Copyright (c) CompuPhase, 2005-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxdbg.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: amxdbg.c 7683 2026-08-20 20:23:32Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -402,7 +402,7 @@ int AMXAPI dbg_GetFunctionAddress(AMX_DBG *amxdbg, const char *funcname, const c
    * "filename" parameter should point into the "filetbl" of the AMX_DBG
    * structure. The function name comparison is case sensitive too.
    */
-  int index, err;
+  int index;
   const char *tgtfile;
   ucell funcaddr;
 
@@ -414,6 +414,7 @@ int AMXAPI dbg_GetFunctionAddress(AMX_DBG *amxdbg, const char *funcname, const c
 
   index = 0;
   for ( ;; ) {
+    int err;
     /* find (next) matching function */
     while (index < amxdbg->hdr->symbols
            && (amxdbg->symboltbl[index]->ident != iFUNCTN || strcmp(amxdbg->symboltbl[index]->name, funcname) != 0))
@@ -480,7 +481,7 @@ int AMXAPI dbg_GetArrayDim(AMX_DBG *amxdbg, const AMX_DBG_SYMBOL *sym, const AMX
   /* retrieves a pointer to the array dimensions structures of an array symbol */
   const char *ptr;
 
-  assert(amxdbg != NULL);
+  (void)amxdbg;
   assert(sym != NULL);
   assert(symdim != NULL);
   *symdim = NULL;

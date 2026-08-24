@@ -29,7 +29,7 @@
 ;   License for the specific language governing permissions and limitations
 ;   under the License.
 ;
-;   $Id: amxexec_thumb2.s 7106 2024-02-14 21:02:03Z thiadmer $
+;   $Id: amxexec_thumb2.s 7683 2026-08-20 20:23:32Z thiadmer $
 
 
     AREA    amxexec_data, DATA, READONLY

@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amx.c 7487 2025-08-21 18:37:33Z thiadmer $
+ *  Version: $Id: amx.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -3744,15 +3744,19 @@ static const long utf8_lowmark[5] = { 0x80, 0x800, 0x10000L, 0x200000L, 0x400000
     case 4:
       if (((c=*string++) & 0xc0) != 0x80) goto error;
       result = (result << 6) | c & 0x3f;
+      /* fall-through */
     case 3:
       if (((c=*string++) & 0xc0) != 0x80) goto error;
       result = (result << 6) | c & 0x3f;
+      /* fall-through */
     case 2:
       if (((c=*string++) & 0xc0) != 0x80) goto error;
       result = (result << 6) | c & 0x3f;
+      /* fall-through */
     case 1:
       if (((c=*string++) & 0xc0) != 0x80) goto error;
       result = (result << 6) | c & 0x3f;
+      /* fall-through */
     case 0:
       if (((c=*string++) & 0xc0) != 0x80) goto error;
       result = (result << 6) | c & 0x3f;

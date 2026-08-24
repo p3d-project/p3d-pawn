@@ -1,6 +1,6 @@
 /*  String functions for the Pawn Abstract Machine
  *
- *  Copyright (c) CompuPhase, 2005-2020
+ *  Copyright (c) CompuPhase, 2005-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxstring.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: amxstring.c 7683 2026-08-20 20:23:32Z thiadmer $
  */
 #include <limits.h>
 #include <string.h>
@@ -134,10 +134,9 @@ static int amx_StrUnpack(cell *dest,cell *source,int len)
   /* len excludes the terminating '\0' byte */
   if ((ucell)*source>UNPACKEDMAX) {
     /* unpack string, from bottom up (so string can be unpacked in place) */
-    cell c;
     int i;
     for (i=len-1; i>=0; i--) {
-      c=source[i/sizeof(cell)] >> (sizeof(cell)-i%sizeof(cell)-1)*CHARBITS;
+      cell c=source[i/sizeof(cell)] >> (sizeof(cell)-i%sizeof(cell)-1)*CHARBITS;
       dest[i]=c & UCHAR_MAX;
     } /* for */
     dest[len]=0;        /* zero-terminate */
@@ -363,7 +362,7 @@ static cell AMX_NATIVE_CALL n_strfind(AMX *amx,const cell *params)
 {
   cell *cstr,*csub;
   int lenstr,lensub,offs;
-  cell c,f;
+  cell f;
 
   (void)(amx);
   cstr=amx_Address(amx,params[1]);
@@ -381,7 +380,7 @@ static cell AMX_NATIVE_CALL n_strfind(AMX *amx,const cell *params)
 
   for (offs=(int)params[4]; offs+lensub<=lenstr; offs++) {
     /* find the initial character */
-    c=extractchar(csub,0,params[3]);
+    cell c=extractchar(csub,0,params[3]);
     assert(c!=0);      /* string length is already checked */
     if (c!=f)
       continue;
@@ -398,9 +397,6 @@ static cell AMX_NATIVE_CALL n_strmid(AMX *amx,const cell *params)
 {
   cell *cdest,*csrc;
   int len,err;
-  int soffs,doffs;
-  unsigned char *ptr;
-  unsigned char c;
   int start=params[3];
   int end=params[4];
 
@@ -429,16 +425,17 @@ static cell AMX_NATIVE_CALL n_strmid(AMX *amx,const cell *params)
   } /* if */
 
   if ((ucell)*csrc>UNPACKEDMAX) {
+    int soffs,doffs;
     /* first align the source to a cell boundary */
     for (doffs=0,soffs=start; (soffs & (sizeof(cell)-1))!=0 && len>0; soffs++,doffs++,len--) {
-      ptr=packedptr(csrc,soffs);
-      c=*ptr;
+      unsigned char *ptr=packedptr(csrc,soffs);
+      cell c=*ptr;
       ptr=packedptr(cdest,doffs);
       *ptr=c;
     } /* for */
     if (len==0) {
       /* nothing left to do, zero-terminate */
-      ptr=packedptr(cdest,doffs);
+      unsigned char *ptr=packedptr(cdest,doffs);
       *ptr='\0';
       err=AMX_ERR_NONE;
     } else {
@@ -459,8 +456,6 @@ static cell AMX_NATIVE_CALL n_strdel(AMX *amx,const cell *params)
 {
   cell *cstr;
   int index,offs,length;
-  unsigned char *ptr;
-  unsigned char c;
 
   (void)(amx);
   /* calculate number of cells needed for (packed) destination */
@@ -475,7 +470,9 @@ static cell AMX_NATIVE_CALL n_strdel(AMX *amx,const cell *params)
 
   index--;  /* prepare for increment in the top of the loop */
   if (((ucell)*cstr>UNPACKEDMAX)) {
+    unsigned char c;
     do {
+      unsigned char *ptr;
       index++;
       ptr=packedptr(cstr,index+offs);
       c=*ptr;
@@ -500,7 +497,6 @@ static cell AMX_NATIVE_CALL n_strins(AMX *amx,const cell *params)
 {
   cell *cstr,*csub;
   int index,lenstr,lensub,maxlen,count;
-  unsigned char *ptr;
   cell c;
 
   /* calculate number of cells needed for (packed) destination */
@@ -534,13 +530,14 @@ static cell AMX_NATIVE_CALL n_strins(AMX *amx,const cell *params)
   if ((ucell)*cstr>UNPACKEDMAX) {
     /* make room for the new characters */
     for (count=lenstr; count>index; count--) {
-      ptr=packedptr(cstr,count-lensub);
+      unsigned char *ptr=packedptr(cstr,count-lensub);
       c=*ptr;
       ptr=packedptr(cstr,count);
       *ptr=(unsigned char)c;
     } /* for */
     /* copy in the new characters */
     for (count=0; count<lensub; count++) {
+      unsigned char *ptr;
       c=extractchar(csub,count,0);
       ptr=packedptr(cstr,index+count);
       *ptr=(unsigned char)c;

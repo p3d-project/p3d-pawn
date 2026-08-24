@@ -77,7 +77,7 @@ static cell AMX_NATIVE_CALL n_strfloat(AMX *amx,const cell *params)
 
     /* Find out how long the string is in characters. */
     amx_StrLen(pString, &nLen);
-    if (nLen == 0 || nLen >= sizeof szSource)
+    if (nLen == 0 || nLen >= (int)sizeof szSource)
         return 0;
 
     /* Now convert the Pawn string into a C type null terminated string */

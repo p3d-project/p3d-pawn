@@ -1,7 +1,7 @@
 /*  Simple "run-time" for the Pawn Abstract Machine, with optional support
  *  for debugging information and overlays.
  *
- *  Copyright (c) CompuPhase, 1997-2020
+ *  Copyright (c) CompuPhase, 1997-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -15,7 +15,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawnrun.c 6130 2020-04-29 12:35:51Z thiadmer $
+ *  Version: $Id: pawnrun.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -27,22 +27,29 @@
 
 #include <time.h>
 #if !defined CLOCKS_PER_SEC     /* some (older) compilers do not have it */
-  #define CLOCKS_PER_SEC CLK_TCK
+# define CLOCKS_PER_SEC CLK_TCK
 #endif
 
-#if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__)
-  #include <binreloc.h> /* from BinReloc, see www.autopackage.org */
-  #include <installpath.h> 
+#if !defined AMX_NODYNALOAD
+# if defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
+#   include <binreloc.h> /* from BinReloc, see www.autopackage.org */
+# elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+#  include <installpath.h>
+# endif
 #endif
 
 #if defined AMXOVL
-  #include "amxpool.h"
+# include "amxpool.h"
 #endif
 #if defined AMXDBG
-  #include "amxdbg.h"
+# include "amxdbg.h"
 #endif
 static char g_filename[_MAX_PATH];      /* for loading the debug or information
                                          * or for loading overlays */
+
+#if !defined countof
+# define countof(a)   (sizeof(a) / sizeof((a)[0]))
+#endif
 
 /* These initialization functions are part of the "extension modules"
  * (libraries with native functions) that this run-time uses. More
@@ -101,7 +108,6 @@ int AMXAPI prun_Overlay(AMX *amx, int index)
 {
   AMX_HEADER *hdr;
   AMX_OVERLAYINFO *tbl;
-  FILE *ovl;
 
   assert(amx != NULL);
   hdr = (AMX_HEADER*)amx->base;
@@ -110,6 +116,7 @@ int AMXAPI prun_Overlay(AMX *amx, int index)
   amx->codesize = tbl->size;
   amx->code = amx_poolfind(index);
   if (amx->code == NULL) {
+    FILE *ovl;
     if ((amx->code = amx_poolalloc(tbl->size, index)) == NULL)
       return AMX_ERR_OVERLAY;   /* failure allocating memory for the overlay */
     ovl = fopen(g_filename, "rb");
@@ -133,7 +140,7 @@ int AMXAPI aux_LoadProgram(AMX *amx, char *filename)
   int result;
   int32_t size;
   unsigned char *datablock;
-  #define OVLPOOLSIZE 4096
+# define OVLPOOLSIZE 4096
 
   /* open the file, read and check the header */
   if ((fp = fopen(filename, "rb")) == NULL)
@@ -155,12 +162,12 @@ int AMXAPI aux_LoadProgram(AMX *amx, char *filename)
     /* allocate the block for the data + stack/heap, plus the complete file
      * header, plus the overlay pool
      */
-    #if defined AMXOVL
+#   if defined AMXOVL
       size = (hdr.stp - hdr.dat) + hdr.cod + OVLPOOLSIZE;
-    #else
+#   else
 	  fclose(fp);
       return AMX_ERR_OVERLAY;
-    #endif
+#   endif
   } else {
     size = hdr.stp;
   } /* if */
@@ -179,7 +186,7 @@ int AMXAPI aux_LoadProgram(AMX *amx, char *filename)
   /* read in the file, in two parts; first the header and then the data section */
   rewind(fp);
   if ((hdr.flags & AMX_FLAG_OVERLAY) != 0) {
-    #if defined AMXOVL
+#   if defined AMXOVL
       /* read the entire header */
       fread(datablock, 1, hdr.cod, fp);
       /* read the data section, put it behind the header in the block */
@@ -187,7 +194,7 @@ int AMXAPI aux_LoadProgram(AMX *amx, char *filename)
       fread(datablock + hdr.cod, 1, hdr.hea - hdr.dat, fp);
       /* initialize the overlay pool */
       amx_poolinit(datablock + (hdr.stp - hdr.dat) + hdr.cod, OVLPOOLSIZE);
-    #endif
+#   endif
   } else {
     fread(datablock, 1, (size_t)hdr.size, fp);
   } /* if */
@@ -195,12 +202,12 @@ int AMXAPI aux_LoadProgram(AMX *amx, char *filename)
 
   /* initialize the abstract machine */
   memset(amx, 0, sizeof *amx);
-  #if defined AMXOVL
+# if defined AMXOVL
     if ((hdr.flags & AMX_FLAG_OVERLAY) != 0) {
       amx->data = datablock + hdr.cod;
       amx->overlay = prun_Overlay;
     } /* if */
-  #endif
+# endif
   result = amx_Init(amx, datablock);
 
   /* free the memory block on error, if it was allocated here */
@@ -221,7 +228,7 @@ int AMXAPI aux_FreeProgram(AMX *amx)
   if (amx->base!=NULL) {
     amx_Cleanup(amx);
     free(amx->base);
-    memset(amx,0,sizeof(AMX));
+    memset(amx, 0, sizeof *amx);
   } /* if */
   return AMX_ERR_NONE;
 }
@@ -263,7 +270,7 @@ static char *messages[] = {
       /* AMX_ERR_GENERAL   */ "General error (unknown or unspecific error)",
       /* AMX_ERR_OVERLAY   */ "Overlays are unsupported (JIT) or uninitialized",
     };
-  if (errnum < 0 || errnum >= sizeof messages / sizeof messages[0])
+  if (errnum < 0 || errnum >= (int)countof(messages))
     return "(unknown)";
   return messages[errnum];
 }
@@ -271,12 +278,12 @@ static char *messages[] = {
 void ExitOnError(AMX *amx, int error)
 {
   if (error != AMX_ERR_NONE) {
-    #if defined AMXDBG
+#   if defined AMXDBG
       FILE *fp;
       AMX_DBG amxdbg;
       long line;
       const char *filename;
-    #endif
+#   endif
 
     printf("Run time error %d: \"%s\" on address %ld\n",
            error, aux_StrError(error), (long)amx->cip);
@@ -284,7 +291,7 @@ void ExitOnError(AMX *amx, int error)
     /* optionally use the debug library to find the line number (if debug info.
      * is available)
      */
-    #if defined AMXDBG
+#   if defined AMXDBG
       /* load the debug info. */
       if ((fp=fopen(g_filename,"rb")) != NULL && dbg_LoadInfo(&amxdbg,fp) == AMX_ERR_NONE) {
         dbg_LookupFile(&amxdbg, amx->cip, &filename);
@@ -293,7 +300,7 @@ void ExitOnError(AMX *amx, int error)
         dbg_FreeInfo(&amxdbg);
         fclose(fp);
       } /* if */
-    #endif
+#   endif
     exit(1);
   } /* if */
 }
@@ -321,18 +328,20 @@ int main(int argc,char *argv[])
   if (argc < 2)
     PrintUsage(argv[0]);        /* function "usage" aborts the program */
 
-  #if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
-    /* see www.autopackage.org (now Listaller) for the BinReloc module */
-    if (br_init(NULL)) {
-      char *libroot=br_find_exe_dir("");
-      setenv("AMXLIB",libroot,0);
+# if !defined AMX_NODYNALOAD
+#   if defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
+      /* see www.autopackage.org (now Listaller) for the BinReloc module */
+      if (br_init(NULL)) {
+        char *libroot=br_find_exe_dir("");
+        setenv("AMXLIB",libroot,0);
+        free(libroot);
+      } /* if */
+#   elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+      char *libroot=get_install_path();
+      setenv("AMXLIB", libroot, 0);
       free(libroot);
-    } /* if */
-  #elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
-    char *libroot=get_install_path();
-    setenv("AMXLIB", libroot, 0);
-    free(libroot);
-  #endif
+#   endif
+# endif
 
   /* Load the program and initialize the abstract machine. */
   err = aux_LoadProgram(&amx, argv[1]);
@@ -449,12 +458,12 @@ int main(int argc,char *argv[])
     printf("\nRun time:     %.2f seconds\n",(double)(end-start)/CLOCKS_PER_SEC);
   if (stackinfo.maxstack != 0 || stackinfo.maxheap != 0) {
     printf("Stack usage:  %ld cells (%ld bytes)\n",
-           stackinfo.maxstack / sizeof(cell), stackinfo.maxstack);
+           stackinfo.maxstack / (long)sizeof(cell), stackinfo.maxstack);
     printf("Heap usage:   %ld cells (%ld bytes)\n",
-           stackinfo.maxheap / sizeof(cell), stackinfo.maxheap);
+           stackinfo.maxheap / (long) sizeof(cell), stackinfo.maxheap);
   } /* if */
 
-  #if defined AMX_TERMINAL
+# if defined AMX_TERMINAL
     /* This is likely a graphical terminal, which should not be closed
      * automatically
      */
@@ -463,10 +472,10 @@ int main(int argc,char *argv[])
       while (amx_termctl(4,0))
         /* nothing */;
     }
-  #endif
-  #if defined CURSES
+# endif
+# if defined CURSES
     endwin();
-  #endif
+# endif
 
   return 0;
 }

@@ -1,6 +1,6 @@
 /*  Pawn Abstract Machine (for the Pawn language)
  *
- *  Copyright (c) CompuPhase, 1997-2023
+ *  Copyright (c) CompuPhase, 1997-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amx.h 7491 2025-08-25 09:14:23Z thiadmer $
+ *  Version: $Id: amx.h 7683 2026-08-20 20:23:32Z thiadmer $
  */
 
 #ifndef AMX_H_INCLUDED

@@ -4,7 +4,7 @@
  *  cannot always be implemented with portable C functions. In other words,
  *  these routines must be ported to other environments.
  *
- *  Copyright (c) CompuPhase, 1997-2021
+ *  Copyright (c) CompuPhase, 1997-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -18,7 +18,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxcons.c 6968 2023-07-21 11:30:53Z thiadmer $
+ *  Version: $Id: amxcons.c 7684 2026-08-23 20:30:23Z thiadmer $
  */
 
 #if defined _UNICODE || defined __UNICODE__ || defined UNICODE
@@ -35,10 +35,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#if defined __BORLANDC__
+  #include <malloc.h>
+#endif
 #if defined __WIN32__ || defined _WIN32 || defined WIN32 || defined __MSDOS__
   #define HAVE_CONIO
   #include <conio.h>
-  #include <malloc.h>
 #endif
 #if defined USE_CURSES || defined HAVE_CURSES_H
   #include <curses.h>
@@ -579,12 +581,11 @@ enum {
 static TCHAR *reverse(TCHAR *string,int stop)
 {
   int start=0;
-  TCHAR temp;
 
   /* swap the string */
   stop--;       /* avoid swapping the '\0' byte to the first position */
   while (stop - start > 0) {
-    temp = string[start];
+    TCHAR temp = string[start];
     string[start] = string[stop];
     string[stop] = temp;
     start++;
@@ -1014,7 +1015,7 @@ int amx_printstring(AMX *amx,cell *cstr,AMX_FMTINFO *info)
         } else {
           if (length--<=0)
             break;              /* print up to a certain length */
-          assert(idx<sizeof cache);
+          assert(idx<(int)sizeof cache);
           cache[idx++]=c;
           if (idx==sizeof cache - 1) {
             cache[idx]=__T('\0');
@@ -1031,7 +1032,7 @@ int amx_printstring(AMX *amx,cell *cstr,AMX_FMTINFO *info)
       for (i=0; cstr[i]!=0; i++) {
         if (skip-->0)
           continue;
-        assert(idx<sizeof cache);
+        assert(idx<(int)sizeof cache);
         cache[idx++]=(TCHAR)cstr[i];
         if (idx==sizeof cache - 1) {
           cache[idx]=__T('\0');
@@ -1415,7 +1416,7 @@ static int idxKeyPressed = -1;
 
 static int AMXAPI amx_ConsoleIdle(AMX *amx, int AMXAPI Exec(AMX *, cell *, int))
 {
-  int err=0, key;
+  int err=0;
 
   assert(idxKeyPressed >= 0);
 
@@ -1423,7 +1424,7 @@ static int AMXAPI amx_ConsoleIdle(AMX *amx, int AMXAPI Exec(AMX *, cell *, int))
     PrevIdle(amx, Exec);
 
   if (amx_kbhit()) {
-    key = amx_getch();
+    int key = amx_getch();
     amx_Push(amx, key);
     err = Exec(amx, NULL, idxKeyPressed);
     while (err == AMX_ERR_SLEEP)

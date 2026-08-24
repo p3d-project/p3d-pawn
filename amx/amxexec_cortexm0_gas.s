@@ -29,7 +29,7 @@
 @   License for the specific language governing permissions and limitations
 @   under the License.
 @
-@   $Id: amxexec_cortexm0_gas.S 7630 2026-04-14 18:40:54Z thiadmer $
+@   $Id: amxexec_cortexm0_gas.S 7683 2026-08-20 20:23:32Z thiadmer $
 
     .file   "amxexec_cortexm0_gas.S"
     .syntax unified

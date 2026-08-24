@@ -318,7 +318,7 @@ INSTALL(TARGETS pawndbg RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # libamx
 
 SET(AMXLIB_MAJOR "4")
-SET(AMXLIB_VER "4.0.0")
+SET(AMXLIB_VER "4.1.0")
 SET(AMXLIB_SRCS amx.c amxaux.c amxcore.c amxcons.c amxpool.c amxdbg.c amxstring.c)
 IF (UNIX)
   SET(AMXLIB_SRCS ${AMXLIB_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/../linux/binreloc.c

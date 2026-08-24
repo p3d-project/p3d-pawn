@@ -26,7 +26,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxpool.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: amxpool.c 7683 2026-08-20 20:23:32Z thiadmer $
  */
 #include <assert.h>
 #include "amx.h"
@@ -78,8 +78,7 @@ void amx_poolinit(void *pool, unsigned size)
  */
 void amx_poolfree(void *block)
 {
-  ARENA *hdr,*hdr2;
-  unsigned sz;
+  ARENA *hdr;
 
   assert(pool_base!=NULL);
   assert(pool_size>sizeof(ARENA));
@@ -92,6 +91,7 @@ void amx_poolfree(void *block)
     hdr->index=-1;
     hdr->lru=0;
   } else {
+    ARENA *hdr2;
     hdr=(ARENA*)((char*)block-sizeof(ARENA));
     assert((char*)hdr>=(char*)pool_base && (char*)hdr<(char*)pool_base+pool_size);
     assert(hdr->blocksize<pool_size);
@@ -106,7 +106,7 @@ void amx_poolfree(void *block)
 
     /* try to coalesce with the previous block */
     if ((void*)hdr!=pool_base) {
-      sz=pool_size;
+      unsigned sz=pool_size;
       hdr2=(ARENA*)pool_base;
       while (sz>0 && (char*)hdr2+hdr2->blocksize+sizeof(ARENA)!=(char*)hdr) {
         assert(sz<=pool_size);
@@ -138,9 +138,8 @@ void amx_poolfree(void *block)
  */
 void *amx_poolalloc(unsigned size,int index)
 {
-  ARENA *hdr,*hdrlru;
+  ARENA *hdr;
   unsigned sz;
-  unsigned short minlru;
 
   assert(size>0);
   assert(index>=0 && index<=SHRT_MAX);
@@ -158,6 +157,8 @@ void *amx_poolalloc(unsigned size,int index)
    * the block with the lowest LRU count and tries again
    */
   do {
+    ARENA *hdrlru;
+    unsigned short minlru;
     sz=pool_size;
     hdr=(ARENA*)pool_base;
     hdrlru=hdr;

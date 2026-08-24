@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxfile.c 6969 2023-07-26 12:26:41Z thiadmer $
+ *  Version: $Id: amxfile.c 7683 2026-08-20 20:23:32Z thiadmer $
  */
 #if defined _UNICODE || defined __UNICODE__ || defined UNICODE
 # if !defined UNICODE   /* for Windows */
@@ -98,6 +98,11 @@
     #define _trmdir     rmdir
     #define _tstat      stat
     #define _tutime     utime
+  #elif defined __MINGW32__
+    #define _tmkdir     mkdir
+    #define _trmdir     rmdir
+    #define _tstat      _stat
+    #define _tutime     _utime
   #else
     #define _tmkdir     _mkdir
     #define _trmdir     _rmdir
@@ -108,7 +113,7 @@
   #if defined __APPLE__
     #define t_stat      stat
   #elif defined __WIN32__
-    #if defined __WATCOMC__
+    #if defined __WATCOMC__ || defined __MINGW32__
       #define t_stat    _stat
     #else
       #define t_stat    __stat

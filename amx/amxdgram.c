@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxdgram.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: amxdgram.c 7683 2026-08-20 20:23:32Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -33,7 +33,7 @@
   #include <unistd.h>
 #else
   #include <malloc.h>
-  #include <winsock.h>
+  #include <ws2tcpip.h>
 #endif
 #include "amx.h"
 
@@ -116,7 +116,7 @@ static int udp_Send(const char *host,short port,const char *message,int size)
   if (sLocal==INVALID_SOCKET)
     return -1;
 
-  memset((void *)&sRemote,sizeof sRemote,0);
+  memset((void *)&sRemote,0,sizeof sRemote);
   sRemote.sin_family=AF_INET;
   sRemote.sin_port=htons(port);
   sRemote.sin_addr.s_addr= (host==NULL) ? htonl(INADDR_BROADCAST) : udp_GetHostAddr(host,0);
@@ -134,7 +134,7 @@ static int udp_Send(const char *host,short port,const char *message,int size)
 static int udp_Receive(char *message,size_t maxmsg,char *source)
 {
   struct sockaddr_in sSource;
-  unsigned slen=sizeof(sSource);
+  socklen_t  slen=(socklen_t )sizeof(sSource);
   int size;
 
   if (sLocal==INVALID_SOCKET)
@@ -176,7 +176,7 @@ static int udp_Listen(short port)
 {
   struct sockaddr_in sFrom;
 
-  memset((void *)&sFrom,sizeof sFrom,0);
+  memset((void *)&sFrom,0,sizeof sFrom);
   sFrom.sin_family=AF_INET;
   sFrom.sin_port=htons(port);
   sFrom.sin_addr.s_addr=htonl(INADDR_ANY);

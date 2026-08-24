@@ -405,11 +405,6 @@ main()
         test2 = test2 && false                  // to avoid a compiler warning
     #endif
 
-    #if defined CARET_CTRL_CHAR
-        new url{100} = "Link: ^"http://www.test.de^" foo"
-        #pragma unused url
-    #endif
-
     #if defined ARRAY_CELL_ASSIGN_NOSELF
         new g_Stalker[10]
 

@@ -192,7 +192,6 @@ NEXT    MACRO
         ; direct threading
         jmp     DWORD ptr [esi]
     ENDIF
-;       ALIGN   4
         ENDM
 
 JUMPREL MACRO
@@ -408,8 +407,7 @@ OP_LCTRL:
     lctrl_3:
         cmp     ebp,3
         jne     short lctrl_4
-        mov     ebp,amx         ; 3 -> STP
-        mov     eax,stp
+        mov     eax,stp         ; 3 -> STP
         jmp     short lctrl_done
     lctrl_4:
         cmp     ebp,4
@@ -729,7 +727,6 @@ OP_SMUL:
 
 OP_SDIV:
         xchg    eax,edx
-        ALIGN   4
 
         ; Although SDIV.INV is a supplemental instruction, it is implemented
         ; as a core instruction here, because SDIV is implemented in terms

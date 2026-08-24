@@ -91,7 +91,7 @@ test1:
   say 'Symptoms of detected bug: the compiler flags the error, but then crashes'
   say 'or hangs.'
   say '-----'
-  pawncc ' -p UNDEF_FUNC_CALL= test1'
+  pawncc ' -v0 -p UNDEF_FUNC_CALL= test1'
   return
 
 test2:
@@ -114,7 +114,7 @@ test3:
   say 'Symptoms of detected bug: the abstract machine returns line 11, because'
   say 'that is the last line executed (through the function call).'
   say '-----'
-  pawncc ' -d2 ASSERT_LINENO= test2'
+  pawncc ' -v0 -d2 ASSERT_LINENO= test2'
   say '-----'
   pawnrun ' test2.amx'
   return
@@ -125,7 +125,7 @@ test4:
   say '   Array assignment: the following three tests attempt to assign arrays where'
   say '   the size does not match, or the size of an array is unspecified.'
   say '-----'
-  pawncc ' MIX_PACKED_UNPACKED= test3'
+  pawncc ' -v0 MIX_PACKED_UNPACKED= test3'
   return
 
 test5:
@@ -137,7 +137,7 @@ test5:
   say 'Symptoms of detected bug: the compiler produces garbage on the screen or'
   say 'crashes.'
   say '-----'
-  pawncc ' UNTERMINATED_STRING= test2'
+  pawncc ' -v0 UNTERMINATED_STRING= test2'
   return
 
 test6:
@@ -154,9 +154,9 @@ test7:
   say '   Array assignment: the following three tests attempt to assign arrays where'
   say '   the size does not match, or the size of an array is unspecified.'
   say '-----'
-  pawncc ' WRONG_LENGTH_1= test3'
-  pawncc ' WRONG_LENGTH_2= test3'
-  pawncc ' WRONG_LENGTH_3= test3'
+  pawncc ' -v0 WRONG_LENGTH_1= test3'
+  pawncc ' -v0 WRONG_LENGTH_2= test3'
+  pawncc ' -v0 WRONG_LENGTH_3= test3'
   return
 
 test8:
@@ -166,7 +166,7 @@ test8:
   say '   in a second array. Both arrays have a single dimension. A cell cannot hold'
   say '   an array.'
   say '-----'
-  pawncc ' INDEXED= test3'
+  pawncc ' -v0 INDEXED= test3'
   return
 
 test9:
@@ -189,7 +189,7 @@ test10:
   say ''
   say 'Symptoms of detected bug: no warning message.'
   say '-----'
-  pawncc ' -p DANGLING_ELSE= test1'
+  pawncc ' -v0 -p DANGLING_ELSE= test1'
   return
 
 test11:
@@ -201,7 +201,7 @@ test11:
   say 'Symptoms of detected bug: warning message "assigned a value that is never'
   say 'used" (warning 204).'
   say '-----'
-  pawncc ' -p UNUSED_LOCAL= test1'
+  pawncc ' -v0 -p UNUSED_LOCAL= test1'
   return
 
 test12:
@@ -213,7 +213,7 @@ test12:
   say ''
   say 'Symptoms of detected bug: no warning message.'
   say '-----'
-  pawncc ' -p LOCAL_SHADOWS= test1'
+  pawncc ' -v0 -p LOCAL_SHADOWS= test1'
   return
 
 test13:
@@ -284,7 +284,7 @@ test18:
   say 'Symptoms of detected bug: the compiler accepted different parameter names (it'
   say 'rejected identical names; this bug is related to the previous one).'
   say '-----'
-  pawncc ' -p PROTOTYPE_BAD= test1'
+  pawncc ' -v0 -p PROTOTYPE_BAD= test1'
   return
 
 test19:
@@ -295,7 +295,7 @@ test19:
   say 'Symptoms of detected bug: the compiler detects the error but then fails in an'
   say 'assertion and/or crashes.'
   say '-----'
-  pawncc ' -p LVAL_IN_TEST= test1'
+  pawncc ' -v0 -p LVAL_IN_TEST= test1'
   return
 
 test20:
@@ -312,7 +312,7 @@ test21:
   say ''
   say '    A variable is declared both "public" and "native" (which is invalid).'
   say '-----'
-  pawncc ' INVALID_PUBVAR= test4'
+  pawncc ' -v0 INVALID_PUBVAR= test4'
   return
 
 test22:
@@ -320,8 +320,8 @@ test22:
   say ''
   say '    Two functions are flagged as both "public" and "native" (which is invalid).'
   say '-----'
-  pawncc ' INVALID_PUBFUNC1= test4'
-  pawncc ' INVALID_PUBFUNC2= test4'
+  pawncc ' -v0 INVALID_PUBFUNC1= test4'
+  pawncc ' -v0 INVALID_PUBFUNC2= test4'
   return
 
 test23:
@@ -329,7 +329,7 @@ test23:
   say ''
   say '    Both function arguments and local variables cannot be "public".'
   say '-----'
-  pawncc ' INVALID_PUBLOCAL= test4'
+  pawncc ' -v0 INVALID_PUBLOCAL= test4'
   return
 
 test24:
@@ -342,7 +342,7 @@ test24:
   say 'because it attempts to store the default value (which is not present) for the'
   say 'array.'
   say '-----'
-  pawncc ' -p MISSING_PARM= test1'
+  pawncc ' -v0 -p MISSING_PARM= test1'
   return
 
 test25:
@@ -355,7 +355,7 @@ test25:
   say 'Symptoms of detected bug: the prefix operator on the next line was considered'
   say 'a postfix operator related to the previous line.'
   say '-----'
-  pawncc ' -;- IMPLICIT_POSTFIX= test2'
+  pawncc ' IMPLICIT_POSTFIX= test2'
   return
 
 test26:
@@ -391,7 +391,7 @@ test28:
   say '    A string or a literal array that is passed to a function must be smaller'
   say '    or equal to the size of the array of the function''s formal argument.'
   say '-----'
-  pawncc ' PASS_WRONG_LENGTH= test3'
+  pawncc ' -v0 PASS_WRONG_LENGTH= test3'
   return
 
 test29:
@@ -417,7 +417,7 @@ test30:
   say ''
   say 'Symptoms of detected bug: silent complation (no error/warning message).'
   say '-----'
-  pawncc ' test6'
+  pawncc ' -v0 test6'
   return
 
 test31:
@@ -427,7 +427,7 @@ test31:
   say ''
   say 'Symptoms of detected bug: silent complation (no error/warning message).'
   say '-----'
-  pawncc ' test7'
+  pawncc ' -v0 test7'
   return
 
 test32:
@@ -464,7 +464,7 @@ test34:
   say 'redundant test was scrapped and this caused code following it to be scrapped as'
   say 'well.'
   say '-----'
-  pawncc ' REDUNDANT_TEST= test2'
+  pawncc ' -v0 REDUNDANT_TEST= test2'
   say '-----'
   pawnrun ' test2.amx'
   return
@@ -479,7 +479,7 @@ test35:
   say 'Symptoms of detected bug: invalid opcode assertion when running it. The jump'
   say 'around the following code was scrapped too.'
   say '-----'
-  pawncc ' REDUNDANT_CODE= test2'
+  pawncc ' -v0 REDUNDANT_CODE= test2'
   say '-----'
   pawnrun ' test2.amx'
   return
@@ -527,7 +527,7 @@ test38:
   say 'Symptoms of detected bug: the compiler hangs (it drops in an endless loop and'
   say 'does not finish compilation).'
   say '-----'
-  pawncc ' -p SWITCH_NO_COLONS= test1'
+  pawncc ' -v0 -p SWITCH_NO_COLONS= test1'
   return
 
 test39:
@@ -622,7 +622,7 @@ test44:
   say 'Symptoms of detected bug: error 004 ("function not implemented") on printf,'
   say 'no error on the variable, but the variable is not created either.'
   say '-----'
-  pawncc ' -p menumain'
+  pawncc ' -v0 -p menumain'
   return
 
 test45:
@@ -671,7 +671,7 @@ test47:
   say 'and then sees a function call as a function declaration. This causes the'
   say 'error to go undetected in the second pass.'
   say '-----'
-  pawncc ' test9'
+  pawncc ' -v0 test9'
   return
 
 test48:
@@ -686,7 +686,7 @@ test48:
   say 'cause a protection faulth when comparing the last (new) argument with the'
   say 'non-existing old declaration.'
   say '-----'
-  pawncc ' -p REDECLARE_EXPAND= test1'
+  pawncc ' -v0 -p REDECLARE_EXPAND= test1'
   return
 
 test49:
@@ -711,7 +711,7 @@ test50:
   say 'Symptoms of detected bug: the warning was absent when the function result was'
   say 'used in a variable declaration (initialization).'
   say '-----'
-  pawncc ' -p NO_RETURN= test1'
+  pawncc ' -v0 -p NO_RETURN= test1'
   return
 
 test51:
@@ -723,7 +723,7 @@ test51:
   say 'the argument lists of the new and the old declaration (the variable does not'
   say 'have a parameter list, of course).'
   say '-----'
-  pawncc ' -p REDECLARE_VAR_FUNC= test1'
+  pawncc ' -v0 -p REDECLARE_VAR_FUNC= test1'
   return
 
 test52:
@@ -735,8 +735,8 @@ test52:
   say '    A more advanced test also checks whether both branches of an "if" statement'
   say '    end with a "return". If so, the "return" is in fact unconditional.'
   say '-----'
-  pawncc ' -p UNREACHABLE_CODE1= test1'
-  pawncc ' -p UNREACHABLE_CODE2= test1'
+  pawncc ' -v0 -p UNREACHABLE_CODE1= test1'
+  pawncc ' -v0 -p UNREACHABLE_CODE2= test1'
   return
 
 test53:
@@ -746,7 +746,7 @@ test53:
   say '    error. The first warning is for a simple assignment, the second for an'
   say '    array assignment.'
   say '-----'
-  pawncc ' -p SELF_ASSIGNMENT= test1'
+  pawncc ' -v0 -p SELF_ASSIGNMENT= test1'
   return
 
 test54:
@@ -756,8 +756,8 @@ test54:
   say '    if/for/while/do statement is useless. Due to implementation difficulties,'
   say '    it is flagged as "invalid".'
   say '-----'
-  pawncc ' -p USELESS_DECLARE1= test1'
-  pawncc ' -p USELESS_DECLARE2= test1'
+  pawncc ' -v0 -p USELESS_DECLARE1= test1'
+  pawncc ' -v0 -p USELESS_DECLARE2= test1'
   return
 
 test55:
@@ -786,7 +786,7 @@ test56:
   say 're-initialized, so there is no error in the common case (variables must be'
   say 'declared before use).'
   say '-----'
-  pawncc ' -p LITERAL_QUEUE= test1'
+  pawncc ' -v0 -p LITERAL_QUEUE= test1'
   return
 
 test57:
@@ -800,7 +800,7 @@ test57:
   say 'up "eating" part of other declarations or functions, or attempting to read past'
   say 'the end of file.'
   say '-----'
-  pawncc ' INCOMPLETE_2D_ARRAY= test10'
+  pawncc ' -v0 INCOMPLETE_2D_ARRAY= test10'
   return
 
 test58:
@@ -830,8 +830,8 @@ test59:
   say ''
   say 'Symptoms of detected bug: the compiler did not catch this bug.'
   say '-----'
-  pawncc ' NEGATIVE_INDEX1= test2'
-  pawncc ' NEGATIVE_INDEX2= test2'
+  pawncc ' -v0 NEGATIVE_INDEX1= test2'
+  pawncc ' -v0 NEGATIVE_INDEX2= test2'
   return
 
 test60:
@@ -883,7 +883,7 @@ test63:
   say 'Symptoms of detected bug: A double declaration of a native function caused'
   say 'arguments to be allocated another time, as the prototype flag was cleared.'
   say '-----'
-  pawncc ' DOUBLE_NATIVE_DECLARE= test2'
+  pawncc ' -v0 DOUBLE_NATIVE_DECLARE= test2'
   return
 
 test64:
@@ -976,18 +976,21 @@ test70:
   say 'as the colon of the conditional operator. The new syntax requires such'
   say 'ambiguous expression to be contained in parantheses.'
   say '-----'
-  pawncc ' -p TAGS_IN_COND_OPER_WRONG= test1'
+  pawncc ' -v0 -p TAGS_IN_COND_OPER_WRONG= test1'
   return
 
 test71:
-  say '71. The following test should compile successfully.'
+  say '71. The following test should compile successfully; when run, it should print:'
   say ''
-  say '    The control character "^" should still work when configured.'
+  say '    result = 1'
   say ''
-  say 'Symptoms of detected bug: the function detecting single-line comments did not'
-  say 'consider the control character value, but used a hardcoded "\".'
+  say 'Symptoms of detected bug: wrong output due to code generation bug. The issue is'
+  say 'a global variable that is passed to forward function (and never modified), and'
+  say 'which was then removed as if it weren''t used.'
   say '-----'
-  pawncc ' -p -^^ CARET_CTRL_CHAR= test1'
+  pawncc ' test_glbvar'
+  say '-----'
+  pawnrun ' test_glbvar.amx'
   return
 
 test72:
@@ -995,7 +998,7 @@ test72:
   say ''
   say '    Arrays declared with symbolic indices are not "coercible" in assignments.'
   say '-----'
-  pawncc ' ARRAY_INDEX_TAG_ASSIGN= test11'
+  pawncc ' -v0 ARRAY_INDEX_TAG_ASSIGN= test11'
   return
 
 test73:
@@ -1003,7 +1006,7 @@ test73:
   say ''
   say '    Arrays declared with symbolic indices are not "coercible" in function calls.'
   say '-----'
-  pawncc ' ARRAY_INDEX_TAG_CALL= test11'
+  pawncc ' -v0 ARRAY_INDEX_TAG_CALL= test11'
   return
 
 test74:
@@ -1012,7 +1015,7 @@ test74:
   say '    Symbolic indices of array arguments indices should be checked between'
   say '    declaration and definition.'
   say '-----'
-  pawncc ' ARRAY_INDEX_TAG_DECL= test11'
+  pawncc ' -v0 ARRAY_INDEX_TAG_DECL= test11'
   return
 
 test75:
@@ -1156,7 +1159,7 @@ test86:
   say 'Symptoms of detected bug: The error was detected, but the compiler dropped in'
   say 'an assertion when proceeding to initialize the indirection tables.'
   say '-----'
-  pawncc ' -p ARRAY_VARDIM_INCOMPLETE= test1'
+  pawncc ' -v0 -p ARRAY_VARDIM_INCOMPLETE= test1'
   return
 
 test87:
@@ -1168,7 +1171,7 @@ test87:
   say 'Symptoms of detected bug: The error was detected, but the compiler dropped in'
   say 'an assertion when proceeding to initialize the indirection tables.'
   say '-----'
-  pawncc ' -p ARRAY_VARDIM_NONINIT= test1'
+  pawncc ' -v0 -p ARRAY_VARDIM_NONINIT= test1'
   return
 
 test88:
@@ -1177,7 +1180,7 @@ test88:
   say '    A multi-dimensional array is initialized with {...} syntax for the major'
   say '    dimension.'
   say '-----'
-  pawncc ' -p ARRAY_VARDIM_WRONGBRACKETS= test1'
+  pawncc ' -v0 -p ARRAY_VARDIM_WRONGBRACKETS= test1'
   return
 
 test89:
@@ -1227,8 +1230,8 @@ test92:
   say ''
   say '    An attempt to declare public and local state variables.'
   say '-----'
-  pawncc ' PUBLIC_STATE_VAR= test1'
-  pawncc ' LOCAL_STATE_VAR= test1'
+  pawncc ' -v0 PUBLIC_STATE_VAR= test1'
+  pawncc ' -v0 LOCAL_STATE_VAR= test1'
   return
 
 test93:
@@ -1236,7 +1239,7 @@ test93:
   say ''
   say '    An attempt to declare a state variable with an initialler.'
   say '-----'
-  pawncc ' INITIALIZED_STATE_VAR= test1'
+  pawncc ' -v0 INITIALIZED_STATE_VAR= test1'
   return
 
 test94:
@@ -1248,7 +1251,7 @@ test94:
   say 'Symptoms of detected bug: in a special syntax (procedure call), the undeclared'
   say 'variable was interpreted as a function (use before declaration).'
   say '-----'
-  pawncc ' WRONG_PROC_CALL= test13'
+  pawncc ' -v0 WRONG_PROC_CALL= test13'
   return
 
 test95:
@@ -1270,7 +1273,7 @@ test96:
   say '    the wrong name for the public function (so this is a warning for a common'
   say '    error.'
   say '-----'
-  pawncc ' UNDECLARED_PUBLIC= test1'
+  pawncc ' -v0 UNDECLARED_PUBLIC= test1'
   return
 
 test97:
@@ -1293,7 +1296,7 @@ test98:
   say ''
   say 'Symptoms of detected bug: this was not checked by the compiler.'
   say '-----'
-  pawncc ' ARRAY_LOGIC_EXPR= test1'
+  pawncc ' -v0 ARRAY_LOGIC_EXPR= test1'
   return
 
 test99:
@@ -1320,7 +1323,7 @@ test100:
   say ''
   say 'Symptoms of detected bug: no size check; invalid code generation.'
   say '-----'
-  pawncc ' ARRAY_TOO_LARGE= test1'
+  pawncc ' -v0 ARRAY_TOO_LARGE= test1'
   return
 
 test101:
@@ -1332,7 +1335,7 @@ test101:
   say ''
   say 'Symptoms of detected bug: compiler crashed.'
   say '-----'
-  pawncc ' INTERNAL_PUBLIC_CALL= test14'
+  pawncc ' -v0 INTERNAL_PUBLIC_CALL= test14'
   return
 
 test102:
@@ -1342,7 +1345,7 @@ test102:
   say ''
   say 'Symptoms of detected bug: redefinition was silently allowed.'
   say '-----'
-  pawncc ' REDEFINE_CONSTANTS= test1'
+  pawncc ' -v0 REDEFINE_CONSTANTS= test1'
   return
 
 test103:
@@ -1389,7 +1392,7 @@ test106:
   say 'Symptoms of detected bug: the parameter would replaced by an empty string,'
   say 'without warning.'
   say '-----'
-  pawncc ' MACRO_PARM_UNKNOWN= test2'
+  pawncc ' -v0 MACRO_PARM_UNKNOWN= test2'
   return
 
 test107:
@@ -1417,7 +1420,7 @@ test108:
   say ''
   say '    Code below an infinite loop, which does not contain a "break".'
   say '-----'
-  pawncc ' -p UNREACHABLE_CODE3= test1'
+  pawncc ' -v0 -p UNREACHABLE_CODE3= test1'
   return
 
 test109:
@@ -1428,7 +1431,7 @@ test109:
   say ''
   say 'Symptoms of detected bug: obscure error messages.'
   say '-----'
-  pawncc ' FOR_MIX_EXPR_VAR= test1'
+  pawncc ' -v0 FOR_MIX_EXPR_VAR= test1'
   return
 
 test110:
@@ -1438,7 +1441,7 @@ test110:
   say ''
   say 'Symptoms of detected bug: obscure error message followed by a crash.'
   say '-----'
-  pawncc ' AMBIGUOUS_CALL= test1'
+  pawncc ' -v0 AMBIGUOUS_CALL= test1'
   return
 
 test111:
@@ -1495,7 +1498,7 @@ test114:
   say ''
   say '     Detection and notification of recursion (both direct and indirect).'
   say '-----'
-  pawncc ' RECURSION_DETECTION= -v test1'
+  pawncc ' -v0 RECURSION_DETECTION= -v test1'
   return
 
 test115:
@@ -1519,7 +1522,7 @@ test116:
   say 'Symptoms of detected bug: no error message; the compiler created a huge literal'
   say 'pool for the array.'
   say '-----'
-  pawncc ' PARTIAL_ARRAY_SIZE= test2'
+  pawncc ' -v0 PARTIAL_ARRAY_SIZE= test2'
   return
 
 test117:
@@ -1544,7 +1547,7 @@ test118:
   say 'Symptoms of detected bug: an assertion in the maintenance of the stack usage'
   say 'of the function.'
   say '-----'
-  pawncc ' UNBALANCED_BRACES= test2'
+  pawncc ' -v0 UNBALANCED_BRACES= test2'
   return
 
 test119:
@@ -1556,7 +1559,7 @@ test119:
   say ''
   say 'Symptoms of detected bug: the filename reported was the main file.'
   say '-----'
-  pawncc ' DECLARATION_POSITION= test2'
+  pawncc ' -v0 DECLARATION_POSITION= test2'
   return
 
 test120:
@@ -1578,7 +1581,8 @@ test121:
   say ''
   say '     Assigning a 2-dimensional array to a slot in a 3-dimensional array.'
   say ''
-  say 'Symptoms of detected bug: incorrect print-out, due to overwriting the index vector.'
+  say 'Symptoms of detected bug: incorrect print-out, due to overwriting the index'
+  say 'vector.'
   say '-----'
   pawncc ' ARRAY2DTO3D= array2'
   say '-----'
@@ -1600,7 +1604,7 @@ test123:
   say ''
   say '     Omitting commas in an enumeration declaration (where they are required).'
   say '-----'
-  pawncc ' ENUM_BAD_DECL= test1'
+  pawncc ' -v0 ENUM_BAD_DECL= test1'
   return
 
 test124:
@@ -1625,7 +1629,7 @@ test125:
   say ''
   say '     Concatenation of string literals, but mixing string formats.'
   say '-----'
-  pawncc ' LIT_STRING_CAT_MIX= test2'
+  pawncc ' -v0 LIT_STRING_CAT_MIX= test2'
   say '-----'
   pawnrun ' test2.amx'
   return
@@ -1635,7 +1639,7 @@ test126:
   say ''
   say '     A non-public function that is forward declared as public.'
   say '-----'
-  pawncc ' PUBLIC_NOT_DECLARED= test1'
+  pawncc ' -v0 PUBLIC_NOT_DECLARED= test1'
   return
 
 test127:
@@ -1692,8 +1696,8 @@ test131:
   say ''
   say 'Symptoms of detected bug: no error.'
   say '-----'
-  pawncc ' TERNARY_LIT_ARRAY= test1'
-  pawncc ' TERNARY_1D_ARRAY= test1'
+  pawncc ' -v0 TERNARY_LIT_ARRAY= test1'
+  pawncc ' -v0 TERNARY_1D_ARRAY= test1'
   return
 
 test132:
@@ -1711,7 +1715,7 @@ test132:
   say 'Symptoms of detected bug: wrong limits were applied; a parameter could be put in'
   say 'a packed opcode while it did not fit in one.'
   say '-----'
-  pawncc '-O:2 PACKED_OPCODE_LIMITS= test2'
+  pawncc ' -O:2 PACKED_OPCODE_LIMITS= test2'
   say '-----'
   pawnrun ' test2.amx'
   return
@@ -1723,7 +1727,7 @@ test133:
   say ''
   say 'Symptoms of detected bug: an assertion in the compiler.'
   say '-----'
-  pawncc ' ARRAY2D_NO_COMMA= test1'
+  pawncc ' -v0 ARRAY2D_NO_COMMA= test1'
   return
 
 test134:
@@ -1757,7 +1761,7 @@ test136:
   say 'Symptoms of detected bug: error 28, due to braces being misinterpreted as an'
   say 'array index.'
   say '-----'
-  pawncc ' ELSE_NO_IF= test1'
+  pawncc ' -v0 ELSE_NO_IF= test1'
   return
 
 test137:
@@ -1768,7 +1772,7 @@ test137:
   say 'Symptoms of detected bug: assertion if the function call uses a string literal'
   say 'and errors about unknown functions otherwise.'
   say '-----'
-  pawncc ' INVALID_GLOBAL_DECL= test1'
+  pawncc ' -v0 INVALID_GLOBAL_DECL= test1'
   return
 
 test138:
@@ -1780,7 +1784,7 @@ test138:
   say 'Symptoms of detected bug: assertion because the literal queue was cleared on'
   say 'the parsing error and the indirection tables relied on data still being there.'
   say '-----'
-  pawncc ' INVALID_STATIC_2D_PACKED= test1'
+  pawncc ' -v0 INVALID_STATIC_2D_PACKED= test1'
   return
 
 test139:
@@ -1788,7 +1792,7 @@ test139:
   say ''
   say '     Mismatching index operators on packed and unpacked arrays.'
   say '-----'
-  pawncc ' MIX_PACK_ASSIGN= test2'
+  pawncc ' -v0 MIX_PACK_ASSIGN= test2'
   return
 
 test140:
@@ -1847,7 +1851,7 @@ test144:
   say 'Symptoms of detected bug: no warning, because the pseudo-array inherits the'
   say 'packed/unpacked flag of the main array.'
   say '-----'
-  pawncc ' PSEUDO_PACKED_ARRAY_UNPACKED= test11'
+  pawncc ' -v0 PSEUDO_PACKED_ARRAY_UNPACKED= test11'
   return
 
 test145:
@@ -1893,7 +1897,7 @@ test147:
   say 'Symptoms of detected bug: no warning, no extra pass, but bad code being'
   say 'generated.'
   say '-----'
-  pawncc ' test15'
+  pawncc ' -v0 test15'
   return
 
 test148:
@@ -1917,14 +1921,14 @@ test149:
   say ''
   say 'Symptoms of detected bug: no warning, first declaration being dropped.'
   say '-----'
-  pawncc 'DUPLICATE_LABEL= test2'
+  pawncc ' -v0 DUPLICATE_LABEL= test2'
   return
 
 test150:
   say '150. The compilation should issue warning 226 (variable assigned to itself),'
   say '     but ONLY ONCE and only for variable "b"'
   say '-----'
-  pawncc 'PRAGMA_WARNING= test1'
+  pawncc ' -v0 PRAGMA_WARNING= test1'
   return
 
 test151:
@@ -1935,7 +1939,7 @@ test151:
   say ''
   say 'Symptoms of detected bug: assertion failure in the assembler stage.'
   say '-----'
-  pawncc 'BEFOREDEF= funretarrincondop'
+  pawncc ' BEFOREDEF= funretarrincondop'
   return
 
 test152:
@@ -1945,7 +1949,7 @@ test152:
   say ''
   say 'Symptoms of detected bug: assertion failure in the assembler stage.'
   say '-----'
-  pawncc 'NESTED= funretarrincondop'
+  pawncc ' NESTED= funretarrincondop'
   return
 
 test153:
@@ -1958,18 +1962,19 @@ test153:
   say 'the operator to be marked as "unused", which caused that the error was not'
   say 'reported.'
   say '-----'
-  pawncc 'issue45'
+  pawncc ' -v0 issue45'
   return
 
 test154:
-  say '154. The compilation should issue error 013 (no entry point).'
+  say '154. The compilation should issue warning 218 (depracated forward declaration)'
+  say '     followed by error 013 (no entry point).'
   say ''
   say '     Using a semicolon as the "empty statement".'
   say ''
   say 'Symptoms of detected bug: as the entry function is prototyped only, no code is'
   say 'generated for it; but due to the prototype, no warning is given either.'
   say '-----'
-  pawncc '-; EMPTY_MAIN= test14'
+  pawncc ' -v0 EMPTY_MAIN= test14'
   return
 
 test155:
@@ -1979,7 +1984,7 @@ test155:
   say ''
   say 'Symptoms of detected bug: no error, but failed on an assertion later on.'
   say '-----'
-  pawncc 'ZERO_ARRAY_TWO_DIMS= test1'
+  pawncc ' -v0 ZERO_ARRAY_TWO_DIMS= test1'
   return
 
 test156:
@@ -1987,7 +1992,7 @@ test156:
   say ''
   say '     Stock function that takes parameters with default values.'
   say '-----'
-  pawncc 'STOCKFUNC_DEFPARAMS= test2'
+  pawncc ' STOCKFUNC_DEFPARAMS= test2'
   return
 
 test157:
@@ -1996,7 +2001,7 @@ test157:
   say '    Assignment inside the test condition of an if, for or while statement is'
   say '    possibly non-intentional.'
   say '-----'
-  pawncc ' -p ASSIGN_IN_TEST= test1'
+  pawncc ' -v0 -p ASSIGN_IN_TEST= test1'
   return
 
 test158:
@@ -2015,7 +2020,7 @@ test159:
   say '    When test expression omit (optional) parentheses, packed array indexing must'
   say '    not be detected as opening brace that ends the expression.'
   say '-----'
-  pawncc ' -p ALT_TEST4= test16'
+  pawncc ' -v0 -p ALT_TEST4= test16'
   return
 
 test160:
@@ -2042,20 +2047,19 @@ test162:
   say ''
   say '    Returning array literals (or string literals) is not supported.'
   say '-----'
-  pawncc ' RETURN_ARRAY_LITERAL= test2'
+  pawncc ' -v0 RETURN_ARRAY_LITERAL= test2'
   return
 
 test163:
   say '163. The following test should compile successfully; when run, it should print:'
   say ''
-  say '    result = 1'
+  say '    Completed'
   say ''
-  say 'Symptoms of detected bug: wrong output due to code generation bug. The issue is'
-  say 'a global variable that is passed to forward function (and never modified), and'
-  say 'which was then removed as if it weren''t used.'
+  say 'Symptoms of detected bug: variables with states attached were not zero''ed out on'
+  say 'entry from a state outside their list.'
   say '-----'
-  pawncc ' test_glbvar'
+  pawncc ' STATE_VAR_INIT= states'
   say '-----'
-  pawnrun ' test_glbvar.amx'
+  pawnrun ' states.amx'
   return
 

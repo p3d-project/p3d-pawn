@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxtime.c 6969 2023-07-26 12:26:41Z thiadmer $
+ *  Version: $Id: amxtime.c 7683 2026-08-20 20:23:32Z thiadmer $
  */
 #include <time.h>
 #include <assert.h>
@@ -27,12 +27,7 @@
   #include <sys/time.h>
 #endif
 
-#if defined __clang__
-  /* ignore this warning, because fixing the macro would make it depend on
-     two's-complement arithmetic */
-  #pragma GCC diagnostic ignored "-Wshift-negative-value"
-#endif
-#define CELLMIN   (-1L << (8*sizeof(cell) - 1))
+#define CELLMIN   (cell)(~0UL << (8*sizeof(cell) - 1))
 
 #define SECONDS_PER_MINUTE	60
 #define SECONDS_PER_HOUR	3600
@@ -182,10 +177,9 @@ static void settime(cell hour,cell minute,cell second)
 
 static void setdate(cell year,cell month,cell day)
 {
-  int maxday;
-
   #if defined __WIN32__ || defined _WIN32 || defined WIN32
     SYSTEMTIME systim;
+    int maxday;
 
     GetLocalTime(&systim);
     if (year!=CELLMIN)

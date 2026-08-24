@@ -32,7 +32,7 @@
 @   License for the specific language governing permissions and limitations
 @   under the License.
 @
-@   $Id: amxexec_thumb2_gas.S 7106 2024-02-14 21:02:03Z thiadmer $
+@   $Id: amxexec_thumb2_gas.S 7683 2026-08-20 20:23:32Z thiadmer $
 
     .file   "amxexec_thumb2_gas.s"
     .syntax unified

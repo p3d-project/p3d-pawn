@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxprocess.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: amxprocess.c 7683 2026-08-20 20:23:32Z thiadmer $
  */
 #if defined _UNICODE || defined __UNICODE__ || defined UNICODE
 # if !defined UNICODE   /* for Windows */
@@ -80,6 +80,9 @@
 # define _tcstol        strtol
 #endif
 
+#if !defined countof
+# define countof(a)     (sizeof(a) / sizeof((a)[0]))
+#endif
 
 #if defined HAVE_DYNCALL_H || defined WIN32_FFI
 
@@ -607,7 +610,7 @@ static cell AMX_NATIVE_CALL n_libcall(AMX *amx, const cell *params)
             *cptr= (ps[idx].type==('i' | BYREF)) ? ((short*)ps[idx].v.ptr)[i] : ((unsigned short*)ps[idx].v.ptr)[i];
             break;
           default:
-            *cptr= (ps[idx].type==('i' | BYREF)) ? ((long*)ps[idx].v.ptr)[i] : ((unsigned long*)ps[idx].v.ptr)[i];
+            *cptr= (ps[idx].type==('i' | BYREF)) ? (cell)((long*)ps[idx].v.ptr)[i] : (cell)((unsigned long*)ps[idx].v.ptr)[i];
           } /* switch */
         } /* for */
         free((char *)ps[idx].v.ptr);
@@ -867,7 +870,7 @@ static cell AMX_NATIVE_CALL n_procread(AMX *amx, const cell *params)
       if (!ReadFile(read_stdout,line+index,1,&num,NULL))
         break;
       index++;
-    } while (index<sizeof(line)/sizeof(line[0])-1 && line[index-1]!=__T('\n'));
+    } while (index<(int)countof(line)-1 && line[index-1]!=__T('\n'));
   #elif defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
     if (pipe_from[0]<0)
       return 0;

@@ -3,6 +3,7 @@
  *   __MSDOS__    set when compiling for DOS (not Windows)
  *   _Windows     set when compiling for any version of Microsoft Windows
  *   __WIN32__    set when compiling for Windows95 or WindowsNT (32 bit mode)
+ *   __WIN64__    set when compiling for 64 bit mode Windows
  *   __32BIT__    set when compiling in 32-bit "flat" mode (DOS, Windows, ARM)
  *   __64BIT__    set when compiling in 64-bit mode
  *   __ECOS__     set if Pawn was included with the eCos with configtool
@@ -20,21 +21,30 @@
  * the macros of Watcom C/C++ and Microsoft Visual C/C++ are mapped to
  * those of Borland C++.
  */
-#if defined(__WATCOMC__)
-  #if defined(__WINDOWS__) || defined(__NT__)
+#if defined __WATCOMC__
+  #if defined __WINDOWS__ || defined __NT__
     #define _Windows    1
   #endif
-  #if defined(__386__) || defined(__NT__)
+  #if defined __386__ || defined __NT__
     #define __32BIT__   1
   #endif
-  #if defined(_Windows) && defined(__32BIT__)
+  #if defined _Windows && defined __32BIT__
     #define __WIN32__   1
   #endif
-#elif defined(_MSC_VER)
-  #if defined(_WINDOWS) || defined(_WIN32)
+#elif defined _MSC_VER
+  #if defined _WINDOWS || defined _WIN32
     #define _Windows    1
   #endif
-  #if defined(_WIN32)
+  #if defined _WIN32
+    #define __WIN32__   1
+    #define __32BIT__   1
+  #endif
+#elif defined __MINGW32__
+  #define _Windows      1
+  #if defined __MINGW64__
+    #define __WIN64__   1
+    #define __64BIT__   1
+  #else
     #define __WIN32__   1
     #define __32BIT__   1
   #endif

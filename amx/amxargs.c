@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxargs.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: amxargs.c 7683 2026-08-20 20:23:32Z thiadmer $
  */
 #if defined _UNICODE || defined __UNICODE__ || defined UNICODE
 # if !defined UNICODE   /* for Windows */
@@ -141,7 +141,7 @@ static const TCHAR *rawcmdline(void)
       /* no mechanism for determining the commandline, so it
        * must be supplied with amx_ArgsSetCmdLine() instead.
        */
-      ptr = "";
+      cmdline = "";
     #endif
 
     /* skip leading white space */
@@ -283,7 +283,6 @@ static cell AMX_NATIVE_CALL n_argstr(AMX *amx, const cell *params)
 {
   const TCHAR *option, *key;
   int length, max;
-  TCHAR *str;
   cell *cptr;
 
   max = (int)params[4];
@@ -302,6 +301,7 @@ static cell AMX_NATIVE_CALL n_argstr(AMX *amx, const cell *params)
    */
   assert(params[4] > 0);
   if (params[4] > 1 || *cptr != 0) {
+    TCHAR *str;
     if (params[5])
       max *= sizeof(cell);
     if (max > length + 1)

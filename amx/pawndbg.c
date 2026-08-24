@@ -14,7 +14,7 @@
  *  - ability to do remote debugging over an RS232 connection
  *
  *
- *  Copyright (c) CompuPhase, 1998-2020
+ *  Copyright (c) CompuPhase, 1998-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -28,7 +28,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawndbg.c 7133 2024-03-05 10:31:12Z thiadmer $
+ *  Version: $Id: pawndbg.c 7684 2026-08-23 20:30:23Z thiadmer $
  *
  *
  *  Command line options:
@@ -81,9 +81,12 @@
   #include <unistd.h>
 #endif
 
-#if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__)
-  #include <binreloc.h> /* from BinReloc, see www.autopackage.org */
-  #include <installpath.h> 
+#if !defined AMX_NODYNALOAD
+# if defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
+#   include <binreloc.h> /* from BinReloc, see www.autopackage.org */
+# elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+#  include <installpath.h>
+# endif
 #endif
 
 extern int chdir(const char *path); /* position of this function in header files depends on the compiler */
@@ -595,11 +598,11 @@ static void source_list(AMX_DBG *amxdbg,int startline,int numlines,int curline)
   /* seek to line number from the start (to avoid displaying something
    * beyond the file)
    */
-  for (result=0; cursource[result]!=NULL && result<startline; result++)
+  for (result=0; result<startline && cursource[result]!=NULL; result++)
     /* nothing */;
   if (cursource[result]!=NULL) {
     assert(result==startline);
-    while (cursource[startline]!=NULL && startline<lastline) {
+    while (startline<lastline && cursource[startline]!=NULL) {
       char c1='\0',c2='\0';
       if (terminal>0)
         amx_clreol();
@@ -1080,7 +1083,7 @@ static int remote_wait_rs232(AMX *amx, long retries)
 {
   char buffer[50],*ptr;
   unsigned long size;
-  long cip;
+  unsigned long cip;
   int offs,state;
   enum { SCAN, START, FINISH };
 
@@ -1090,7 +1093,7 @@ static int remote_wait_rs232(AMX *amx, long retries)
     state=SCAN;
     while (state!=FINISH) {
       offs+=size;
-      if (offs>=sizeof buffer - 1) {
+      if (offs>=(int)sizeof buffer - 1) {
         amx_printf("%s",buffer);
         offs=0;
         state=SCAN;
@@ -1170,7 +1173,7 @@ static void remote_resume_rs232(void)
 static void remote_sync_rs232(AMX *amx)
 {
   char buffer[128];
-  long frm,stk,hea;
+  unsigned long frm,stk,hea;
   #if defined __WIN32__
     unsigned long size;
   #endif
@@ -1197,17 +1200,17 @@ static void remote_read_rs232(AMX *amx,cell vaddr,int number)
 {
   char buffer[128];
   char *ptr;
-  int len;
   cell val;
-  cell *cptr;
 
   while (number>0) {
+    int len;
     sprintf(buffer,"?M%lx,%x\n",(long)vaddr,(number>10) ? 10 : number);
     len=(int)strlen(buffer);
     send_rs232(buffer,len);
     if (getresponse_rs232(buffer,sizeof buffer,100)) {
       ptr=buffer+1;     /* skip '¿' */
-      while (number>0 && (ptr-buffer)<sizeof buffer && *ptr!=']') {
+      while (number>0 && (ptr-buffer)<(int)sizeof buffer && *ptr!=']') {
+        cell *cptr;
         val=strtol(ptr,&ptr,16);
         if ((cptr=VirtAddressToPhys(amx,vaddr))!=NULL)
           *cptr=val;
@@ -1222,16 +1225,14 @@ static void remote_read_rs232(AMX *amx,cell vaddr,int number)
 
 static void remote_write_rs232(AMX *amx,cell vaddr,int number)
 {
-  char buffer[128];
-  int len,num;
-  cell *cptr;
-
   while (number>0) {
-    num=(number>10) ? 10 : number;
+    char buffer[128];
+    int len;
+    int num=(number>10) ? 10 : number;
     number-=num;
     sprintf(buffer,"?W%lx",(unsigned long)vaddr);
     while (num>0) {
-      cptr=VirtAddressToPhys(amx,vaddr);
+      cell *cptr=VirtAddressToPhys(amx,vaddr);
       assert(cptr!=NULL);
       strcat(buffer,",");
       sprintf(buffer+strlen(buffer),"%lx",(unsigned long)*cptr);
@@ -2464,9 +2465,9 @@ static char lastcommand[32] = "";
       char varname[32];
       long index,value;
       const AMX_DBG_SYMBOL *sym;
-      if (sscanf(params," %[^[ ][%ld] = %ld",varname,&index,&value)!=3) {
+      if (sscanf(params," %31[^[ ][%ld] = %ld",varname,&index,&value)!=3) {
         index=0;
-        if (sscanf(params," %[^= ] = %ld",varname,&value)!=2)
+        if (sscanf(params," %31[^= ] = %ld",varname,&value)!=2)
           varname[0]='\0';
       } /* if */
       if (varname[0]!='\0') {
@@ -2906,18 +2907,20 @@ extern AMX_NATIVE_INFO console_Natives[];
   unsigned short flags;
   char *ptr;
 
-  #if !defined AMX_NODYNALOAD && defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
-    /* see www.autopackage.org (now Listaller) for the BinReloc module */
-    if (br_init(NULL)) {
-      char *libroot=br_find_exe_dir("");
-      setenv("AMXLIB",libroot,0);
+# if !defined AMX_NODYNALOAD
+#   if defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
+      /* see www.autopackage.org (now Listaller) for the BinReloc module */
+      if (br_init(NULL)) {
+        char *libroot=br_find_exe_dir("");
+        setenv("AMXLIB",libroot,0);
+        free(libroot);
+      } /* if */
+#   elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+      char *libroot=get_install_path();
+      setenv("AMXLIB", libroot, 0);
       free(libroot);
-    } /* if */
-  #elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__ 
-    char *libroot=get_install_path();
-    setenv("AMXLIB", libroot, 0);
-    free(libroot);
-  #endif
+#   endif
+# endif
 
   if (setjmp(restart_buf)) {
     assert(program!=NULL);
@@ -2963,7 +2966,7 @@ extern AMX_NATIVE_INFO console_Natives[];
   if ((ptr=strrchr(amx_filename,DIRSEP_CHAR))!=NULL) {
     char dir[_MAX_PATH];
     int len=(int)(ptr-amx_filename);
-    if (len<sizeof dir) {
+    if (len<(int)sizeof dir) {
       strncpy(dir,amx_filename,len);
       dir[len]='\0';
       chdir(dir);
@@ -2980,7 +2983,7 @@ extern AMX_NATIVE_INFO console_Natives[];
           char port[30]="/dev/ttyS0";
         #endif
         if ((ptr=strchr(argv[i],'='))!=NULL)
-          sscanf(ptr+1,"%[^,],%d",port,&baud);
+          sscanf(ptr+1,"%25[^,],%d",port,&baud);
         amx_printf("Waiting for connection on %s...",port);
         amx_fflush();
         if (!remote_rs232(port,baud)) {

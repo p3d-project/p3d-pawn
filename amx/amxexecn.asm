@@ -145,7 +145,6 @@
         ; direct threading
         jmp     DWORD [esi]
     %endif
-;       ALIGN   4
 %endmacro
 
 %macro  JUMPREL 0
@@ -337,8 +336,7 @@ OP_LCTRL:
     lctrl_3:
         cmp     ebp,3
         jne     short lctrl_4
-        mov     ebp,amx         ; 3 -> STP
-        mov     eax,stp
+        mov     eax,stp         ; 3 -> STP
         jmp     short lctrl_done
     lctrl_4:
         cmp     ebp,4
@@ -525,9 +523,9 @@ OP_PICK:
 OP_STACK:
         add     ecx,[esi+4]
         mov     edx,ecx
+        add     esi,8
         _CHKMARGIN
         _CHKSTACK
-        add     esi,8
         NEXT
 
 
@@ -658,7 +656,6 @@ OP_SMUL:
 
 OP_SDIV:
         xchg    eax,edx
-        ALIGN   4
 
         ; Although SDIV.INV is a supplemental instruction, it is implemented
         ; as a core instruction here, because SDIV is implemented in terms
@@ -2233,11 +2230,11 @@ _return:
 amx_exec_list:
 _amx_exec_list: ;PROC
         push    ebx
-        ;mov     eax,[esp+08h]
-        mov     edx,[esp+0ch]
-        mov     ebx,[esp+10h]
+        ;mov     eax,[esp+08h]	; amx parameter is not used
+        mov     edx,[esp+0ch]	; opcodelist parameter
+        mov     ebx,[esp+10h]	; numopcodes parameter
 
-        mov     eax,opcodelist
+        mov     eax,opcodelist	; global opcode list
         mov     [edx],eax
         neg     eax
         add     eax,opcodelist_end   ; EAX = terminator - start

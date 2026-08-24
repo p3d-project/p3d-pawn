@@ -265,7 +265,7 @@ static stringlist includepaths = {NULL, NULL};  /* directory list for include fi
 
 SC_FUNC stringlist *insert_path(const char *path)
 {
-  return insert_string(&includepaths,path,1);
+  return insert_string(&includepaths,path,0);
 }
 
 SC_FUNC const char *get_path(int index)

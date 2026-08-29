@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: sc4.c 7688 2026-08-28 19:43:19Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -24,7 +24,7 @@
 #include <stdlib.h>     /* for _MAX_PATH */
 #include <string.h>
 #if defined FORTIFY
-  #include <alloc/Fortify.h>
+# include <alloc/Fortify.h>
 #endif
 #include "sc.h"
 
@@ -462,14 +462,14 @@ SC_FUNC void endfunc(void)
  */
 SC_FUNC void alignframe(int numbytes)
 {
-  #if !defined NDEBUG
+# if !defined NDEBUG
     /* "numbytes" should be a power of 2 for this code to work */
     unsigned i,count=0;
     for (i=0; i<sizeof numbytes*8; i++)
       if (numbytes & (1u << i))
         count++;
     assert(count==1);
-  #endif
+# endif
 
   stgwrite("\tlctrl 4\n");      /* get STK in PRI */
   stgwrite("\tconst.alt ");     /* get ~(numbytes-1) in ALT */
@@ -1149,10 +1149,10 @@ SC_FUNC void addr2cell(void)
  */
 SC_FUNC void char2addr(void)
 {
-  #if sCHARBITS==16
+# if sCHARBITS==16
     stgwrite("\tshl.c.pri 1\n");
     code_idx+=opcodes(1)+opargs(1);
-  #endif
+# endif
 }
 
 /* Align PRI (which should hold a character index) to an address.
@@ -1586,9 +1586,9 @@ SC_FUNC void jmp_eq0(int label)
 SC_FUNC void outval(cell val,int fullcell,int newline)
 {
   char *str=itoh(val);
-  #if !defined AMX_NO_PACKED_OPC
+# if !defined AMX_NO_PACKED_OPC
     if (!fullcell) {
-      #if !defined NDEBUG
+#     if !defined NDEBUG
         assert(strlen(str)==2*(size_t)pc_cellsize);
         assert((str[0]=='0' || str[0]=='f') && (str[1]=='0' || str[1]=='f'));
         if (pc_cellsize>=4)
@@ -1597,12 +1597,12 @@ SC_FUNC void outval(cell val,int fullcell,int newline)
           assert((str[4]=='0' || str[4]=='f') && (str[5]=='0' || str[5]=='f'));
           assert((str[6]=='0' || str[6]=='f') && (str[7]=='0' || str[7]=='f'));
         } /* if */
-      #endif
+#     endif
       str+=pc_cellsize;
     } /* if */
-  #else
+# else
     (void)fullcell;
-  #endif
+# endif
   stgwrite(str);
   if (newline)
     stgwrite("\n");

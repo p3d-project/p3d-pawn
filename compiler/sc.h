@@ -643,7 +643,7 @@ SC_FUNC int check_userop(void (*oper)(void),int tag1,int tag2,int numparam,
                          value *lval,int *resulttag);
 SC_FUNC int matchtag(int formaltag,int actualtag,int allowcoerce);
 SC_FUNC int expression(cell *val,int *tag,symbol **symptr,int *parenthesized,int chkfuncresult,int in_test);
-SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *statename);
+SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *fsaname,char *statename);
 SC_FUNC cell array_totalsize(symbol *sym);
 
 /* function prototypes in SC4.C */

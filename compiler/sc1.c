@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: sc1.c 7688 2026-08-28 19:43:19Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -6211,7 +6211,9 @@ static int dodo(void)
   jumplabel(top);
   setlabel(wq[wqEXIT]);
   delwhile();
-  needtoken(parens ? ')' : tTERM);
+  if (parens)
+    needtoken(')');
+  needtoken(tTERM);
 
   retcode=endlessloop ? tENDLESS : tDO;
   endlessloop=save_endlessloop;
@@ -6785,7 +6787,7 @@ static void dosleep(void)
 
 static void dostate(void)
 {
-  char name[sNAMEMAX+1];
+  char fsaname[sNAMEMAX+1],statename[sNAMEMAX+1];
   constvalue *automaton;
   constvalue *state;
   statelist *stlist;
@@ -6810,7 +6812,7 @@ static void dostate(void)
     label_failcond=-1;
   } /* if */
 
-  result=sc_getstateid(&automaton,&state,name);
+  result=sc_getstateid(&automaton,&state,fsaname,statename);
   needtoken(tTERM);
   if (!result) {
     /* the state is unknown, it may be used before definition;
@@ -6819,15 +6821,14 @@ static void dostate(void)
      */
     if (sc_status==statBROWSE) {
       memset(&dummyautomaton,0,sizeof dummyautomaton);
-      if (automaton!=NULL) {
-        if (strlen(automaton->name)>0)
-          strcpy(dummyautomaton.name,automaton->name);
-        dummyautomaton.index=automaton->index;
-      }
+      assert(automaton==NULL || strcmp(automaton->name,fsaname)==0);
+      assert(strlen(fsaname)<=sNAMEMAX);
+      strcpy(dummyautomaton.name,fsaname);
+      dummyautomaton.index= (automaton!=NULL) ? automaton->index : 1;
       automaton=&dummyautomaton;
       memset(&dummystate,0,sizeof dummystate);
-      assert(strlen(name)<=sNAMEMAX);
-      strcpy(dummystate.name,name);
+      assert(strlen(statename)<=sNAMEMAX);
+      strcpy(dummystate.name,statename);
       state=&dummystate;
     } else {
       delete_autolisttable();
@@ -6861,25 +6862,33 @@ static void dostate(void)
       /* state variable that belongs to the same automaton and whose state-list
        * contains the target state
        */
-      /* step 1: build a list of all states in the automaton that are absent
-       * from the variable's state list
+      /* step 1: build a list of all states in the automaton in the variable's
+       *  state list and mark them as "present" or "absent"; also keep the
+       *  counts of both
        */
-      int count=0,alt_loaded=false,idx;
+      int idx;
+      int alt_loaded=false;
+      int count_present=0,count_absent=0;
       int top=state_top_id(automaton->index);
-      int *slist=malloc((top+1)*sizeof(int));
+      unsigned char *slist=malloc((top+1));
       if (slist==NULL)
         error(103);                     /* insufficient memory */
+      memset(slist,0xff,(top+1));
       for (idx=1; idx<=top; idx++) {
-        if (state_findid(idx,automaton->index)!=NULL && !state_inlist(sym->states->next->id,idx)) {
-          assert(count<=top);
-          slist[count++]=idx;
-        }
-      }
-      /* step 2: if we move out of a state that is in the list we just collected,
-       * this variable has to be cleared (zero'ed out) --but make an exception
-       * if the list is empty
+        if (state_findid(idx,automaton->index)!=NULL) {
+          slist[idx]=state_inlist(sym->states->next->id,idx);
+          if (slist[idx])
+            count_present++;
+          else
+            count_absent++;
+        } /* if */
+      } /* for */
+      /* step 2: generate code to check the current state (the state being
+       * exited) and compare it to the "present"/"absent" flags in the list;
+       * select to loop over "present" or "absent" flags depending on which
+       * count is the lowest (to minimize the generated code)
        */
-      if (count>0) {
+      if (count_absent>0 || count_present>0) {
         assert(!staging);
         stgset(true);                   /* start staging */
         assert(stgidx==0);
@@ -6887,17 +6896,38 @@ static void dostate(void)
           assert(automaton!=NULL);
           loadreg(automaton->value,sALT); /* read current state */
           alt_loaded=true;
-        }
-        for (idx=0; idx<count; idx++) {
+        } /* if */
+        if (count_absent<count_present) {
+          /* this variable has to be cleared (zero'ed out) for *any* of the
+           * states in the list marked as "absent"
+           */
+          for (idx=1; idx<=top; idx++) {
+            if (slist[idx]==0) {
+              int label=getlabel();
+              ob_eq_val(idx);           /* is ALT (current state) equal to this state in the list? */
+              jmp_eq0(label);           /* if not, skip zero'ing code */
+              storeconst(sym->addr,0);  /* if so, clear */
+              setlabel(label);
+            }
+          } /* for */
+        } else {
+          /* this variable has to be cleared (zero'ed out) for all states,
+           *  *except* those marked as "present"
+           */
+          assert(count_present<=count_absent);
           int label=getlabel();
-          ob_eq_val(slist[idx]);        /* is ALT (current state) equal to this state in the list? */
-          jmp_eq0(label);               /* if not, skip */
-          storeconst(sym->addr,0);      /* if so, clear */
+          for (idx=1; idx<=top; idx++) {
+            if (slist[idx]==1) {
+              ob_eq_val(idx);           /* is ALT (current state) equal to this state in the list? */
+              jmp_ne0(label);           /* if so, skip zero'ing code */
+            }
+          } /* for */
+          storeconst(sym->addr,0);      /* if dropped through all tests, clear variable */
           setlabel(label);
-        }
+        } /* if */
         stgout(0);                      /* optimize and write */
         stgset(false);                  /* stop staging */
-      }
+      } /* if */
       free(slist);
     } /* if */
   } /* for */
@@ -6960,8 +6990,7 @@ static void dostate(void)
       curautomaton=(listid>0) ? state_getfsa(listid) : -1;
       assert(state!=NULL && state->name!=NULL && strlen(state->name)>0 && strlen(state->name)<=sNAMEMAX);
       assert(automaton!=NULL && automaton->name!=NULL);
-      strcpy(name,state->name);
-      length=strlen(name)+strlen(automaton->name)+70; /* +70 for the fixed part "<transition ... />\n" */
+      length=strlen(statename)+strlen(automaton->name)+70; /* +70 for the fixed part "<transition ... />\n" */
       /* see if there are any condition strings to attach */
       for (index=0; (str=get_autolist(index))!=NULL; index++)
         length+=strlen(str);
@@ -6971,9 +7000,9 @@ static void dostate(void)
           /* this may be a transition for the current automaton, or a transition
              for a different one */
           if (state->index==curautomaton)
-            sprintf(doc,"<transition target=\"%s\"",name);
+            sprintf(doc,"<transition target=\"%s\"",statename);
           else
-            sprintf(doc,"<transition target=\"%s:%s\"",automaton->name,name);
+            sprintf(doc,"<transition target=\"%s:%s\"",automaton->name,statename);
           if (listid>=0) {
             /* get the source state */
             stateindex=state_listitem(listid,listindex);

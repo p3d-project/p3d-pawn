@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc6.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: sc6.c 7688 2026-08-28 19:43:19Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -23,14 +23,14 @@
 #include <string.h>
 #include <ctype.h>
 #if defined FORTIFY
-  #include <alloc/Fortify.h>
+# include <alloc/Fortify.h>
 #endif
 #include "lstring.h"
 #include "sc.h"
 #include "../amx/amxdbg.h"
 #include "../amx/keeloq.h"
 #if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
-  #include <sclinux.h>
+# include <sclinux.h>
 #endif
 
 
@@ -169,18 +169,18 @@ static ucell *aligncell(ucell *v)
     return align16(v);
   if (pc_cellsize==4)
     return align32(v);
-  #if PAWN_CELL_SIZE>=64
+# if PAWN_CELL_SIZE>=64
     if (pc_cellsize==8)
       return align64(v);
-  #endif
+# endif
   assert(0);
 }
 
 #else
-  #define align16(v)    (v)
-  #define align32(v)    (v)
-  #define align64(v)    (v)
-  #define aligncell(v)  (v)
+# define align16(v)    (v)
+# define align32(v)    (v)
+# define align64(v)    (v)
+# define aligncell(v)  (v)
 #endif
 
 static char *stripcomment(char *str)
@@ -667,12 +667,12 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
   cell mainaddr;
   char nullchar;
 
-  #if !defined NDEBUG
+# if !defined NDEBUG
     /* verify that the opcode list is sorted (skip entry 1; it is reserved
      * for a non-existant opcode)
      */
     {
-      #define MAX_OPCODE 176
+#     define MAX_OPCODE 176
       unsigned char opcodearray[MAX_OPCODE+1];
       assert(opcodelist[1].name!=NULL);
       memset(opcodearray,0,sizeof opcodearray);
@@ -685,7 +685,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
         opcodearray[(int)opcodelist[i].opcode] += 1;
       } /* for */
     }
-  #endif
+# endif
 
   writeerror=false;
   nametablesize=sizeof(int16_t);
@@ -823,10 +823,10 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
       /* in the case of overlays, write the overlay index rather than the address */
       func.address=(uint32_t)((pc_overlays>0) ? sym->index : sym->addr);
       func.nameofs=nameofs;
-      #if BYTE_ORDER==BIG_ENDIAN
+#     if BYTE_ORDER==BIG_ENDIAN
         align32(&func.address);
         align32(&func.nameofs);
-      #endif
+#     endif
       pc_resetbin(fout,hdr.publics+count*sizeof(AMX_FUNCSTUB));
       pc_writebin(fout,&func,sizeof func);
       pc_resetbin(fout,nameofs);
@@ -851,9 +851,9 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
     nativelist=(symbol **)malloc(numnatives*sizeof(symbol *));
     if (nativelist==NULL)
       error(103);               /* insufficient memory */
-    #if !defined NDEBUG
+#   if !defined NDEBUG
       memset(nativelist,0,numnatives*sizeof(symbol *)); /* for NULL checking */
-    #endif
+#   endif
     for (sym=glbtab.next; sym!=NULL; sym=sym->next) {
       if (sym->ident==iFUNCTN && (sym->usage & uNATIVE)!=0 && (sym->usage & uREAD)!=0 && sym->index>=0) {
         assert(sym->index < numnatives);
@@ -872,10 +872,10 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
       assert(sym->scope==sGLOBAL);
       func.address=0;
       func.nameofs=nameofs;
-      #if BYTE_ORDER==BIG_ENDIAN
+#     if BYTE_ORDER==BIG_ENDIAN
         align32(&func.address);
         align32(&func.nameofs);
-      #endif
+#     endif
       pc_resetbin(fout,hdr.natives+count*sizeof(AMX_FUNCSTUB));
       pc_writebin(fout,&func,sizeof func);
       pc_resetbin(fout,nameofs);
@@ -894,10 +894,10 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
         assert(strlen(constptr->name)>0);
         func.address=0;
         func.nameofs=nameofs;
-        #if BYTE_ORDER==BIG_ENDIAN
+#       if BYTE_ORDER==BIG_ENDIAN
           align32(&func.address);
           align32(&func.nameofs);
-        #endif
+#       endif
         pc_resetbin(fout,hdr.libraries+count*sizeof(AMX_FUNCSTUB));
         pc_writebin(fout,&func,sizeof func);
         pc_resetbin(fout,nameofs);
@@ -916,10 +916,10 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
       assert(sym->scope==sGLOBAL);
       func.address=(uint32_t)sym->addr;
       func.nameofs=nameofs;
-      #if BYTE_ORDER==BIG_ENDIAN
+#     if BYTE_ORDER==BIG_ENDIAN
         align32(&func.address);
         align32(&func.nameofs);
-      #endif
+#     endif
       pc_resetbin(fout,hdr.pubvars+count*sizeof(AMX_FUNCSTUB));
       pc_writebin(fout,&func,sizeof func);
       pc_resetbin(fout,nameofs);
@@ -936,10 +936,10 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
       assert(strlen(constptr->name)>0);
       func.address=(uint32_t)(constptr->value & TAGMASK);
       func.nameofs=nameofs;
-      #if BYTE_ORDER==BIG_ENDIAN
+#     if BYTE_ORDER==BIG_ENDIAN
         align32(&func.address);
         align32(&func.nameofs);
-      #endif
+#     endif
       pc_resetbin(fout,hdr.tags+count*sizeof(AMX_FUNCSTUB));
       pc_writebin(fout,&func,sizeof func);
       pc_resetbin(fout,nameofs);
@@ -953,31 +953,31 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
   assert(nameofs==hdr.nametable+nametablesize);
   pc_resetbin(fout,hdr.nametable);
   count=sNAMEMAX;
-  #if BYTE_ORDER==BIG_ENDIAN
+# if BYTE_ORDER==BIG_ENDIAN
     align16(&count);
-  #endif
+# endif
   pc_writebin(fout,&count,sizeof count);
 
   /* write the overlay table */
   if (pc_overlays>0) {
     AMX_OVERLAYINFO info;
-    #if !defined NDEBUG
+#   if !defined NDEBUG
       int entrycount=0;
-    #endif
+#   endif
     pc_resetbin(fout,hdr.overlays);
     /* first the special overlay(s) for the return point(s) */
     for (i=0; i<ovlFIRST; i++) {
       if (pc_ovl0size[i][1]!=0) {
         info.offset=pc_ovl0size[i][0];
         info.size=pc_ovl0size[i][1];
-        #if BYTE_ORDER==BIG_ENDIAN
+#       if BYTE_ORDER==BIG_ENDIAN
           align32(&info.offset);
           align32(&info.size);
-        #endif
+#       endif
         pc_writebin(fout,&info,sizeof info);
-        #if !defined NDEBUG
+#       if !defined NDEBUG
           entrycount++;
-        #endif
+#       endif
       } /* if */
     } /* for */
     /* now all real overlay functions */
@@ -994,10 +994,10 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
           /* there is no stub function for state entry functions */
           info.offset=(int32_t)sym->addr;
           info.size=(uint32_t)(sym->codeaddr - sym->addr);
-          #if BYTE_ORDER==BIG_ENDIAN
+#         if BYTE_ORDER==BIG_ENDIAN
             align32(&info.offset);
             align32(&info.size);
-          #endif
+#         endif
           pc_writebin(fout,&info,sizeof info);
         } /* if */
         if (sym->states!=NULL) {
@@ -1007,10 +1007,10 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
             assert(stlist->label==entrycount++);
             info.offset=(int32_t)stlist->addr;
             info.size=(int32_t)(stlist->endaddr - stlist->addr);
-            #if BYTE_ORDER==BIG_ENDIAN
+#           if BYTE_ORDER==BIG_ENDIAN
               align32(&info.offset);
               align32(&info.size);
-            #endif
+#           endif
             pc_writebin(fout,&info,sizeof info);
           } /* for */
         } /* if */
@@ -1088,9 +1088,9 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
 
   if (lbltab!=NULL) {
     free(lbltab);
-    #if !defined NDEBUG
+#   if !defined NDEBUG
       lbltab=NULL;
-    #endif
+#   endif
   } /* if */
 
   assert(hdr.size==pc_lengthbin(fout));
@@ -1102,7 +1102,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
 
   /* adjust the header (for Big Endian architectures) */
   size=(int)hdr.cod;    /* save, the value in the header may need to be swapped */
-  #if BYTE_ORDER==BIG_ENDIAN
+# if BYTE_ORDER==BIG_ENDIAN
     align32(&hdr.size);
     align16(&hdr.magic);
     align16(&hdr.flags);
@@ -1120,7 +1120,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
     align32(&hdr.cip);
     pc_resetbin(fout,0);
     pc_writebin(fout,&hdr,sizeof hdr);
-  #endif
+# endif
 
   /* return the size of the header (including name tables, but excluding code
    * or data sections)
@@ -1234,7 +1234,7 @@ static void append_dbginfo(FILE *fout)
 
 
   /* pass 2: generate the tables */
-  #if BYTE_ORDER==BIG_ENDIAN
+# if BYTE_ORDER==BIG_ENDIAN
     align32((uint32_t*)&dbghdr.size);
     align16(&dbghdr.magic);
     align16(&dbghdr.flags);
@@ -1244,7 +1244,7 @@ static void append_dbginfo(FILE *fout)
     align16(&dbghdr.tags);
     align16(&dbghdr.automatons);
     align16(&dbghdr.states);
-  #endif
+# endif
   writeerror |= !pc_writebin(fout,&dbghdr,sizeof dbghdr);
 
   /* file table */
@@ -1259,9 +1259,9 @@ static void append_dbginfo(FILE *fout)
       if (codeidx!=previdx) {
         if (prevstr!=NULL) {
           assert(prevname!=NULL);
-          #if BYTE_ORDER==BIG_ENDIAN
+#         if BYTE_ORDER==BIG_ENDIAN
             align32(&previdx);
-          #endif
+#         endif
           writeerror |= !pc_writebin(fout,&previdx,sizeof(uint32_t));
           writeerror |= !pc_writebin(fout,prevname,(int)strlen(prevname)+1);
         } /* if */
@@ -1273,9 +1273,9 @@ static void append_dbginfo(FILE *fout)
   } /* for */
   if (prevstr!=NULL) {
     assert(prevname!=NULL);
-    #if BYTE_ORDER==BIG_ENDIAN
+#   if BYTE_ORDER==BIG_ENDIAN
       align32(&previdx);
-    #endif
+#   endif
     writeerror |= !pc_writebin(fout,&previdx,sizeof(uint32_t));
     writeerror |= !pc_writebin(fout,prevname,(int)strlen(prevname)+1);
   } /* if */
@@ -1287,10 +1287,10 @@ static void append_dbginfo(FILE *fout)
     if (str[0]=='L') {
       dbgline.address=(uint32_t)hex2ucell(str+2,&str);
       dbgline.line=(int32_t)hex2ucell(str,NULL);
-      #if BYTE_ORDER==BIG_ENDIAN
+#     if BYTE_ORDER==BIG_ENDIAN
         align32(&dbgline.address);
         align32(&dbgline.line);
-      #endif
+#     endif
       writeerror |= !pc_writebin(fout,&dbgline,sizeof dbgline);
     } /* if */
   } /* for */
@@ -1323,13 +1323,13 @@ static void append_dbginfo(FILE *fout)
         } /* while */
       } /* if */
       dbgsymdim = dbgsym.dim;
-      #if BYTE_ORDER==BIG_ENDIAN
+#     if BYTE_ORDER==BIG_ENDIAN
         align32(&dbgsym.address);
         align16(&dbgsym.tag);
         align32(&dbgsym.codestart);
         align32(&dbgsym.codeend);
         align16(&dbgsym.dim);
-      #endif
+#     endif
       writeerror |= !pc_writebin(fout,&dbgsym.address,sizeof dbgsym.codeend);
       writeerror |= !pc_writebin(fout,&dbgsym.tag,sizeof dbgsym.tag);
       writeerror |= !pc_writebin(fout,&dbgsym.codestart,sizeof dbgsym.codeend);
@@ -1339,10 +1339,10 @@ static void append_dbginfo(FILE *fout)
       writeerror |= !pc_writebin(fout,&dbgsym.dim,sizeof dbgsym.dim);
       writeerror |= !pc_writebin(fout,symname,(int)strlen(symname)+1);
       for (dim=0; dim<dbgsymdim; dim++) {
-        #if BYTE_ORDER==BIG_ENDIAN
+#       if BYTE_ORDER==BIG_ENDIAN
           align16(&dbgidxtag[dim].tag);
           align32(&dbgidxtag[dim].size);
-        #endif
+#       endif
         writeerror |= !pc_writebin(fout,&dbgidxtag[dim].tag,sizeof dbgidxtag[dim].tag);
         writeerror |= !pc_writebin(fout,&dbgidxtag[dim].size,sizeof dbgidxtag[dim].size);
       } /* for */
@@ -1353,9 +1353,9 @@ static void append_dbginfo(FILE *fout)
   for (constptr=tagname_tab.next; constptr!=NULL; constptr=constptr->next) {
     assert(strlen(constptr->name)>0);
     id1=(int16_t)(constptr->value & TAGMASK);
-    #if BYTE_ORDER==BIG_ENDIAN
+#   if BYTE_ORDER==BIG_ENDIAN
       align16(&id1);
-    #endif
+#   endif
     writeerror |= !pc_writebin(fout,&id1,sizeof id1);
     writeerror |= !pc_writebin(fout,constptr->name,(int)strlen(constptr->name)+1);
   } /* for */
@@ -1365,10 +1365,10 @@ static void append_dbginfo(FILE *fout)
     assert(constptr->index==0 && strlen(constptr->name)==0 || strlen(constptr->name)>0);
     id1=(int16_t)constptr->index;
     address=(ucell)constptr->value;
-    #if BYTE_ORDER==BIG_ENDIAN
+#   if BYTE_ORDER==BIG_ENDIAN
       align16(&id1);
       align32(&address);
-    #endif
+#   endif
     writeerror |= !pc_writebin(fout,&id1,sizeof id1);
     writeerror |= !pc_writebin(fout,&address,sizeof(uint32_t));
     writeerror |= !pc_writebin(fout,constptr->name,(int)strlen(constptr->name)+1);
@@ -1380,10 +1380,10 @@ static void append_dbginfo(FILE *fout)
     id1=(int16_t)constptr->value;
     id2=(int16_t)constptr->index;
     address=(ucell)constptr->value;
-    #if BYTE_ORDER==BIG_ENDIAN
+#   if BYTE_ORDER==BIG_ENDIAN
       align16(&id1);
       align16(&id2);
-    #endif
+#   endif
     writeerror |= !pc_writebin(fout,&id1,sizeof id1);
     writeerror |= !pc_writebin(fout,&id2,sizeof id2);
     writeerror |= !pc_writebin(fout,constptr->name,(int)strlen(constptr->name)+1);

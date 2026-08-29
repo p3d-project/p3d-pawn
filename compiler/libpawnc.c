@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: libpawnc.c 7152 2024-03-23 20:47:23Z thiadmer $
+ *  Version: $Id: libpawnc.c 7688 2026-08-28 19:43:19Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -24,7 +24,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #if !defined S_ISDIR
-  #define S_ISDIR(mode) (((mode) & _S_IFDIR) != 0)
+# define S_ISDIR(mode) (((mode) & _S_IFDIR) != 0)
 #endif
 #include "sc.h"
 

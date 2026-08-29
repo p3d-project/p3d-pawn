@@ -12,7 +12,7 @@
  *  is allocated statically, so loading SBCS tables cannot fail (if the tables
  *  themselves are valid, of course).
  *
- *  Copyright (c) CompuPhase, 2004-2023
+ *  Copyright (c) CompuPhase, 2004-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -26,7 +26,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sci18n.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: sci18n.c 7688 2026-08-28 19:43:19Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -36,26 +36,26 @@
 #include "sc.h"
 
 #if !defined _MAX_PATH
-  #define _MAX_PATH     250
+# define _MAX_PATH     250
 #endif
 #if !defined DIRSEP_CHAR
-  #if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
-    #define DIRSEP_CHAR '/'
-  #elif defined macintosh
-    #define DIRSEP_CHAR ':'
-  #else
-    #define DIRSEP_CHAR '\\'
-  #endif
+# if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
+#   define DIRSEP_CHAR '/'
+# elif defined macintosh
+#   define DIRSEP_CHAR ':'
+# else
+#   define DIRSEP_CHAR '\\'
+# endif
 #endif
 
 #if !defined ELEMENTS
-  #define ELEMENTS(array)       (sizeof(array) / sizeof(array[0]))
+# define ELEMENTS(array)       (sizeof(array) / sizeof(array[0]))
 #endif
 
 #if !defined PAWN_NO_CODEPAGE
 
 #if !defined MAXCODEPAGE
-  #define MAXCODEPAGE   12      /* typically "cp" + 4 digits + ".txt" */
+# define MAXCODEPAGE   12       /* typically "cp" + 4 digits + ".txt" */
 #endif
 #define INVALID         0xffffu /* 0xffff and 0xfffe are invalid Unicode characters */
 #define LEADBYTE        0xfffeu
@@ -384,9 +384,9 @@ SC_FUNC cell get_utf8_char(const unsigned char *string,const unsigned char **end
 
 SC_FUNC int scan_utf8(FILE *fp,const char *filename)
 {
-  #if defined PAWN_NO_UTF8
+# if defined PAWN_NO_UTF8
     return 0;
-  #else
+# else
     static void *resetpos=NULL;
     int utf8=true;
     int firstchar=true,bom_found=false;
@@ -416,5 +416,5 @@ SC_FUNC int scan_utf8(FILE *fp,const char *filename)
         error(77,filename);     /* malformed UTF-8 encoding */
     } /* if */
     return utf8;
-  #endif  /* !defined PAWN_NO_UTF8 */
+# endif  /* !defined PAWN_NO_UTF8 */
 }

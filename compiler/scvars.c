@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scvars.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: scvars.c 7688 2026-08-28 19:43:19Z thiadmer $
  */
 #include <stdio.h>
 #include <stdlib.h>     /* for _MAX_PATH */

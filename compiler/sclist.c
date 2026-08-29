@@ -20,7 +20,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sclist.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: sclist.c 7688 2026-08-28 19:43:19Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -30,7 +30,7 @@
 #include "sc.h"
 
 #if defined FORTIFY
-  #include <alloc/Fortify.h>
+# include <alloc/Fortify.h>
 #endif
 
 /* a "private" implementation of strdup(), so that porting
@@ -583,27 +583,27 @@ SC_FUNC void litarray_deleteall(void)
  * http://www.dennougedougakkai-ndd.org/pub/libdgg/
  */
 #if defined(__STDC_VERSION__) && __STDC_VERSION__>=199901L
-  #define __STDC_FORMAT_MACROS
-  #define __STDC_CONSTANT_MACROS
-  #include <inttypes.h>         /* automatically includes stdint.h */
+# define __STDC_FORMAT_MACROS
+# define __STDC_CONSTANT_MACROS
+# include <inttypes.h>          /* automatically includes stdint.h */
 #elif (defined _MSC_VER || defined __BORLANDC__) && (defined _I64_MAX || defined HAVE_I64)
-  #define PRId64    "I64d"
-  #define PRIx64    "I64x"
+# define PRId64    "I64d"
+# define PRIx64    "I64x"
 #elif defined __WORDSIZE && __WORDSIZE == 64
-  #define PRId64    "ld"
-  #define PRIx64    "lx"
+# define PRId64    "ld"
+# define PRIx64    "lx"
 #else
-  #define PRId64    "lld"
-  #define PRIx64    "llx"
+# define PRId64    "lld"
+# define PRIx64    "llx"
 #endif
 #if PAWN_CELL_SIZE==64
-  #define PRIdC         PRId64
-  #define PRIxC         PRIx64
-  #define CELLCAST(c)   (uint64_t)(c)
+# define PRIdC         PRId64
+# define PRIxC         PRIx64
+# define CELLCAST(c)   (uint64_t)(c)
 #else
-  #define PRIdC         "ld"
-  #define PRIxC         "lx"
-  #define CELLCAST(c)   (unsigned long)(c)
+# define PRIdC         "ld"
+# define PRIxC         "lx"
+# define CELLCAST(c)   (unsigned long)(c)
 #endif
 
 static stringlist dbgstrings = {NULL, NULL};

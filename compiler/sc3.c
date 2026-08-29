@@ -422,7 +422,7 @@ static int skim(const int *opstr,void (*testfunc)(int),int dropval,int endval,
       } /* if */
       dropout(lvalue,testfunc,droplab,lval);
       if (parenthesized_level==0)
-        parenthesized_level=-1;         /* expression is not fully wrapped in parentheses */
+        parenthesized_level=NOT_SET;    /* expression is not fully wrapped in parentheses */
     } else if (hits) {                  /* no (more) identical operators */
       dropout(lvalue,testfunc,droplab,lval);  /* found at least one operator! */
       ldconst(endval,sPRI);
@@ -615,7 +615,7 @@ static int plnge(const int *opstr,int opoff,int (*hier)(value *lval),value *lval
   if (nextop(&opidx,opstr)==0)
     return lvalue;              /* no operator in "opstr" found */
   if (parenthesized_level==0)
-    parenthesized_level=-1;     /* expression is not fully wrapped in parentheses */
+    parenthesized_level=NOT_SET;/* expression is not fully wrapped in parentheses */
   if (lvalue)
     rvalue(lval);
   count=0;
@@ -675,7 +675,7 @@ static int plnge_rel(const int *opstr,int opoff,int (*hier)(value *lval),value *
   lval->has_assign=false;         /* flag that '=' is probably intentional */
   lval->tag=pc_addtag("bool");    /* force tag to be "bool" */
   if (parenthesized_level==0)
-    parenthesized_level=-1;       /* expression is not fully wrapped in parentheses */
+    parenthesized_level=NOT_SET;  /* expression is not fully wrapped in parentheses */
   return false;         /* result of expression is not an lvalue */
 }
 
@@ -916,38 +916,63 @@ static int inside_preproc(void)
   return (strchr((char*)lexptr,PREPROC_TERM)!=NULL);
 }
 
-SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *statename)
+/** sc_getstateid() gets the automaton and state structures by scanning the
+ *  input stream.
+ *
+ *  \param automaton  [out] A pointer that will be set to the structure for the
+ *                    automaton.
+ *  \param state      [out] A pointer that will be set to the structure for the
+ *                    state.
+ *  \param fsaname    [out] A pointer to the name of the state; this parameter
+ *                    may be set to `NULL`.
+ *  \param statename  [out] A pointer to the name of the state; this parameter
+ *                    may be set to `NULL`.
+ *
+ *  \return `true` on success, `false` on failure.
+ */
+SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *fsaname,char *statename)
 {
   char name[sNAMEMAX+1],closestmatch[sNAMEMAX+1];
   cell val;
   char *str;
-  int fsa,islabel;
+  int fsa_id,islabel;
 
-  assert(state!=NULL);
   assert(automaton!=NULL);
+  assert(state!=NULL);
   *automaton=NULL;
+  *state=NULL;
+  if (fsaname)
+    *fsaname='\0';
+  if (statename)
+    *statename='\0';
   if ((islabel=matchtoken(tLABEL))==0 && !needtoken(tSYMBOL))
-    return 0;
+    return false;
 
   tokeninfo(&val,&str);
   assert(strlen(str)<sizeof name);
   strcpy(name,str);
   if (islabel || matchtoken(':')) {
     /* token is an automaton name, add the name and get a new token */
+    if (fsaname)
+      strcpy(fsaname,name);
     *automaton=automaton_find(name,closestmatch);
     /* read in the state name before checking the automaton, to keep the parser
      * going (an "unknown automaton" error may occur when the "state" instruction
-     * precedes any state definition)
+     * precedes any state definition); copy the state name in the `statename`
+     * parameter if non-`NULL`, but copy it the local variable `name` only after
+     * checking the automaton first
      */
     if (!needtoken(tSYMBOL))
-      return 0;
-    tokeninfo(&val,&str);        /* do not copy the name yet, must check automaton first */
+      return false;
+    tokeninfo(&val,&str);
     if (*automaton==NULL) {
+      if (statename)
+        strcpy(statename,str);
       if (*closestmatch!='\0')
         error(makelong(86,1),name,closestmatch);
       else
         error(86,name);          /* unknown automaton */
-      return 0;
+      return false;
     } /* if */
     assert((*automaton)->index>0);
     assert(strlen(str)<sizeof name);
@@ -958,12 +983,12 @@ SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *staten
     assert((*automaton)->index==0);
   } /* if */
   assert(*automaton!=NULL);
-  fsa=(*automaton)->index;
+  fsa_id=(*automaton)->index;
 
-  if (statename!=NULL)
+  if (statename)
     strcpy(statename,name);
 
-  *state=state_find(name,fsa,closestmatch);
+  *state=state_find(name,fsa_id,closestmatch);
   if (*state==NULL) {
     char *fsaname=(*automaton)->name;
     if (*fsaname=='\0')
@@ -972,10 +997,10 @@ SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *staten
       error(makelong(87,1),name,fsaname,closestmatch);
     else
       error(87,name,fsaname); /* unknown state for automaton */
-    return 0;
+    return false;
   } /* if */
 
-  return 1;
+  return true;
 }
 
 SC_FUNC cell array_totalsize(symbol *sym)
@@ -1096,9 +1121,9 @@ static int hier14(value *lval1)
   } else if (lval1->ident==iARRAY || lval1->ident==iREFARRAY) {
     /* array assignment is permitted too (with restrictions) */
     if (oper)
-      return error(23); /* array assignment must be simple assigment */
+      return error(23);         /* array assignment must be simple assigment */
     if (lval1->sym==NULL)
-      return error(22); /* must be an lvalue */
+      return error(22);         /* must be an lvalue */
     lvalue=true;
   } /* if */
 
@@ -1674,7 +1699,7 @@ static int hier2(value *lval)
   case tSTATE: {
     constvalue *automaton;
     constvalue *state;
-    if (sc_getstateid(&automaton,&state,NULL)) {
+    if (sc_getstateid(&automaton,&state,NULL,NULL)) {
       assert(automaton!=NULL);
       assert(automaton->index==0 && automaton->name[0]=='\0' || automaton->index>0);
       loadreg(automaton->value,sALT);
@@ -1754,15 +1779,13 @@ static int hier2(value *lval)
   } /* switch */
 }
 
-/*  hier1
+/*  hier1()
  *
- *  The highest hierarchy level: it looks for pointer and array indices
- *  and function calls.
- *  Generates code to fetch a pointer value if it is indexed and code to
- *  add to the pointer value or the array address (the address is already
- *  read at primary()). It also generates code to fetch a function address
- *  if that hasn't already been done at primary() (check lval[4]) and calls
- *  callfunction() to call the function.
+ *  The highest hierarchy level: it looks for array indices and function calls.
+ *  Generates code to calculate the address offset for the array index and add
+ *  that to the array address (the address is already read at primary()).
+ *  For functions, a few checks are made and some information is collected, but
+ *  the code generation is handled in callfunction().
  */
 static int hier1(value *lval1)
 {
@@ -1825,14 +1848,14 @@ restart:
         return false;
       }
     }
-    if (sym==NULL && symtok!=tSYMBOL || lval1->ident==iEXPRESSION) {
+    if (sym==NULL && symtok!=tSYMBOL || lval1->ident==iEXPRESSION || lval1->ident==iCONSTEXPR) {
       /* we do not have a valid symbol and we appear not to have read a valid
        * symbol name (so it is unlikely that we would have read a name of an
        * undefined symbol)
        */
-      if (lval1->ident!=iEXPRESSION || tok!='{') /* no warning for '{', assume the expression had ended */
+      lexpush();                /* push token back for later analysis, before testing for line break */
+      if ((tok!='{' && tok!='(') || !matchtoken(tTERM))
         error(29);              /* expression error, assumed 0 */
-      lexpush();                /* analyse '(', '{' or '[' again later */
       return false;
     } /* if */
     optbrackets=(sym!=NULL && (sym->ident==iARRAY || sym->ident==iREFARRAY));
@@ -2096,9 +2119,10 @@ static int primary(value *lval,int *symtok)
     needtoken(')');
     lexclr(false);              /* clear lex() push-back, it should have been
                                  * cleared already by needtoken() */
-    if (lvalue) {
+    if (lvalue && in_test_expr) {
       rvalue(lval);
       lval->ident=iEXPRESSION;
+      lvalue=false;
     }
     sc_allowtags=save_allowtags;
     if (parenthesized_level>=0) {
@@ -2112,7 +2136,7 @@ static int primary(value *lval,int *symtok)
         lexpush();
       }
     }
-    return false;
+    return lvalue;
   } /* if */
 
   clear_value(lval);    /* clear lval */
@@ -2129,7 +2153,7 @@ static int primary(value *lval,int *symtok)
       if (sym->ident==iLABEL) {
         error(29);          /* expression error, assumed 0 */
         ldconst(0,sPRI);    /* load 0 */
-        return false;       /* return 0 for labels (expression error) */
+        return false;       /* return false for labels (expression error) */
       } /* if */
       lval->sym=sym;
       lval->ident=sym->ident;

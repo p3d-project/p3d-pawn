@@ -2069,7 +2069,7 @@ static int is_cached;
 static int cached_tok;
 static cell cached_val;
 static char *cached_str=NULL;
-static int _lexnewline;
+static int _lexnewline; /**< holds whether a newline has just been read */
 
 SC_FUNC int lexinit(int releaseall)
 {

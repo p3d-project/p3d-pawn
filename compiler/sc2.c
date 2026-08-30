@@ -821,7 +821,10 @@ static int ftoi(cell *val,const unsigned char *curptr)
     assert(pc_cellsize==4 || pc_cellsize==8);
     if (pc_cellsize==4) {
       float value=(float)fnum;
-      *val=*((cell *)&value);
+      uint32_t bits;
+      /* through a "cell *" this reads sizeof(cell) bytes, past "value" */
+      memcpy(&bits,&value,sizeof bits);
+      *val=(cell)bits;
       #if !defined NDEBUG
         /* I assume that the C/C++ compiler stores "float" values in IEEE 754
          * format (as mandated in the ANSI standard). Test this assumption
@@ -2502,23 +2505,26 @@ SC_FUNC int needtoken(int token)
 {
   int t=matchtoken(token);
   if (t!=1 && !(t==2 && token==tTERM)) {
-    char s1[20],s2[20];
+    /* an entry of sc_tokens[] is up to 27 characters and a symbol name up to
+     * sNAMEMAX, so 20 bytes each was not enough
+     */
+    char s1[sNAMEMAX+1],s2[sNAMEMAX+1];
     assert(is_cached);                    /* token already pushed back */
     litidx=0;                             /* force clear literal pool on error */
     if (token<256)
       sprintf(s1,"%c",(char)token);       /* single character token */
     else
-      strcpy(s1,sc_tokens[token-tFIRST]); /* multi-character symbol */
+      strlcpy(s1,sc_tokens[token-tFIRST],sizeof s1); /* multi-character symbol */
     if (!freading)
-      strcpy(s2,"-end of file-");
+      strlcpy(s2,"-end of file-",sizeof s2);
     else if (cached_tok<256)
       sprintf(s2,"%c",(char)cached_tok);
     else if (cached_tok==tNUMBER)
       sprintf(s2,"%d",(int)cached_val);
     else if (cached_tok==tSYMBOL)
-      strcpy(s2,cached_str);
+      strlcpy(s2,cached_str,sizeof s2);
     else
-      strcpy(s2,sc_tokens[cached_tok-tFIRST]);
+      strlcpy(s2,sc_tokens[cached_tok-tFIRST],sizeof s2);
     error(1,s1,s2);     /* expected ..., but found ... */
   } /* if */
   return t;
@@ -2827,11 +2833,24 @@ static void free_symbol(symbol *sym)
 
 SC_FUNC void delete_symbol(symbol *root,symbol *sym)
 {
+  symbol *scan;
+  int i;
+
+  /* other symbols may hold a reference to this one; those pointers would
+   * dangle after the free below
+   */
+  assert(root!=sym);
+  for (scan=root->next; scan!=NULL; scan=scan->next) {
+    assert(scan->refer!=NULL);
+    for (i=0; i<scan->numrefers; i++)
+      if (scan->refer[i]==sym)
+        scan->refer[i]=NULL;
+  } /* for */
+
   /* find the symbol and its predecessor
    * (this function assumes that you will never delete a symbol that is not
    * in the table pointed at by "root")
    */
-  assert(root!=sym);
   while (root->next!=sym) {
     root=root->next;
     assert(root!=NULL);

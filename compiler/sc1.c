@@ -490,8 +490,12 @@ int pc_compile(int argc, char *argv[])
   char incfname[_MAX_PATH];
   char reportname[_MAX_PATH];
   char codepage[MAXCODEPAGE+1];
-  char *tmpname;  /* temporary input file name */
-  FILE *binf;
+  /* assigned after setjmp() and read again after the longjmp() to "cleanup",
+   * so they must be volatile (C99 7.13.2.1p3)
+   */
+  char * volatile tmpname;  /* temporary input file name */
+  char inpfname_org[_MAX_PATH]; /* name of the main input file, before any #file */
+  FILE * volatile binf;
   void *inpfmark;
   int lcl_tabsize;
 # if !defined PAWN_LIGHT
@@ -569,9 +573,18 @@ int pc_compile(int argc, char *argv[])
       char mask[] = "pawn.XXXXXX";
       int tmpfd = mkstemp(mask);
       char *procname = alloca(64);
-      tmpname = alloca(PATH_MAX);
+      char linkname[PATH_MAX];
+      ssize_t linklen;
       sprintf(procname, "/proc/self/fd/%d", tmpfd);
-      readlink(procname, tmpname, PATH_MAX);
+      /* readlink() does not NUL-terminate its output, and may return -1 */
+      linklen = readlink(procname, linkname, sizeof linkname - 1);
+      if (linklen < 0)
+        linklen = 0;
+      linkname[linklen] = '\0';
+      /* the "cleanup" path free()s tmpname, so take it from the heap */
+      tmpname = strdup(linkname);
+      if (tmpname == NULL)
+        error(103);             /* insufficient memory */
       close(tmpfd);
 #   endif
     ftmp=(FILE*)pc_createsrc(tmpname);
@@ -632,6 +645,7 @@ int pc_compile(int argc, char *argv[])
   /* do the first pass through the file (or possibly two or more "first passes") */
   sc_parsenum=0;
   inpfmark=pc_getpossrc(inpf_org,NULL);
+  strlcpy(inpfname_org,inpfname,sizeof inpfname_org);
   do {
     /* reset "defined" flag of all functions and global variables */
     reduce_referrers(&glbtab);
@@ -646,6 +660,13 @@ int pc_compile(int argc, char *argv[])
     pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
     errorset(sRESET,0);
     /* reset the source file */
+    /* the name a #file set in the previous pass must not apply to this one */
+    if (strcmp(inpfname,inpfname_org)!=0) {
+      free(inpfname);
+      inpfname=duplicatestring(inpfname_org);
+      if (inpfname==NULL)
+        error(103);             /* insufficient memory */
+    } /* if */
     inpf=inpf_org;
     freading=true;
     pc_resetsrc(inpf,inpfmark); /* reset file position */
@@ -700,7 +721,13 @@ int pc_compile(int argc, char *argv[])
         free(pc_globaldoc);
         pc_globaldoc=NULL;
       } /* if */
-      assert(pc_recentdoc==NULL);
+      /* a comment block that no declaration ever claimed (the declaration that
+       * would have taken it failed to parse) is still ours to release
+       */
+      if (pc_recentdoc!=NULL) {
+        free(pc_recentdoc);
+        pc_recentdoc=NULL;
+      } /* if */
     } /* if */
 # endif
   if (sc_listing)
@@ -716,6 +743,13 @@ int pc_compile(int argc, char *argv[])
   pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
   errorset(sRESET,0);
   /* reset the source file */
+  /* as above: the name a #file set in the previous pass must not apply here */
+  if (strcmp(inpfname,inpfname_org)!=0) {
+    free(inpfname);
+    inpfname=duplicatestring(inpfname_org);
+    if (inpfname==NULL)
+      error(103);               /* insufficient memory */
+  } /* if */
   inpf=inpf_org;
   freading=true;
   pc_resetsrc(inpf,inpfmark);   /* reset file position */
@@ -743,8 +777,13 @@ int pc_compile(int argc, char *argv[])
     error(13);                  /* no entry point (no public functions) */
 
 cleanup:
-  if (inpf!=NULL)               /* main source file is not closed, do it now */
+  /* also the target of the longjmp() on a fatal error, and errors 106/112 are
+   * raised from this very path, so releasing a handle must also clear it
+   */
+  if (inpf!=NULL) {             /* main source file is not closed, do it now */
     pc_closesrc(inpf);
+    inpf=NULL;
+  } /* if */
   /* write the binary file (the file is already open) */
   if (!(sc_asmfile || sc_listing) && errnum==0 && jmpcode==0) {
     assert(binf!=NULL);
@@ -832,10 +871,14 @@ cleanup:
       Fortify_Enable(FORTIFY_ENABLED);
 #   endif
   } /* if */
-  if (inpfname!=NULL)
+  if (inpfname!=NULL) {
     free(inpfname);
-  if (litq!=NULL)
+    inpfname=NULL;             /* diagnostics below still read it */
+  } /* if */
+  if (litq!=NULL) {
     free(litq);
+    litq=NULL;
+  } /* if */
   /* when aborting inside an include file, pop off and erase all names on the stack */
   while ((i=POPSTK_I())!=-1) {
     (void)POPSTK_I();   /* fcurrent */
@@ -847,8 +890,10 @@ cleanup:
     inpf=(FILE *)POPSTK_P();
     assert(inpfname!=NULL && inpfname!=(char*)-1);
     free(inpfname);
+    inpfname=NULL;
     assert(inpf!=NULL && inpf!=(FILE*)-1);
     pc_closesrc(inpf);
+    inpf=NULL;
   } /* if */
   lexinit(true);                          /* reset and release buffers */
   phopt_cleanup();
@@ -1774,6 +1819,8 @@ void sc_attachdocumentation(symbol *sym,int onlylastblock)
     /* set the documentation, or append it to it */
     if (str!=NULL)
       length+=strlen(str)+1+4;   /* plus 4 for "<p/>" */
+    if (wrap)
+      length+=9+10;              /* "<summary>" and "</summary>", inserted below */
     doc=(char*)malloc((length+1)*sizeof(char));
     if (doc!=NULL) {
       char *end;
@@ -2200,7 +2247,7 @@ static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst)
  */
 static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,int fstock,int fconst)
 {
-  int ident,tag,ispublic,usage;
+  int ident,tag,ispublic,usage,tok;
   char name[sNAMEMAX+1];
   cell val,size,cidx;
   ucell address;
@@ -2286,6 +2333,15 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
     } else if (sc_curstates>0 && ispublic) {
       error(88,name);           /* public variables may not have states */
       sc_curstates=0;
+    } /* if */
+    /* the look-ahead above may have read a string, which the lexer stores in
+     * the literal queue; it cannot continue this declaration anyway
+     */
+    tok=lexpeek();
+    if (tok==tSTRING || tok==tPACKSTRING) {
+      error(1,";","[string]");  /* expected token */
+      lexclr(true);             /* drop the rest of the line */
+      litidx=0;                 /* and the literals that came with it */
     } /* if */
     sym=findconst(name);
     if (sym==NULL) {
@@ -2870,7 +2926,8 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
       /* after all arrays have been initalized, we know the (major) dimensions
        * of the array and we can properly adjust the indirection vectors
        */
-      if (err==0)
+      /* an error leaves the list of final dimension sizes incomplete */
+      if (err==0 && !errorfound)
         adjust_indirectiontables(dim,numdim,0,0,curlit,&lastdim,&skipdim);
       delete_consttable(&lastdim);  /* clear list of minor dimension sizes */
     } /* if */
@@ -3048,7 +3105,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
             do {
               val+=step;
               packcount+=1;
-              packitem|=(val & 0xff) << ((pc_cellsize-packcount)*sCHARBITS);
+              packitem|=(cell)(((ucell)val & 0xff) << ((pc_cellsize-packcount)*sCHARBITS));
             } while (packcount<pc_cellsize);
             litadd(packitem);    /* store collected values in literal table */
             packitem=0;
@@ -3094,7 +3151,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
         do {
           prev1+=step;
           packcount+=1;
-          packitem|=(prev1 & 0xff) << ((pc_cellsize-packcount)*sCHARBITS);
+          packitem|=(cell)(((ucell)prev1 & 0xff) << ((pc_cellsize-packcount)*sCHARBITS));
         } while (packcount<pc_cellsize);
         litadd(packitem);    /* store collected values in literal table */
         packitem=0;
@@ -3151,7 +3208,7 @@ static cell init(int ident,int usage,int *tag,int *errorfound,int *packcount,cel
       if ((ucell)i>=(ucell)(1 << sCHARBITS))
         error(43,(long)i);    /* constant exceeds range */
       *packcount+=1;
-      *packitem|=(i & 0xff) << ((pc_cellsize-*packcount)*sCHARBITS);
+      *packitem|=(cell)(((ucell)i & 0xff) << ((pc_cellsize-*packcount)*sCHARBITS));
       if (*packcount==pc_cellsize) {
         litadd(*packitem);    /* store collected values in literal table */
         *packitem=0;
@@ -3231,7 +3288,9 @@ static cell needsub(char match,constvalue **namelist)
         break;
       } /* if */
       tag=pc_addtag(NULL);
-      needtoken(tSYMLABEL);
+      /* on failure the token is pushed back, which tokeninfo() asserts against */
+      if (!needtoken(tSYMLABEL))
+        break;
     } /* for */
     /* add a sentinel, so that we know the size of the last symbol */
     append_constval(*namelist,"",index,0);
@@ -3329,7 +3388,10 @@ static void decl_const(int scope)
         sc_attachdocumentation(sym,true); /* attach any documenation to the constant */
         sym->x.enumlist=enumerate;
       } /* if */
-    } while (enumerate!=0 && matchtoken(tSEPARATOR));
+      /* matchtoken() answers 2 for an implied separator: a newline continues
+       * the list, but so does end of file, where nothing is left to read
+       */
+    } while (enumerate!=0 && freading && matchtoken(tSEPARATOR));
     if (enumerate!=0)
       needtoken('}');                   /* terminates the constant list */
   } while (matchtoken(','));            /* more? */
@@ -3621,16 +3683,22 @@ static int operatoradjust(int opertok,symbol *sym,char *opername,int resulttag)
   case '=':
   case tINC:
   case tDEC:
-    if (count!=1)
+    if (count!=1) {
       error(62);      /* number or placement of the operands does not fit the operator */
+      return false;   /* no tags to build the operator name from */
+    } /* if */
     break;
   case '-':
-    if (count!=1 && count!=2)
+    if (count!=1 && count!=2) {
       error(62);      /* number or placement of the operands does not fit the operator */
+      return false;
+    } /* if */
     break;
   default:
-    if (count!=2)
+    if (count!=2) {
       error(62);      /* number or placement of the operands does not fit the operator */
+      return false;
+    } /* if */
   } /* switch */
 
   if (tags[0]==0 && (opertok!='=' && tags[1]==0 || opertok=='=' && resulttag==0))
@@ -3713,7 +3781,7 @@ SC_FUNC char *operator_symname(char *symname,char *opername,int tag1,int tag2,in
   return symname;
 }
 
-static int parse_funcname(const char *fname,int *tag1,int *tag2,char *opname)
+static int parse_funcname(const char *fname,int *tag1,int *tag2,char *opname,size_t opsize)
 {
   const char *ptr;
   char *name;
@@ -3732,7 +3800,8 @@ static int parse_funcname(const char *fname,int *tag1,int *tag2,char *opname)
   } /* if */
   assert(!unary || *tag1==0);
   assert(*ptr!='\0');
-  for (name=opname; !isdigit(*ptr); )
+  /* error recovery can hand us a name with no tag behind it */
+  for (name=opname; *ptr!='\0' && !isdigit(*ptr) && (size_t)(name-opname)<opsize-1; )
     *name++ = *ptr++;
   *name='\0';
   *tag2=(int)strtol(ptr,NULL,16);
@@ -3762,7 +3831,7 @@ SC_FUNC char *funcdisplayname(char *dest,const char *funcname)
     return dest;
   } /* if */
 
-  unary=parse_funcname(funcname,&tags[0],&tags[1],opname);
+  unary=parse_funcname(funcname,&tags[0],&tags[1],opname,sizeof opname);
   tagsym[1]=find_tag_byval(tags[1]);
   assert(tagsym[1]!=NULL);
   if (unary) {
@@ -4106,9 +4175,13 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   if (state_id!=0) {
     statelist *ptr=sym->states->next;
     while (ptr!=NULL) {
-      assert(sc_status!=statWRITE || ptr->label>0);
+      /* the state stubs leave the label of a lone fall-back at zero and leave
+       * the error to be reported here (see sc4.c)
+       */
+      assert(sc_status!=statWRITE || ptr->label>0
+             || (ptr->id==FALLBACK && ptr->next==NULL));
       if (ptr->id==state_id) {
-        if (pc_overlays==0)
+        if (pc_overlays==0 && ptr->label>0)
           setlabel(ptr->label);
         ovl_index=ptr->label;
         break;          /* no need to search further */
@@ -5056,14 +5129,18 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
       assert(stlist!=NULL);     /* there should be at least one state item */
       while (stlist!=NULL && stlist->id==FALLBACK)
         stlist=stlist->next;
-      assert(stlist!=NULL);     /* state id should be found */
-      i=state_getfsa(stlist->id);
-      assert(i>=0);             /* automaton 0 exists */
-      fsa=automaton_findid(i);
-      assert(fsa!=NULL);        /* automaton should be found */
-      fprintf(log,"\t\t\t<automaton name=\"%s\"/>\n", strlen(fsa->name)>0 ? fsa->name : "(anonymous)");
-      if (makestategraph)
-        *makestategraph=1;
+      /* a function whose only state is the fall-back has no automaton to
+       * report; error 85 was already given for it
+       */
+      if (stlist!=NULL) {
+        i=state_getfsa(stlist->id);
+        assert(i>=0);           /* automaton 0 exists */
+        fsa=automaton_findid(i);
+        assert(fsa!=NULL);      /* automaton should be found */
+        fprintf(log,"\t\t\t<automaton name=\"%s\"/>\n", strlen(fsa->name)>0 ? fsa->name : "(anonymous)");
+        if (makestategraph)
+          *makestategraph=1;
+      } /* if */
     } /* if */
     fprintf(log,"\t\t\t<location file=\"%s\" line=\"%ld\"/>\n",get_inputfile(sym->fnumber),(long)sym->lnumber);
     assert(sym->refer!=NULL);
@@ -5928,20 +6005,24 @@ static void compound(int stmt_sameline)
   int block_start=pc_curline; /* save line where the compound block started */
 
   /* if there is more text on this line, we should adjust the statement indent */
-  if (stmt_sameline) {
+  /* lexptr==srcline means nothing was read from this line yet, so there is no
+   * brace behind it to find and lexptr-1 is already outside the buffer
+   */
+  if (stmt_sameline && lexptr>srcline) {
     const unsigned char *p=lexptr-1;
-    /* go back to the opening brace */
-    while (*p!='{') {
-      assert(p>srcline);
+    /* go back to the opening brace, bounded by the start of the line: error
+     * recovery can reach here with the brace no longer on this line
+     */
+    while (p>srcline && *p!='{')
       p--;
-    } /* while */
-    assert(*p=='{');  /* it should be found */
-    /* go forward, skipping white-space */
-    p++;
-    while (*p<=' ' && *p!='\0')
+    if (*p=='{') {
+      /* go forward, skipping white-space */
       p++;
-    assert(*p!='\0'); /* a token should be found */
-    lex_fetchindent(srcline,p);
+      while (*p<=' ' && *p!='\0')
+        p++;
+      if (*p!='\0')
+        lex_fetchindent(srcline,p);
+    } /* if */
   } /* if */
 
   nestlevel+=1;                 /* increase compound statement level */
@@ -6090,7 +6171,8 @@ static int test(int label,int invert,int test_true,int *parenthesized)
   if (parenthesized!=NULL)
     *parenthesized=parens;
   if (ident==iARRAY || ident==iREFARRAY) {
-    char *ptr=(strlen(sym->name)>0) ? sym->name : "-unknown-";
+    /* an expression with no symbol belongs with the nameless ones */
+    char *ptr=(sym!=NULL && strlen(sym->name)>0) ? sym->name : "-unknown-";
     error(33,ptr);              /* array must be indexed */
   } /* if */
   if (ident==iCONSTEXPR) {      /* constant expression */
@@ -6819,7 +6901,8 @@ static void dostate(void)
      * since the report is built after the first compile pass, create a dummy
      * state, so that the transitions can be documented
      */
-    if (sc_status==statBROWSE) {
+    /* without a name there is no transition to document either */
+    if (sc_status==statBROWSE && name[0]!='\0') {
       memset(&dummyautomaton,0,sizeof dummyautomaton);
       assert(automaton==NULL || strcmp(automaton->name,fsaname)==0);
       assert(strlen(fsaname)<=sNAMEMAX);

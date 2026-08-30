@@ -512,7 +512,10 @@ static int matchsequence(char *start,const char *end,const char *pattern,
         /* sign-extend the value to check whether the value is in the range for
            packed parameters */
         ucell v2=v;
-        if ((v2 & ((ucell)1<<pc_cellsize*8-1))!=0)
+        /* there are no bits above the cell to set when the cell fills the
+         * type, and shifting by the full width is undefined
+         */
+        if ((v2 & ((ucell)1<<pc_cellsize*8-1))!=0 && (size_t)pc_cellsize*8<8*sizeof(ucell))
           v2|=~(ucell)0<<pc_cellsize*8;
         if (*varptr>' ' || v2>=((ucell)1<<((pc_cellsize*4)-1)) && v2<=~((ucell)1<<((pc_cellsize*4)-1)))
           return false;
@@ -822,15 +825,15 @@ static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *
           char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1];
           if (matchsequence(head,end,sequences[seq].find,symbols,&match_length)) {
             char *replace=replacesequence(sequences[seq].replace,symbols,&repl_length);
-            /* If the replacement is bigger than the original section, we may need
-             * to "grow" the staging buffer. This is quite complex, due to the
-             * re-ordering of expressions that can also happen in the staging
-             * buffer. In addition, it should not happen: the peephole optimizer
-             * must replace sequences with *shorter* sequences, not longer ones.
-             * So, I simply forbid sequences that are longer than the ones they
-             * are meant to replace.
+            /* A replacement that is bigger than the original section would have
+             * to "grow" the staging buffer, which is quite complex, due to the
+             * re-ordering of expressions that can also happen in that buffer.
+             * A rule always replaces a sequence with fewer instructions, but
+             * not necessarily with less text: a literal parameter takes
+             * 2*pc_cellsize characters, so on a large cell a rule that trades
+             * two instructions for one with a parameter is longer written out
+             * than what it matched. Such a rule is skipped, not applied.
              */
-            assert(match_length>=repl_length);
             if (match_length>=repl_length) {
               strreplace(head,replace,match_length,repl_length,(int)(end-head));
               end-=match_length-repl_length;
@@ -838,10 +841,8 @@ static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *
               code_idx-=opcodes(sequences[seq].opc)+opargs(sequences[seq].arg);
               matches++;
             } else {
-              /* actually, we should never get here (match_length<repl_length) */
-              assert(0);
               free(replace);
-              seq++;
+              seq++;    /* this rule does not fit, try the next one */
             } /* if */
           } else {
             seq++;

@@ -425,14 +425,17 @@ static cell do_proc(FILE *ftxt,const cell *params,cell opcode,cell cip)
       int numpublics=(amxhdr.natives-amxhdr.publics)/sizeof(AMX_FUNCSTUB);
       fseek(fpamx,amxhdr.publics,SEEK_SET);
       for (idx=0; idx<numpublics && nameoffset<0; idx++) {
-        fread(&func,sizeof func,1,fpamx);
+        if (fread(&func,sizeof func,1,fpamx)!=1)
+          break;                        /* table runs past the end of the file */
         if (func.address==cip)
           nameoffset=func.nameofs;
       } /* for */
     } /* if */
     if (nameoffset>=0) {
+      size_t len;
       fseek(fpamx,nameoffset,SEEK_SET);
-      fread(name,1,sNAMEMAX+1,fpamx);
+      len=fread(name,1,sNAMEMAX,fpamx);
+      name[len]='\0';                   /* the file need not hold a terminator */
     } /* if */
 
     print_opcode(ftxt,opcode,cip);
@@ -511,7 +514,7 @@ static cell casetbl_ovl(FILE *ftxt,const cell *params,cell opcode,cell cip)
   return 2*num+1;
 }
 
-static void addchars(char *str,int64_t value,int pos)
+static void addchars(char *str,uint64_t value,int pos)
 {
   int i;
   str+=pos*pc_cellsize;
@@ -588,7 +591,11 @@ int main(int argc,char *argv[])
   } /* if */
 
   /* load header */
-  fread(&amxhdr,sizeof amxhdr,1,fpamx);
+  if (fread(&amxhdr,sizeof amxhdr,1,fpamx)!=1) {
+    printf("Not a valid AMX file: \"%s\" is too short\n",argv[1]);
+    fclose(fplist);
+    return 1;
+  } /* if */
   if (amxhdr.magic==AMX_MAGIC_16) {
     pc_cellsize=2;
     cellmask=0xffffU;
@@ -629,7 +636,12 @@ int main(int argc,char *argv[])
 
   /* read the file */
   fseek(fpamx,amxhdr.cod,SEEK_SET);
-  fread(code,1,codesize,fpamx);
+  if (fread(code,1,codesize,fpamx)!=(size_t)codesize) {
+    printf("Not a valid AMX file: the code block runs past the end of the file\n");
+    free(code);
+    fclose(fplist);
+    return 1;
+  } /* if */
 
   /* do a first run through the code to get jump targets (for labels) */
   cip=code;
@@ -698,15 +710,15 @@ int main(int argc,char *argv[])
     switch (pc_cellsize) {
     case 2:
       fprintf(fplist,"%0" PRIx16 " ",*(uint16_t*)cip);
-      addchars(name,*(short*)cip,count);
+      addchars(name,*(uint16_t*)cip,count);
       break;
     case 4:
       fprintf(fplist,"%0" PRIx32 " ",*(uint32_t*)cip);
-      addchars(name,*(long*)cip,count);
+      addchars(name,*(uint32_t*)cip,count);
       break;
     case 8:
       fprintf(fplist,"%0" PRIx64 " ",*(uint64_t*)cip);
-      addchars(name,*(int64_t*)cip,count);
+      addchars(name,*(uint64_t*)cip,count);
       break;
     default:
       assert(0);

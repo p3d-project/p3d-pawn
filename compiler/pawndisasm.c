@@ -246,6 +246,47 @@ static OPCODE opcodelist[] = {
 };
 
 
+/* The opcode is an index into opcodelist[], and nothing has checked that it is
+ * one: a corrupted or truncated file puts an arbitrary value here, and the
+ * masks below allow up to 0xffff (or 0xffffffff) where the table holds a few
+ * hundred entries. Returns NULL for an opcode that is not in the table.
+ */
+/* reads one cell at "cip", with the width the file declares */
+static cell fetch_opcode(const unsigned char *cip)
+{
+  switch (pc_cellsize) {
+  case 2:
+    return (cell)*(uint16_t*)cip;
+  case 4:
+    return (cell)*(uint32_t*)cip;
+  case 8:
+    return (cell)*(uint64_t*)cip;
+  } /* switch */
+  assert(0);
+  return 0;
+}
+
+static OPCODE_PROC find_opcode(cell opc)
+{
+  ucell idx;
+
+  switch (pc_cellsize) {
+  case 2:
+    idx=(ucell)(opc & 0xff);
+    break;
+  case 4:
+    idx=(ucell)(opc & 0xffff);
+    break;
+  case 8:
+    idx=(ucell)(opc & 0xffffffffLU);
+    break;
+  default:
+    assert(0);
+    return NULL;
+  } /* switch */
+  return (idx<countof(opcodelist)) ? opcodelist[(int)idx].func : NULL;
+}
+
 static void label_add(cell address)
 {
   LABEL *item, *last;
@@ -647,22 +688,9 @@ int main(int argc,char *argv[])
   cip=code;
   codesize=amxhdr.dat-amxhdr.cod;
   while (cip-code<codesize) {
-    switch (pc_cellsize) {
-    case 2:
-      opc=(cell)*(uint16_t*)cip;
-      func=opcodelist[(int)(opc&0xff)].func;
-      break;
-    case 4:
-      opc=(cell)*(uint32_t*)cip;
-      func=opcodelist[(int)(opc&0xffff)].func;
-      break;
-    case 8:
-      opc=(cell)*(uint64_t*)cip;
-      func=opcodelist[(int)(opc&0xffffffffLU)].func;
-      break;
-    default:
-      assert(0);
-    } /* switch */
+    opc=fetch_opcode(cip);
+    if ((func=find_opcode(opc))==NULL)
+      break;                    /* not a valid opcode: stop scanning for labels */
     opc=func(NULL,(cell*)(cip+pc_cellsize),opc,(cell)(cip-code));
     cip+=pc_cellsize*opc;
   } /* while */
@@ -671,22 +699,12 @@ int main(int argc,char *argv[])
   cip=code;
   codesize=amxhdr.dat-amxhdr.cod;
   while (cip-code<codesize) {
-    switch (pc_cellsize) {
-    case 2:
-      opc=(cell)*(uint16_t*)cip;
-      func=opcodelist[(int)(opc&0xff)].func;
+    opc=fetch_opcode(cip);
+    if ((func=find_opcode(opc))==NULL) {
+      fprintf(fplist,"\n; invalid opcode %08lx at %08lx\n",
+              (long)opc,(long)(cip-code));
       break;
-    case 4:
-      opc=(cell)*(uint32_t*)cip;
-      func=opcodelist[(int)(opc&0xffff)].func;
-      break;
-    case 8:
-      opc=(cell)*(uint64_t*)cip;
-      func=opcodelist[(int)(opc&0xffffffffLU)].func;
-      break;
-    default:
-      assert(0);
-    } /* switch */
+    } /* if */
     if (func==do_jump)
       label_add(get_param((cell*)(cip+pc_cellsize),0)+(cell)(cip-code));
     opc=func(fplist,(cell*)(cip+pc_cellsize),opc,(cell)(cip-code));

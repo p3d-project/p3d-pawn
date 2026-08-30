@@ -1284,8 +1284,9 @@ static int command(void)
           } else if (strcmp(name,"-")==0) {
             pc_addlibtable=false;
           } else {
-            /* add the name if it does not yet exist in the table */
-            if (find_constval(&libname_tab,name,-1)==NULL)
+            /* select the library, adding it if it is not in the table yet */
+            curlibrary=find_constval(&libname_tab,name,-1);
+            if (curlibrary==NULL)
               curlibrary=append_constval(&libname_tab,name,0,0);
           } /* if */
         } else if (strcmp(str,"opcodeset")==0) {

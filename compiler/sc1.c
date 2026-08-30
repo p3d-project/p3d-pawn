@@ -1177,6 +1177,7 @@ static void resetglobals(void)
   pc_memflags=0;
   pc_enumsequence=0;
   errorset(sEXPRRELEASE,0);
+  curlibrary=NULL;      /* selected by #pragma library, set by the first pass */
 }
 
 static void initglobals(void)
@@ -7226,7 +7227,7 @@ static void dostate(void)
         && sym->states!=NULL
         && state_getfsa(sym->states->next->id)==automaton->index
         && state_inlist(sym->states->next->id,state->value)
-        && (sym->fvisible==NOT_SET || sym->fvisible==fnumber))
+        && (sym->fvisible==NOT_SET || sym->fvisible==fcurrent))
     {
       /* state variable that belongs to the same automaton and whose state-list
        * contains the target state

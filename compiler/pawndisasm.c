@@ -357,9 +357,34 @@ static void print_param(FILE *ftxt,cell param,int eol)
     fprintf(ftxt," ");
 }
 
+/* Bounds of the block loaded from the file. Every parameter the opcode handlers
+ * read comes out of it, at an offset the file itself supplies, so the read has
+ * to be checked against these.
+ */
+static const unsigned char *code_start=NULL;
+static const unsigned char *code_end=NULL;
+
+/* how many cells are still readable from "params" on */
+static cell params_available(const cell *params)
+{
+  const unsigned char *p=(const unsigned char*)params;
+  if (code_start==NULL || p<code_start || p>=code_end)
+    return 0;
+  return (cell)((code_end-p)/pc_cellsize);
+}
+
+/* The number of cases in a case table comes from the file, and the table that
+ * follows is two cells per case. Cap it at what the block can still hold, so a
+ * corrupted count cannot walk the loop past the end.
+ */
+static cell clamp_casecount(const cell *params);
+
 static cell get_param(const cell *params, int index)
 {
   cell value;
+
+  if (index>=params_available(params))
+    return 0;                   /* past the end of the block */
   switch (pc_cellsize) {
   case 2:
     value=(cell)*((uint16_t*)params+index);
@@ -521,9 +546,21 @@ static cell do_switch(FILE *ftxt,const cell *params,cell opcode,cell cip)
   return 2;
 }
 
-static cell casetbl(FILE *ftxt,const cell *params,cell opcode,cell cip)
+static cell clamp_casecount(const cell *params)
 {
   cell num=get_param(params,0)+1;
+  cell room=(params_available(params)-1)/2;
+
+  if (num<1)
+    num=1;
+  if (num>room+1)
+    num=room+1;
+  return num;
+}
+
+static cell casetbl(FILE *ftxt,const cell *params,cell opcode,cell cip)
+{
+  cell num=clamp_casecount(params);
   if (ftxt!=NULL) {
     int idx;
     print_opcode(ftxt,opcode,cip);
@@ -540,7 +577,7 @@ static cell casetbl(FILE *ftxt,const cell *params,cell opcode,cell cip)
 
 static cell casetbl_ovl(FILE *ftxt,const cell *params,cell opcode,cell cip)
 {
-  cell num=get_param(params,0)+1;
+  cell num=clamp_casecount(params);
   if (ftxt!=NULL) {
     int idx;
     print_opcode(ftxt,opcode,cip);
@@ -676,6 +713,8 @@ int main(int argc,char *argv[])
   } /* if */
 
   /* read the file */
+  code_start=code;
+  code_end=code+codesize;
   fseek(fpamx,amxhdr.cod,SEEK_SET);
   if (fread(code,1,codesize,fpamx)!=(size_t)codesize) {
     printf("Not a valid AMX file: the code block runs past the end of the file\n");

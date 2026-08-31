@@ -642,6 +642,7 @@ int main(int argc,char *argv[])
   char name[_MAX_PATH];
   FILE *fplist;
   int codesize,count;
+  long filesize;
   unsigned char *code,*cip;
   OPCODE_PROC func;
   cell opc;
@@ -694,6 +695,30 @@ int main(int argc,char *argv[])
     return 1;
   } /* if */
 
+  /* The offsets in the header have not been checked against each other or
+   * against the file, and everything below is driven by them: the block that is
+   * allocated is hea-cod, while the loops walk dat-cod of it, so dat>hea alone
+   * is enough to run off the end. Check them once, here.
+   */
+  fseek(fpamx,0,SEEK_END);
+  filesize=ftell(fpamx);
+  if (amxhdr.cod<(int32_t)sizeof amxhdr || amxhdr.cod>amxhdr.dat
+      || amxhdr.dat>amxhdr.hea || amxhdr.hea>amxhdr.stp
+      || amxhdr.hea>filesize || (amxhdr.hea-amxhdr.cod)%pc_cellsize!=0
+      || (amxhdr.dat-amxhdr.cod)%pc_cellsize!=0
+      /* the tables are read through these, and "natives - publics" is
+       * subtracted to count the entries of the first one
+       */
+      || amxhdr.publics<(int32_t)sizeof amxhdr || amxhdr.publics>amxhdr.natives
+      || amxhdr.natives>amxhdr.libraries || amxhdr.libraries>amxhdr.pubvars
+      || amxhdr.pubvars>amxhdr.tags || amxhdr.tags>amxhdr.nametable
+      || amxhdr.nametable>filesize)
+  {
+    printf("Not a valid AMX file: the header offsets are inconsistent\n");
+    fclose(fplist);
+    return 1;
+  } /* if */
+
   codesize=amxhdr.hea-amxhdr.cod; /* size for both code and data */
   fprintf(fplist,";File version: %d\n",amxhdr.file_version);
   fprintf(fplist,";Cell size: %d bits\n",8*pc_cellsize);
@@ -731,6 +756,8 @@ int main(int argc,char *argv[])
     if ((func=find_opcode(opc))==NULL)
       break;                    /* not a valid opcode: stop scanning for labels */
     opc=func(NULL,(cell*)(cip+pc_cellsize),opc,(cell)(cip-code));
+    if (opc<1 || opc>(codesize-(cip-code))/pc_cellsize)
+      break;                    /* the instruction does not fit in the block */
     cip+=pc_cellsize*opc;
   } /* while */
 
@@ -747,6 +774,11 @@ int main(int argc,char *argv[])
     if (func==do_jump)
       label_add(get_param((cell*)(cip+pc_cellsize),0)+(cell)(cip-code));
     opc=func(fplist,(cell*)(cip+pc_cellsize),opc,(cell)(cip-code));
+    if (opc<1 || opc>(codesize-(cip-code))/pc_cellsize) {
+      fprintf(fplist,"\n; instruction at %08lx runs past the end of the code\n",
+              (long)(cip-code));
+      break;
+    } /* if */
     cip+=pc_cellsize*opc;
   } /* while */
 

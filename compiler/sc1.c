@@ -6902,7 +6902,7 @@ static void dostate(void)
      * state, so that the transitions can be documented
      */
     /* without a name there is no transition to document either */
-    if (sc_status==statBROWSE && name[0]!='\0') {
+    if (sc_status==statBROWSE && statename[0]!='\0') {
       memset(&dummyautomaton,0,sizeof dummyautomaton);
       assert(automaton==NULL || strcmp(automaton->name,fsaname)==0);
       assert(strlen(fsaname)<=sNAMEMAX);

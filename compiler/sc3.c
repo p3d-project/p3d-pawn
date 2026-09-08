@@ -940,7 +940,9 @@ SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *fsanam
   assert(state!=NULL);
   assert(automaton!=NULL);
   *automaton=NULL;
-  /* the caller uses the name even when this function fails */
+  /* the caller uses the names even when this function fails */
+  if (fsaname!=NULL)
+    *fsaname='\0';
   if (statename!=NULL)
     *statename='\0';
   if ((islabel=matchtoken(tLABEL))==0 && !needtoken(tSYMBOL))

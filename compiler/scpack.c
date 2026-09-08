@@ -153,7 +153,7 @@ static void check_if(char *str,int linenr)
 static int check_tablename(char *str)
 {
   if (strmatch(str,NAME_TOKEN,NULL)) {
-    int i;
+    unsigned i;
     str += strlen(NAME_TOKEN);
     while (*str==' ' || *str=='\t')
       str++;
@@ -167,7 +167,7 @@ static int check_tablename(char *str)
 
 static int check_separator(char *str)
 {
-  int i;
+  unsigned i;
 
   if (strmatch(str,SEP_TOKEN,NULL)) {
     str += strlen(SEP_TOKEN);

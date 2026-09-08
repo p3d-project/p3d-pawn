@@ -1,6 +1,6 @@
 /*  Pawn compiler - Error message output
  *
- *  Copyright (c) CompuPhase, 1997-2025
+ *  Copyright (c) CompuPhase, 1997-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -14,14 +14,14 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: sc5.c 7690 2026-09-08 15:13:28Z thiadmer $
  */
 #include <assert.h>
-#if defined	__WIN32__ || defined _WIN32 || defined __MSDOS__
-  #include <io.h>
+#if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
+# include <io.h>
 #endif
 #if defined __LINUX__ || defined __GNUC__
-  #include <unistd.h>
+# include <unistd.h>
 #endif
 #include <ctype.h>
 #include <stdio.h>
@@ -29,25 +29,25 @@
 #include <stdarg.h>     /* ANSI standardized variable argument list functions */
 #include <string.h>
 #if defined FORTIFY
-  #include <alloc/Fortify.h>
+# include <alloc/Fortify.h>
 #endif
 
 #if defined __WIN32__ || defined _WIN32 || defined WIN32 || defined __NT__
-  #define DLLEXPORT __declspec (dllexport)
+# define DLLEXPORT __declspec (dllexport)
 #elif defined HAVE_VISIBILITY
-  #define DLLEXPORT __attribute__ ((visibility("default")))
+# define DLLEXPORT __attribute__ ((visibility("default")))
 #endif
 #include "sc.h"
 
 #if defined _MSC_VER
-  #pragma warning(push)
-  #pragma warning(disable:4125)  /* decimal digit terminates octal escape sequence */
+# pragma warning(push)
+# pragma warning(disable:4125)  /* decimal digit terminates octal escape sequence */
 #endif
 
 #include "sc5.scp"
 
 #if defined _MSC_VER
-  #pragma warning(pop)
+# pragma warning(pop)
 #endif
 
 #define NUM_WARNINGS    (sizeof warnmsg / sizeof warnmsg[0])
@@ -60,7 +60,7 @@ typedef struct s_warnstack {
  */
 static warnstack warndisable;
 
-static int errflag;
+static bool errflag=false;
 static int errfile;
 static int errstart;    /* line number at which the instruction started */
 static int errline;     /* forced line number for the error message */
@@ -217,9 +217,8 @@ static short lastfile;
 
 SC_FUNC int error_symbolname(unsigned number,const char *name)
 {
-  cell val;
   char *str;
-  int tok=tokeninfo(&val,&str);
+  int tok=tokeninfo(NULL,&str);
   unsigned long errornum= (tok>tMIDDLE && tok<=tLAST) ? (unsigned long)makelong(number,4) : number;
   return error(errornum,name);
 }
@@ -376,23 +375,22 @@ SC_FUNC void clear_warningstack(void)
 static int minimum(int a,int b,int c)
 {
   int min=a;
-  if(b<min)
+  if (b<min)
     min=b;
-  if(c<min)
+  if (c<min)
     min=c;
   return min;
 }
 
-SC_FUNC int levenshtein_distance(const char *s,const char*t)
+SC_FUNC int levenshtein_distance(const char *s,const char *t)
 {
   //Step 1
   int k,i,j,cost,distance;
   int *d;
   int n=(int)strlen(s);
   int m=(int)strlen(t);
-  /* an empty string is valid input: the distance is then the other's length */
-  if ((d=(int*)malloc((sizeof(int))*(m+1)*(n+1)))==NULL)
-    return INT_MAX;
+  /* note: an empty string is valid input, the distance is then the other's length */
+  d=(int*)alloca((sizeof(int))*(m+1)*(n+1));
   m++;
   n++;
   //Step 2
@@ -410,45 +408,40 @@ SC_FUNC int levenshtein_distance(const char *s,const char*t)
     } /* for */
   } /* for */
   distance=d[n*m-1];
-  free(d);
   return distance;
 }
 
 static int find_closestsymbol_table(const char *name,const symbol *root,int symboltype,symbol **closestsym)
 {
-  int dist,closestdist=INT_MAX;
   char symname[2*sNAMEMAX+16];
-  symbol *sym=root->next;
-  int critdist;
 
   assert(closestsym!=NULL);
   *closestsym=NULL;
+  int closestdist=INT_MAX;
+
   assert(name!=NULL);
-  /* an empty name has no nearest match to offer (as error() checks too) */
-  if (strlen(name)==0)
-    return INT_MAX;
-  critdist=(int)strlen(name)/2;  /* for short names, allow only a single edit */
+  int critdist=(int)strlen(name)/2; /* for short names, allow only a single edit */
+  if (critdist==0)
+    return closestdist;             /* a (nearly) empty name has no nearest match to offer */
   if (critdist>MAX_EDIT_DIST)
     critdist=MAX_EDIT_DIST;
+  symbol *sym=root->next;
   while (sym!=NULL) {
-    int ident;
-    funcdisplayname(symname,sym->name);
-    if (strlen(symname)==0) {   /* nothing to suggest */
-      sym=sym->next;
-      continue;
-    } /* if */
-    ident=sym->ident;
-    if (symboltype==iARRAY && ident==iREFARRAY)
-      ident=iARRAY;     /* reference arrays match arrays */
-    else if (symboltype==iVARIABLE && (sym->ident==iCONSTEXPR || sym->ident==iREFERENCE || sym->ident==iARRAY || sym->ident==iREFARRAY))
-      ident=iVARIABLE;  /* when requesting variables, constants are also ok */
-    if (symboltype==ident || (symboltype==iVARIABLE && ident==iFUNCTN)) {
-      dist=levenshtein_distance(name,symname);
-      if (dist<closestdist && dist<=critdist) {
-        *closestsym=sym;
-        closestdist=dist;
+    funcdisplayname(symname,countof(symname),sym->name);
+    if (strlen(symname)>0) {
+      int ident=sym->ident;
+      if (symboltype==iARRAY && ident==iREFARRAY)
+        ident=iARRAY;           /* reference arrays match arrays */
+      else if (symboltype==iVARIABLE && (sym->ident==iCONSTEXPR || sym->ident==iREFERENCE || sym->ident==iARRAY || sym->ident==iREFARRAY))
+        ident=iVARIABLE;        /* when requesting variables, constants are also ok */
+      if (symboltype==ident || (symboltype==iVARIABLE && ident==iFUNCTN)) {
+        int dist=levenshtein_distance(name,symname);
+        if (dist<closestdist && dist<=critdist) {
+          *closestsym=sym;
+          closestdist=dist;
+        } /* if */
       } /* if */
-    } /* if */
+    } /* while */
     sym=sym->next;
   } /* while */
   return closestdist;

@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7688 2026-08-28 19:43:19Z thiadmer $
+ *  Version: $Id: sc4.c 7690 2026-09-08 15:13:28Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -384,7 +384,7 @@ SC_FUNC void setlabel(int index)
 {
   assert(index>=0);
   stgwrite("l.");
-  stgwrite((char *)itoh(index));
+  stgwrite((char *)celltohex(index));
   /* To assist verification of the assembled code, put the address of the
    * label as a comment. However, labels that occur inside an expression
    * may move (through optimization or through re-ordering). So write the
@@ -431,7 +431,7 @@ SC_FUNC void startfunc(const char *fname,int index)
   stgwrite("\tproc");
   if (sc_asmfile) {
     char symname[2*sNAMEMAX+16];
-    funcdisplayname(symname,fname);
+    funcdisplayname(symname,countof(symname),fname);
     stgwrite("\t; ");
     stgwrite(symname);
     if (pc_overlays>0) {
@@ -914,7 +914,7 @@ SC_FUNC void ffcall(symbol *sym,const char *label,int numargs)
   assert(sym!=NULL);
   assert(sym->ident==iFUNCTN);
   if (sc_asmfile)
-    funcdisplayname(symname,sym->name);
+    funcdisplayname(symname,countof(symname),sym->name);
   if ((sym->usage & uNATIVE)!=0) {
     /* reserve a SYSREQ id if called for the first time */
     assert(label==NULL);
@@ -1585,7 +1585,7 @@ SC_FUNC void jmp_eq0(int label)
  */
 SC_FUNC void outval(cell val,int fullcell,int newline)
 {
-  char *str=itoh(val);
+  char *str=celltohex(val);
 # if !defined AMX_NO_PACKED_OPC
     if (!fullcell) {
 #     if !defined NDEBUG

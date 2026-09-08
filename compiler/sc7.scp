@@ -19,21 +19,26 @@
  */
 
 /* Special characters in the strings of this file:
+ *  !           Marks the line break between structions in the match and
+ *              replacement strings.
  *  %1 to %5    Parameters that are replaced, the parameters should be numerical
  *              (hexadecimal) values (exceptionally, an alphanumeric symbol).
  *  %0          A parameter that is replaced with its packed value (so on a
  *              32-bit system, 00001234 gets replaced by 1234). Packed opcodes
  *              always take a single parameter, which is why %0 is sufficient.
- *  -           In front of a parameter, - means that the parameter is replaced
- *              by the negated value from the source; this token is valid only
- *              in the replacement string.
+ *  -           In front of a parameter, '-' means that the parameter is
+ *              replaced by the negated value from the source; this token is
+ *              valid only in the replacement string.
  *  +           Between two parameters, + means that the parameters are replaced
  *              by the sum; this token is valid only in the replacement string.
- *  ~           In front of a parameter, and optional space, which should precede
- *              an optional variable.
+ *  ~           In front of a parameter, an optional space, which should precede
+ *              an optional variable. This is used for macro instructions that
+ *              take a variable number of parameters.
  *  #           In front of a literal value, the expanded hexadecimal version of
  *              that literal value (so #5 becomes 00000005 on a 32-bit system);
  *              this token is valid only in the replacement string.
+ *  ;           Special case in a replacement string, when the replacement is
+ *              completely empty (so the complete replacement string is ";!").
  */
 
 SC_FUNC int strexpand(char *dest, const unsigned char *source, int maxlen, const unsigned char pairtable[128][2]);

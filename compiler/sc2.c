@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: sc2.c 7690 2026-09-08 15:13:28Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -27,11 +27,11 @@
 #include "lstring.h"
 #include "sc.h"
 #if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
-  #include <sclinux.h>
+# include <sclinux.h>
 #endif
 
 #if defined FORTIFY
-  #include <alloc/Fortify.h>
+# include <alloc/Fortify.h>
 #endif
 
 /* flags for litchar() */
@@ -280,12 +280,12 @@ static void doinclude(int silent)
   for (i=0; symname[i]!='\0'; i++)
     if (!alphanum(symname[i]))
       symname[i]='_';
-  #if defined __WIN32__ || defined _WIN32 || defined _Windows || defined __MSDOS__
+# if defined __WIN32__ || defined _WIN32 || defined _Windows || defined __MSDOS__
     /* on systems with case-insentive filenames, force the symbol for the file
      * to lower case
      */
     strlwr(symname);
-  #endif
+# endif
   if (find_symbol(&glbtab,symname,fcurrent,0)==NULL) {
     /* constant is not present, so this file has not been included yet */
 
@@ -307,7 +307,7 @@ static void doinclude(int silent)
  *  Reads in a new line from the input file pointed to by "inpf". readline()
  *  concatenates lines that end with a \ with the next line. If no more data
  *  can be read from the file, readline() attempts to pop off the previous file
- *  from the stack. If that fails too, it sets "freading" to 0.
+ *  from the stack. If that fails too, it sets "freading" to false.
  *
  *  Global references: inpf,pc_curline,inpfname,freading,icomment (altered)
  */
@@ -482,9 +482,9 @@ static int isquotednumber(const unsigned char *line,const unsigned char *head)
 static void stripcom(unsigned char *line)
 {
   unsigned char *head=line;
-  #if !defined PAWN_LIGHT
-    #define COMMENT_LIMIT 100
-    #define COMMENT_MARGIN 40   /* length of the longest word */
+# if !defined PAWN_LIGHT
+#   define COMMENT_LIMIT 100
+#   define COMMENT_MARGIN 40   /* length of the longest word */
     char comment[COMMENT_LIMIT+COMMENT_MARGIN];
     int commentidx=0;
     int skipstar=true;
@@ -492,19 +492,19 @@ static void stripcom(unsigned char *line)
     int singleline=prev_singleline;
 
     prev_singleline=false;  /* preset */
-  #endif
+# endif
 
   while (*line){
     if (icomment!=0) {
       if (*line=='*' && *(line+1)=='/') {
-        #if !defined PAWN_LIGHT
+#       if !defined PAWN_LIGHT
           if (icomment==2) {
             assert(commentidx<COMMENT_LIMIT+COMMENT_MARGIN);
             comment[commentidx]='\0';
             if (strlen(comment)>0)
               insert_docstring(comment,1);
           } /* if */
-        #endif
+#       endif
         icomment=0;     /* comment has ended */
         *line=' ';      /* replace '*' and '/' characters by spaces */
         *(line+1)=' ';
@@ -512,7 +512,7 @@ static void stripcom(unsigned char *line)
       } else {
         if (*line=='/' && *(line+1)=='*')
           error(216);   /* nested comment */
-        #if !defined PAWN_LIGHT
+#       if !defined PAWN_LIGHT
           /* collect the comment characters in a string */
           if (icomment==2) {
             if (skipstar && (*line!='\0' && *line<=' ' || *line=='*')) {
@@ -527,14 +527,14 @@ static void stripcom(unsigned char *line)
               skipstar=false;
             } /* if */
           } /* if */
-        #endif
+#       endif
         *line=' ';      /* replace comments by spaces */
         line+=1;
       } /* if */
     } else {
       if (*line=='/' && *(line+1)=='*'){
         icomment=1;     /* start comment */
-        #if !defined PAWN_LIGHT
+#       if !defined PAWN_LIGHT
           /* there must be two "*" behind the slash and then white space */
           if (*(line+2)=='*' && *(line+3)<=' ') {
             /* if we are not in a function, we must attach the previous block
@@ -546,7 +546,7 @@ static void stripcom(unsigned char *line)
           } /* if */
           commentidx=0;
           skipstar=true;
-        #endif
+#       endif
         *line=' ';      /* replace '/' and '*' characters by spaces */
         *(line+1)=' ';
         line+=2;
@@ -555,7 +555,7 @@ static void stripcom(unsigned char *line)
       } else if (*line=='/' && *(line+1)=='/'){  /* comment to end of line */
         if (strchr((char*)line,'\a')!=NULL)
           error(49);    /* invalid line continuation */
-        #if !defined PAWN_LIGHT
+#       if !defined PAWN_LIGHT
           if (*(line+2)=='/' && *(line+3)<=' ') {
             /* documentation comment */
             char *str=(char*)line+3;
@@ -572,7 +572,7 @@ static void stripcom(unsigned char *line)
             insert_docstring(str,1);
             prev_singleline=true;
           } /* if */
-        #endif
+#       endif
         *line++='\n';   /* put "newline" at first slash */
         *line='\0';     /* put "zero-terminator" at second slash */
       } else if (*line=='"') { /* leave string literals unaltered */
@@ -589,14 +589,16 @@ static void stripcom(unsigned char *line)
       }
     } /* if (icomment) */
   } /* while (*line) */
-  #if !defined PAWN_LIGHT
+# if !defined PAWN_LIGHT
     if (icomment==2) {
       assert(commentidx<COMMENT_LIMIT+COMMENT_MARGIN);
       comment[commentidx]='\0';
       if (strlen(comment)>0)
         insert_docstring(comment,1);
     } /* if */
-  #endif
+#   undef COMMENT_LIMIT
+#   undef COMMENT_MARGIN
+# endif
 }
 
 /*  btoi
@@ -820,12 +822,14 @@ static int ftoi(cell *val,const unsigned char *curptr)
     /* floating point */
     assert(pc_cellsize==4 || pc_cellsize==8);
     if (pc_cellsize==4) {
-      float value=(float)fnum;
-      uint32_t bits;
-      /* through a "cell *" this reads sizeof(cell) bytes, past "value" */
-      memcpy(&bits,&value,sizeof bits);
-      *val=(cell)bits;
-      #if !defined NDEBUG
+      /* although the selected cell size is 32-bits, the compiler actually
+         always uses a 64-bit cell type internally, so copy through an
+         explicitly 32-bit type */
+      float fnum32=(float)fnum; /* first convert to 4-byte float */
+      uint32_t inum32;
+      memcpy(&inum32,&fnum32,sizeof inum32);
+      *val=(cell)inum32;
+#     if !defined NDEBUG
         /* I assume that the C/C++ compiler stores "float" values in IEEE 754
          * format (as mandated in the ANSI standard). Test this assumption
          * anyway.
@@ -840,10 +844,13 @@ static int ftoi(cell *val,const unsigned char *curptr)
           /* test a known value */
           assert(*(uint32_t*)&test2==0x42480000L);
         }
-      #endif
+#     endif
     } else {
-      *val=*((cell *)&fnum);
-      #if !defined NDEBUG
+      uint64_t inum64;
+      assert(sizeof(inum64)==sizeof(fnum));
+      memcpy(&inum64,&fnum,sizeof inum64);
+      *val=(cell)inum64;
+#     if !defined NDEBUG
         /* I assume that the C/C++ compiler stores "double" values in IEEE 754
          * format (as mandated in the ANSI standard).
          */
@@ -854,7 +861,7 @@ static int ftoi(cell *val,const unsigned char *curptr)
           /* test sign & magnitude format */
           assert(((*(uint64_t*)&test2) ^ (*(uint64_t*)&test3)) == (bit << (8*pc_cellsize-1)));
         }
-      #endif
+#     endif
     } /* if */
   } else {
     /* fixed point */
@@ -920,11 +927,11 @@ static int preproc_expr(cell *val,int *tag)
   /* save the position in the literal queue too */
   cur_lit=litidx;
   assert(lexptr>=srcline && (lexptr-srcline)<(int)strlen((char*)srcline));   /* lexptr must point inside the string */
-  #if !defined NO_DEFINE
+# if !defined NO_DEFINE
     /* preprocess the string */
     substallpatterns(srcline,sLINEMAX);
     assert(lexptr>=srcline && (lexptr-srcline)<(int)strlen((char*)srcline)); /* lexptr must STILL point inside the string */
-  #endif
+# endif
   /* append a special symbol to the string, so the expression
    * analyzer won't try to read a next line when it encounters
    * an end-of-line
@@ -940,31 +947,54 @@ static int preproc_expr(cell *val,int *tag)
   return result;
 }
 
-/* getstring
- * Returns returns a pointer behind the closing quote or to the other
- * character that caused the input to be ended.
+/** pp_getstring() parses a quoted string from the input line and stores it in a
+ *  destination buffer. This routine is for the preprocessor (directives) and it
+ *  does not handle escape characters. The input string can be quoted or
+ *  unquoted.
+ *
+ *  \param dest     [out] The outpp_getstringut buffer. This parameter may be
+ *                  `NULL`, in which case no output is stored (but the string is
+ *                  still parsed).
+ *  \param max      The maximum size of the `dest` buffer. This should be 0 if
+ *                  `dest` is `NULL`.
+ *  \param line     [in] The buffer to read the string from.
+ *
+ *  \return A pointer to just behind the closing quote or to the other character
+ *          that caused the input to be ended.
+ *
+ *  \note If the string is unquoted, parsing stops at the first white-space
+ *        character.
  */
-static const unsigned char *getstring(unsigned char *dest,int max,const unsigned char *line)
+static const unsigned char *pp_getstring(unsigned char *dest,size_t max,const unsigned char *line)
 {
-  assert(dest!=NULL && line!=NULL);
-  *dest='\0';
+  assert(line!=NULL);
+  assert((dest!=NULL && max>0) || (dest==NULL && max==0));
+  if (dest)
+    *dest='\0';
   while (*line<=' ' && *line!='\0')
     line++;             /* skip whitespace */
+  size_t len=0;
   if (*line=='"') {
-    int len=0;
     line++;             /* skip " */
     while (*line!='"' && *line!='\0') {
-      if (len<max-1)
+      if (dest && len<max-1)
         dest[len++]=*line;
       line++;
-    } /* if */
-    dest[len]='\0';
+    } /* while */
     if (*line=='"')
       line++;           /* skip closing " */
     else
       error(37);        /* invalid string */
   } else {
-    error(37);          /* invalid string */
+    while (*line>' ') {
+      if (dest && len<max-1)
+        dest[len++]=*line;
+      line++;
+    } /* while */
+  } /* if */
+  if (dest) {
+    assert(len<max);
+    dest[len]='\0';
   } /* if */
   return line;
 }
@@ -1136,7 +1166,7 @@ static int command(void)
   case tpFILE:
     if (!SKIPPING) {
       char pathname[_MAX_PATH];
-      lexptr=getstring((unsigned char*)pathname,countof(pathname),lexptr);
+      lexptr=pp_getstring((unsigned char*)pathname,countof(pathname),lexptr);
       if (strlen(pathname)>0) {
         free(inpfname);
         inpfname=duplicatestring(pathname);
@@ -1151,6 +1181,8 @@ static int command(void)
         } /* if */
         insert_dbgfile(pathname);
       } /* if */
+    } else {
+      lexptr=pp_getstring(NULL,0,lexptr);
     } /* if */
     check_empty(lexptr);
     break;
@@ -1186,7 +1218,7 @@ static int command(void)
           while (*lexptr<=' ' && *lexptr!='\0')
             lexptr++;
           if (*lexptr=='"') {
-            lexptr=getstring((unsigned char*)name,countof(name),lexptr);
+            lexptr=pp_getstring((unsigned char*)name,countof(name),lexptr);
           } else {
             int i;
             for (i=0; i<(int)countof(name) && alphanum(*lexptr); i++,lexptr++)
@@ -1210,7 +1242,7 @@ static int command(void)
           while (*lexptr<=' ' && *lexptr!='\0')
             lexptr++;
           if (*lexptr=='"') {
-            lexptr=getstring((unsigned char*)name,countof(name),lexptr);
+            lexptr=pp_getstring((unsigned char*)name,countof(name),lexptr);
           } else {
             int i;
             for (i=0; i<(int)countof(name) && (alphanum(*lexptr) || *lexptr=='-'); i++,lexptr++)
@@ -1901,13 +1933,13 @@ SC_FUNC void preprocess(void)
     iscommand=command();
     if (iscommand!=CMD_NONE)
       errorset(sRESET,0); /* reset error flag ("panic mode") on empty line or directive */
-    #if !defined NO_DEFINE
+#   if !defined NO_DEFINE
       if (iscommand==CMD_NONE) {
         assert(lexptr!=term_expr);
         substallpatterns(srcline,sLINEMAX);
         lexptr=srcline;   /* reset "line pointer" to start of the parsing buffer */
       } /* if */
-    #endif
+#   endif
     if (sc_status==statBROWSE && sc_listing && freading
         && (iscommand==CMD_NONE || iscommand==CMD_EMPTYLINE || iscommand==CMD_DIRECTIVE))
     {
@@ -2068,7 +2100,7 @@ SC_FUNC int lex_adjusttabsize(int matchindent)
  *                     is_cached
  */
 
-static int is_cached;
+static bool is_cached;
 static int cached_tok;
 static cell cached_val;
 static char *cached_str=NULL;
@@ -2121,18 +2153,18 @@ char *sc_tokens[] = {
          "[label]", "[field/parameter reference]", "[string]", "[string]"
        };
 
-SC_FUNC int lex(cell *lexvalue,char **lexsym)
+SC_FUNC int lex(cell *lexvalue,char **lexstr)
 {
   int i,toolong,newline;
   char **tokptr;
   const unsigned char *starttoken;
 
   assert(lexvalue!=NULL);
-  assert(lexsym!=NULL);
+  assert(lexstr!=NULL);
   if (is_cached) {
-    is_cached=false;            /* reset "_pushed" flag */
+    is_cached=false;            /* reset "cached" flag set by lexpush() */
     *lexvalue=cached_val;
-    *lexsym=cached_str;
+    *lexstr=cached_str;
     return cached_tok;
   } /* if */
 
@@ -2140,7 +2172,7 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
   cached_val=0;
   cached_str[0]='\0';
   *lexvalue=cached_val;
-  *lexsym=cached_str;
+  *lexstr=cached_str;
   _lexnewline=false;
   if (!freading)
     return 0;
@@ -2393,15 +2425,14 @@ SC_FUNC int lex(cell *lexvalue,char **lexsym)
  */
 SC_FUNC void lexpush(void)
 {
-  assert(is_cached==false);
+  assert(!is_cached); /* token should not already be pushed */
   is_cached=true;
 }
 
-/*  lexclr
- *
- *  Sets the variable "_pushed" to 0 to make sure lex() will read in a new
- *  symbol (a not continue with some old one). This is required upon return
- *  from Assembler mode, and in a few cases after detecting an syntax error.
+/** lexclr() clears the "cached" flag for the token to make sure lex() will read
+ *  in a new symbol (a not continue with some old one). This is required to
+ *  avoid preprocessor expressions to spill over into code, and in a few cases
+ *  after detecting an syntax error.
  */
 SC_FUNC void lexclr(int clreol)
 {
@@ -2437,23 +2468,20 @@ SC_FUNC int lexsettoken(int token,const char *lexsym)
   return cached_tok;
 }
 
-/*  matchtoken
+/** matchtoken() checks whether the next token matches the requested one. If
+ *  the token differs from the one expected, it is pushed back.
  *
- *  This routine is useful if only a simple check is needed. If the token
- *  differs from the one expected, it is pushed back.
  *  This function returns 1 for "token found" and 2 for "implied statement
- *  termination token" found --the statement termination is an end of line in
- *  an expression where there is no pending operation. Such an implied token
- *  (i.e. not present in the source code) should not be pushed back, which is
- *  why it is sometimes important to distinguish the two.
+ *  termination token" found --the statement termination is an end of line in an
+ *  expression where there is no pending operation. Such an implied token (i.e.
+ *  not present in the source code) should not be pushed back, which is why it
+ *  is sometimes important to distinguish the two.
  */
 SC_FUNC int matchtoken(int token)
 {
   cell val;
   char *str;
-  int tok;
-
-  tok=lex(&val,&str);
+  int tok=lex(&val,&str);
   if (tok==token
       || token==tTERM && (tok==';' || tok==tENDEXPR)
       || token==tSEPARATOR && tok==',')
@@ -2473,13 +2501,16 @@ SC_FUNC int matchtoken(int token)
   } /* if */
 }
 
-/*  tokeninfo
+/** tokeninfo() returns additional information of a token after using
+ *  matchtoken() or needtoken(). It does no harm using this routine after a call
+ *  to lex(), but lex() already returns the same information.
  *
- *  Returns additional information of a token after using "matchtoken()"
- *  or needtoken(). It does no harm using this routine after a call to
- *  "lex()", but lex() already returns the same information.
+ *  \param val    [out] Set to the cached numeric value, as parsed by the
+ *                earlier call to lex(). This parameter may be set to `NULL`.
+ *  \param str    [out] Set to the cached text, as parsed by the earlier call to
+ *                lex(). This parameter may be set to `NULL`.
  *
- *  The token itself is the return value. Normally, this one is already known.
+ *  \return The cached token value (normally, this one is already known).
  */
 SC_FUNC int tokeninfo(cell *val,char **str)
 {
@@ -2487,8 +2518,10 @@ SC_FUNC int tokeninfo(cell *val,char **str)
    * parameters of the *next* token, not of the *current* token.
    */
   assert(!is_cached);
-  *val=cached_val;
-  *str=cached_str;
+  if (val)
+    *val=cached_val;
+  if (str)
+    *str=cached_str;
   return cached_tok;
 }
 
@@ -2505,29 +2538,53 @@ SC_FUNC int needtoken(int token)
 {
   int t=matchtoken(token);
   if (t!=1 && !(t==2 && token==tTERM)) {
-    /* an entry of sc_tokens[] is up to 27 characters and a symbol name up to
-     * sNAMEMAX, so 20 bytes each was not enough
-     */
     char s1[sNAMEMAX+1],s2[sNAMEMAX+1];
     assert(is_cached);                    /* token already pushed back */
     litidx=0;                             /* force clear literal pool on error */
     if (token<256)
-      sprintf(s1,"%c",(char)token);       /* single character token */
+      snprintf(s1,countof(s1),"%c",(char)token);        /* single character token */
     else
-      strlcpy(s1,sc_tokens[token-tFIRST],sizeof s1); /* multi-character symbol */
+      strlcpy(s1,sc_tokens[token-tFIRST],countof(s1));  /* multi-character symbol */
     if (!freading)
-      strlcpy(s2,"-end of file-",sizeof s2);
+      strlcpy(s2,"-end of file-",countof(s2));
     else if (cached_tok<256)
-      sprintf(s2,"%c",(char)cached_tok);
+      snprintf(s2,countof(s2),"%c",(char)cached_tok);
     else if (cached_tok==tNUMBER)
-      sprintf(s2,"%d",(int)cached_val);
+      snprintf(s2,countof(s2),"%d",(int)cached_val);
     else if (cached_tok==tSYMBOL)
-      strlcpy(s2,cached_str,sizeof s2);
+      strlcpy(s2,cached_str,countof(s2));
     else
-      strlcpy(s2,sc_tokens[cached_tok-tFIRST],sizeof s2);
+      strlcpy(s2,sc_tokens[cached_tok-tFIRST],countof(s2));
     error(1,s1,s2);     /* expected ..., but found ... */
   } /* if */
   return t;
+}
+
+/** skiptotoken() reads and ignores tokens until matching the specified one,
+ *  or until finding a ';' or end-of-line. The goal of this function is to find
+ *  a "restart" point after flagging an error, so one error does not cause an
+ *  avalance of follow-up errors.
+ *
+ *  \param token      The token to match.
+ *  \param pushback   If `true`, and if the token is found, the token is pushed
+ *                    back for later matching; otherwise it is also skipped.
+ */
+SC_FUNC bool skiptotoken(int token,bool pushback)
+{
+  int tok;
+  do {
+    cell val;
+    char *str;
+    tok=lex(&val,&str);
+    if (tok==token) {
+      if (pushback)
+        lexpush();
+      return true;
+    } /* if */
+  } while (tok!=';' && tok!=tENDEXPR && !_lexnewline && freading);
+  if (_lexnewline)
+    lexpush();
+  return false;
 }
 
 /*  match
@@ -2637,21 +2694,21 @@ static cell litchar(const unsigned char **lptr,int flags)
 
   cptr=*lptr;
   if ((flags & RAWMODE)!=0 || *cptr!=ESCAPE_CHAR) {  /* no escape character */
-    #if !defined PAWN_NO_UTF8
+#   if !defined PAWN_NO_UTF8
       if (sc_is_utf8 && (flags & UTF8MODE)!=0) {
         c=get_utf8_char(cptr,&cptr);
         assert(c>=0);   /* file was already scanned for conformance to UTF-8 */
       } else {
-    #endif
-      #if !defined PAWN_NO_CODEPAGE
+#   endif
+#     if !defined PAWN_NO_CODEPAGE
         c=cp_translate(cptr,&cptr);
-      #else
+#     else
         c=*cptr;
         cptr+=1;
-      #endif
-    #if !defined PAWN_NO_UTF8
+#     endif
+#   if !defined PAWN_NO_UTF8
       } /* if */
-    #endif
+#   endif
   } else {
     cptr+=1;
     if (*cptr==ESCAPE_CHAR) {
@@ -2833,24 +2890,20 @@ static void free_symbol(symbol *sym)
 
 SC_FUNC void delete_symbol(symbol *root,symbol *sym)
 {
-  symbol *scan;
-  int i;
+# if !defined NDEBUG
+    /* no symbols should hold a reference to the to-be-deleted symbol anymore */
+    for (symbol *scan=root->next; scan!=NULL; scan=scan->next) {
+      assert(scan->refer!=NULL);
+      for (int i=0; i<scan->numrefers; i++)
+        assert(scan->refer[i]!=sym);
+    } /* for */
+# endif
 
-  /* other symbols may hold a reference to this one; those pointers would
-   * dangle after the free below
-   */
-  assert(root!=sym);
-  for (scan=root->next; scan!=NULL; scan=scan->next) {
-    assert(scan->refer!=NULL);
-    for (i=0; i<scan->numrefers; i++)
-      if (scan->refer[i]==sym)
-        scan->refer[i]=NULL;
-  } /* for */
-
-  /* find the symbol and its predecessor
+  /* find the symbol that comes just before the to-be-deleted symbol
    * (this function assumes that you will never delete a symbol that is not
    * in the table pointed at by "root")
    */
+  assert(root!=sym);
   while (root->next!=sym) {
     root=root->next;
     assert(root!=NULL);
@@ -3206,12 +3259,12 @@ SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int t
    * "redeclared" if they are local to an automaton (and findglb() will find
    * the symbol without states if no symbol with states exists).
    */
-  #if !defined NDEBUG
+# if !defined NDEBUG
     sym=findglb(name,sGLOBAL);
     assert(scope!=sGLOBAL || sym==NULL || (sym->usage & uDEFINE)==0
            || sym->ident==iFUNCTN && (sym==curfunc || (sym->usage & uNATIVE)!=0)
            || sym->states==NULL && sc_curstates>0);
-  #endif
+# endif
 
   if (ident==iARRAY || ident==iREFARRAY) {
     symbol *parent=NULL,*top;
@@ -3245,28 +3298,31 @@ SC_FUNC int getlabel(void)
   return sc_labnum++;
 }
 
-/*  itoh
+/** celltohex() converts a number to a hexadecimal string and returns a pointer
+ *  to that string.
  *
- *  Converts a number to a hexadecimal string and returns a pointer to that
- *  string. This function is NOT re-entrant.
+ *  \param val          The value to convert to text.
+ *
+ *  \return A pointer to a static array with the text representation of the
+ *          value.
+ *
+ *  \note This function is *not* re-entrant.
  */
-SC_FUNC char *itoh(ucell val)
+SC_FUNC char *celltohex(ucell val)
 {
-static char itohstr[20];
-  char *ptr;
+static char hexstr[20];
   int nibble[16];       /* a 64-bit hexadecimal cell has 16 nibbles */
-  unsigned i,imax;
 
-  imax=pc_cellsize*2;
+  unsigned imax=pc_cellsize*2;
   assert(imax<=countof(nibble));
-  assert(imax<countof(itohstr));
-  ptr=itohstr;
-  for (i=0; i<imax; i+=1){
+  assert(imax<countof(hexstr));
+  for (unsigned i=0; i<imax; i+=1){
     nibble[i]=(int)(val & 0x0f);        /* nibble 0 is lowest nibble */
     val>>=4;
-  } /* endfor */
-  i=imax;
+  } /* for */
   /* reverse the nibbles in the string */
+  char *ptr=hexstr;
+  unsigned i=imax;
   while (i>0) {
     i-=1;
     if (nibble[i]>=10)
@@ -3275,6 +3331,6 @@ static char itohstr[20];
       *ptr++=(char)('0'+nibble[i]);
   } /* while */
   *ptr='\0';            /* and a zero-terminator */
-  return itohstr;
+  return hexstr;
 }
 

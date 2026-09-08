@@ -22,7 +22,7 @@ show(i, j) <x>
     {
     if (A != i || B != j)
         {
-        printf "Fail <x> %d/%d %d/%d\n", A, i, B, j
+        print "Fail <x>\n"
         error++
         }
     A += 1
@@ -80,7 +80,7 @@ main()
     state x
     show 0, 0   // A = 0, B = 0
     if (error==0)
-        print "Completed\n"
+        print "OK\n"
     }
 #endif
 

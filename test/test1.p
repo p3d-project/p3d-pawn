@@ -72,7 +72,7 @@ Test(a,b,c,d,e)
 #if defined MISSING_UNUSED_FUNC
 stock unused_func( a )
 {
-	return a + non_existing()
+    return a + non_existing()
 }
 #endif
 
@@ -212,6 +212,47 @@ new Filenames[6]{} =
 
 #if defined ZERO_ARRAY_TWO_DIMS
     new array[0][1];
+#endif
+
+#if defined ARRAY_INCOMPLETE_INITIALLER
+    new array[][][] = [ [ [1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3] ],
+    ;
+#endif
+
+#if defined RESET_FILE_DIRECTIVE
+    #if defined renamed
+        #error function should be in test1.p
+    #endif
+    renamed()
+      return 1
+    #file renamed_file
+#endif
+
+#if defined LOOSE_STRING
+    var array[8]
+        ''Image\\Bubbles\\32x32_banan.tga'',
+    #pragma unused array
+#endif
+
+#if defined FALLBACK_STATE_ONLY
+    forward @keypressed()
+    @keypressed() <> {}
+#endif
+
+#if defined USER_OPERATOR_REF
+    forward operator+(Special:a, Special:b)
+
+    test() {
+        var Special:p
+        var Special:q
+        return p + q
+    }
+
+    simple_add(i, j)
+        return i + j
+
+    operator+(Special:a, Special:b)
+        return simple_add(_:a, _:b)
 #endif
 
 main()
@@ -582,6 +623,54 @@ main()
 
     #if defined INVALID_GLOBAL_DECL
         port = port + 1 /* to avoid global variable being optimized out */
+    #endif
+
+    #if defined DO_WHILE_SEMICOLON
+        var a = 0, b = 5
+        do {
+            a += 1;
+        } while (a < b);
+        do {
+            b -= 1;
+        } while a > b;
+        do {
+            a += 1;
+        } while (a < b)
+        do {
+            b -= 1;
+        } while a > b
+    #endif
+
+    #if defined INVALID_ARRAY_SUBSCRIPT
+        var a[.x, 1];
+        #pragma unused a
+    #endif
+
+    #if defined REQUIRE_SYMBOLIC_SUBSCRIPT
+        var a[.x, .y]
+        var b = a[0]
+        #pragma unused b
+    #endif
+
+    #if defined UNBALANCED_PRAGMA
+        #pragma warning push
+    #endif
+
+    #if defined KEYWORD_AS_VAR
+        assert{
+    #endif
+
+    #if defined ARRAY_INCOMPLETE_INITIALLER
+        array[0][0][0] = 2
+    #endif
+
+    #if defined CONDITIONAL_OPER
+        var denom = 5
+        var accum = denom == 0 ? 0 : num/denom
+    #endif
+
+    #if defined USER_OPERATOR_REF
+        test
     #endif
     }
 

@@ -39,7 +39,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scstate.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: scstate.c 7691 2026-09-08 15:41:51Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>

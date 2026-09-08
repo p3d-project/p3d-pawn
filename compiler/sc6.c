@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc6.c 7688 2026-08-28 19:43:19Z thiadmer $
+ *  Version: $Id: sc6.c 7690 2026-09-08 15:13:28Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -57,25 +57,25 @@ static char *skipwhitespace(const char *str)
   return (char*)str;
 }
 
-/* apparently, strtol() does not work correctly on very large hexadecimal values */
+/* Watcom C/C++: strtol() does apparently not work correctly on very large hexadecimal values */
 SC_FUNC ucell hex2ucell(const char *s,const char **n)
 {
-  ucell result=0L;
-  int negate=false;
-  int digit;
-
   /* ignore leading whitespace */
   s=skipwhitespace(s);
   assert(*s!='\0');
 
   /* allow a negation sign to create the two's complement of numbers */
+  bool negate=false;
   if (*s=='-') {
     negate=true;
     s++;
   } /* if */
 
   assert((*s>='0' && *s<='9') || (*s>='a' && *s<='f') || (*s>='A' && *s<='F'));
+  int nibbles=0;
+  ucell result=0;
   for ( ;; ) {
+    int digit;
     if (*s>='0' && *s<='9')
       digit=*s-'0';
     else if (*s>='a' && *s<='f')
@@ -83,15 +83,23 @@ SC_FUNC ucell hex2ucell(const char *s,const char **n)
     else if (*s>='A' && *s<='F')
       digit=*s-'A' + 10;
     else
-      break;    /* probably whitespace */
+      break;            /* probably whitespace */
     result=(result<<4) | digit;
+    nibbles++;
     s++;
   } /* for */
   if (n!=NULL)
     *n=(char*)s;
+
   if (negate)
-    result=(~result)+1; /* take two's complement of the result */
-  return (ucell)result;
+    result=~result+1;   /* take two's complement of the result */
+  /* truncate to cell size */
+  if (pc_cellsize==2)
+    result&=0xffffu;
+  else if (pc_cellsize==4)
+    result&=0xffffffffu;
+
+  return result;
 }
 
 SC_FUNC ucell getparamvalue(const char *s,const char **n)
@@ -99,7 +107,7 @@ SC_FUNC ucell getparamvalue(const char *s,const char **n)
   ucell result=0;
   for ( ;; ) {
     result+=hex2ucell(s,&s);
-    if (*s!='+')
+    if (*s!='+')  /* handle '+', see sc7.scp */
       break;
     s++;
   } /* for */
@@ -193,9 +201,10 @@ static char *stripcomment(char *str)
   return str;
 }
 
-static void write_cell(FILE *fbin,ucell c)
+static bool write_cell(FILE *fbin,ucell c)
 {
-  assert(fbin!=NULL);
+  if (!fbin)
+    return false;
   assert((pc_lengthbin(fbin) % pc_cellsize) == 0);
   if (pc_cryptkey!=0) {
     uint32_t *ptr=(uint32_t*)&c;
@@ -207,6 +216,7 @@ static void write_cell(FILE *fbin,ucell c)
     } /* if */
   } /* if */
   writeerror |= !pc_writebin(fbin,aligncell(&c),pc_cellsize);
+  return true;
 }
 
 static cell noop(FILE *fbin,const char *params,cell opcode,cell cip)
@@ -231,8 +241,7 @@ static cell parm0(FILE *fbin,const char *params,cell opcode,cell cip)
 {
   (void)params;
   (void)cip;
-  if (fbin!=NULL)
-    write_cell(fbin,opcode);
+  write_cell(fbin,opcode);
   return opcodes(1);
 }
 
@@ -240,10 +249,8 @@ static cell parm1(FILE *fbin,const char *params,cell opcode,cell cip)
 {
   ucell p=getparamvalue(params,NULL);
   (void)cip;
-  if (fbin!=NULL) {
-    write_cell(fbin,opcode);
-    write_cell(fbin,p);
-  } /* if */
+  write_cell(fbin,opcode);
+  write_cell(fbin,p);
   return opcodes(1)+opargs(1);
 }
 
@@ -253,10 +260,8 @@ static cell parm1_p(FILE *fbin,const char *params,cell opcode,cell cip)
   (void)cip;
   assert(p<((ucell)1<<(pc_cellsize*4)));
   assert(opcode>=0 && opcode<=255);
-  if (fbin!=NULL) {
-    p=(p<<pc_cellsize*4) | opcode;
-    write_cell(fbin,p);
-  } /* if */
+  p=(p<<pc_cellsize*4) | opcode;
+  write_cell(fbin,p);
   return opcodes(1);
 }
 
@@ -265,11 +270,9 @@ static cell parm2(FILE *fbin,const char *params,cell opcode,cell cip)
   ucell p1=getparamvalue(params,&params);
   ucell p2=getparamvalue(params,NULL);
   (void)cip;
-  if (fbin!=NULL) {
-    write_cell(fbin,opcode);
-    write_cell(fbin,p1);
-    write_cell(fbin,p2);
-  } /* if */
+  write_cell(fbin,opcode);
+  write_cell(fbin,p1);
+  write_cell(fbin,p2);
   return opcodes(1)+opargs(2);
 }
 
@@ -278,14 +281,11 @@ static cell parmx(FILE *fbin,const char *params,cell opcode,cell cip)
   unsigned idx;
   ucell count=getparamvalue(params,&params);
   (void)cip;
-  if (fbin!=NULL) {
-    write_cell(fbin,opcode);
-    write_cell(fbin,(ucell)count);
-  } /* if */
+  write_cell(fbin,opcode);
+  write_cell(fbin,count);
   for (idx=0; idx<count; idx++) {
     ucell p=getparamvalue(params,&params);
-    if (fbin!=NULL)
-      write_cell(fbin,p);
+    write_cell(fbin,p);
   } /* for */
   return opcodes(1)+opargs(count+1);
 }
@@ -298,15 +298,11 @@ static cell parmx_p(FILE *fbin,const char *params,cell opcode,cell cip)
   (void)cip;
   assert(count<((ucell)1<<(pc_cellsize*4)));
   assert(opcode>=0 && opcode<=255);
-  /* write the instruction (optionally) */
-  if (fbin!=NULL) {
-    p=(count<<pc_cellsize*4) | opcode;
-    write_cell(fbin,p);
-  } /* if */
+  p=(count<<pc_cellsize*4) | opcode;
+  write_cell(fbin,p);
   for (idx=0; idx<count; idx++) {
     p=getparamvalue(params,&params);
-    if (fbin!=NULL)
-      write_cell(fbin,p);
+    write_cell(fbin,p);
   } /* for */
   return opcodes(1)+opargs(count);
 }
@@ -319,8 +315,7 @@ static cell do_dump(FILE *fbin,const char *params,cell opcode,cell cip)
   (void)cip;
   while (*params!='\0') {
     ucell p=getparamvalue(params,&params);
-    if (fbin!=NULL)
-      write_cell(fbin,p);
+    write_cell(fbin,p);
     num++;
     while (isspace(*params))
       params++;
@@ -361,10 +356,8 @@ static cell do_call(FILE *fbin,const char *params,cell opcode,cell cip)
     p=sym->addr-cip;            /* make relative address */
   } /* if */
 
-  if (fbin!=NULL) {
-    write_cell(fbin,opcode);
-    write_cell(fbin,p);
-  } /* if */
+  write_cell(fbin,opcode);
+  write_cell(fbin,p);
   return opcodes(1)+opargs(1);
 }
 
@@ -372,14 +365,10 @@ static cell do_jump(FILE *fbin,const char *params,cell opcode,cell cip)
 {
   int i=(int)hex2ucell(params,NULL);
   assert(i>=0 && i<sc_labnum);
-
-  if (fbin!=NULL) {
-    ucell p;
-    assert(lbltab!=NULL);
-    p=lbltab[i]-cip;            /* make relative address */
-    write_cell(fbin,opcode);
-    write_cell(fbin,p);
-  } /* if */
+  assert(lbltab!=NULL);
+  ucell p=lbltab[i]-cip;            /* make relative address */
+  write_cell(fbin,opcode);
+  write_cell(fbin,p);
   return opcodes(1)+opargs(1);
 }
 
@@ -387,34 +376,23 @@ static cell do_switch(FILE *fbin,const char *params,cell opcode,cell cip)
 {
   int i=(int)hex2ucell(params,NULL);
   assert(i>=0 && i<sc_labnum);
-
-  if (fbin!=NULL) {
-    ucell p;
-    assert(lbltab!=NULL);
-    p=lbltab[i]-cip;
-    write_cell(fbin,opcode);
-    write_cell(fbin,p);
-  } /* if */
+  assert(lbltab!=NULL);
+  ucell p=lbltab[i]-cip;
+  write_cell(fbin,opcode);
+  write_cell(fbin,p);
   return opcodes(1)+opargs(1);
 }
 
 static cell do_case(FILE *fbin,const char *params,cell opcode,cell cip)
 {
-  ucell v;
-  int i;
-
   (void)opcode;
-  v=hex2ucell(params,&params);
-  i=(int)hex2ucell(params,NULL);
+  ucell v=hex2ucell(params,&params);
+  int i=(int)hex2ucell(params,NULL);
   assert(i>=0 && i<sc_labnum);
-
-  if (fbin!=NULL) {
-    ucell p;
-    assert(lbltab!=NULL);
-    p=lbltab[i]-cip;
-    write_cell(fbin,v);
-    write_cell(fbin,p);
-  } /* if */
+  assert(lbltab!=NULL);
+  ucell p=lbltab[i]-cip;
+  write_cell(fbin,v);
+  write_cell(fbin,p);
   return opcodes(0)+opargs(2);
 }
 
@@ -424,10 +402,8 @@ static cell do_caseovl(FILE *fbin,const char *params,cell opcode,cell cip)
   ucell p=hex2ucell(params,NULL);
   (void)opcode;
   (void)cip;
-  if (fbin!=NULL) {
-    write_cell(fbin,v);
-    write_cell(fbin,p);
-  } /* if */
+  write_cell(fbin,v);
+  write_cell(fbin,p);
   return opcodes(0)+opargs(2);
 }
 
@@ -1072,9 +1048,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
        * must be parsed separately) */
       if (*instr=='\0' || tolower(*instr)=='l' && *(instr+1)=='.')
         continue;
-      /* get to the end of the instruction (make use of the '\n' that fgets()
-       * added at the end of the line; this way we will *always* drop on a
-       * whitespace character) */
+      /* get to the end of the opcode */
       for (params=instr; *params!='\0' && !isspace(*params); params++)
         /* nothing */;
       assert(params>instr);

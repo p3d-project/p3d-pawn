@@ -23,12 +23,13 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: sc.h 7690 2026-09-08 15:13:28Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
 #include <limits.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #if defined __BORLANDC__ && defined _Windows && !(defined __32BIT__ || defined __WIN32__)
   /* setjmp() and longjmp() not well supported in 16-bit windows */
@@ -260,7 +261,7 @@ typedef struct s_symbol {
 
 #define sSTATEVAR 3     /* criterion to find variables (sSTATEVAR implies a global variable) */
 
-#define FALLBACK  -1    /* state id for the fallback function */
+#define FALLBACK  (-1)  /* state id for the fallback function */
 
 typedef struct s_value {
   symbol *sym;          /* symbol in symbol table, NULL for (constant) expression */
@@ -460,10 +461,6 @@ typedef struct s_arraymerge {
 #define xSLEEP         12       /* sleep, exit code in PRI, tag in ALT */
 
 /* Miscellaneous  */
-#if !defined true && !defined __cplusplus
-# define false          0
-# define true           1
-#endif
 #define NOT_SET         (-1)    /* special "boolean" value: no value set yet */
 #define sIN_CSEG        1       /* if parsing CODE */
 #define sIN_DSEG        2       /* if parsing DATA */
@@ -581,8 +578,8 @@ long pc_lengthbin(void *handle); /* return the length of the file */
 /* function prototypes in SC1.C */
 SC_FUNC void set_extension(char *filename,const char *extension,int force);
 SC_FUNC symbol *fetchfunc(const char *name,int tag);
-SC_FUNC char *operator_symname(char *symname,char *opername,int tag1,int tag2,int numtags,int resulttag);
-SC_FUNC char *funcdisplayname(char *dest,const char *funcname);
+SC_FUNC char *operator_symname(char *symname,size_t symnamesz,const char *opername,int tag1,int tag2,int numtags,int resulttag);
+SC_FUNC char *funcdisplayname(char *dest,size_t destsz,const char *funcname);
 SC_FUNC int constexpression(cell *val,int *tag,symbol **symptr);
 SC_FUNC constvalue *append_constval(constvalue *table,const char *name,cell val,int index);
 SC_FUNC constvalue *find_constval(constvalue *table,const char *name,int index);
@@ -608,7 +605,7 @@ SC_FUNC void preprocess(void);
 SC_FUNC void lex_fetchindent(const unsigned char *string,const unsigned char *pos);
 SC_FUNC int lex_adjusttabsize(int matchindent);
 SC_FUNC int lexinit(int releaseall);
-SC_FUNC int lex(cell *lexvalue,char **lexsym);
+SC_FUNC int lex(cell *lexvalue,char **lexstr);
 SC_FUNC void lexpush(void);
 SC_FUNC int lexsettoken(int token,const char *lexsym);
 SC_FUNC void lexclr(int clreol);
@@ -616,6 +613,7 @@ SC_FUNC int lexpeek(void);
 SC_FUNC int matchtoken(int token);
 SC_FUNC int tokeninfo(cell *val,char **str);
 SC_FUNC int needtoken(int token);
+SC_FUNC bool skiptotoken(int token,bool pushback);
 SC_FUNC void litadd(cell value);
 SC_FUNC void litinsert(cell value,int pos);
 SC_FUNC void litremove(int pos);
@@ -636,13 +634,13 @@ SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int tag,
 SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int tag,
                             const int dim[],constvalue *dimnames[],int numdim,int usage);
 SC_FUNC int getlabel(void);
-SC_FUNC char *itoh(ucell val);
+SC_FUNC char *celltohex(ucell val);
 
 /* function prototypes in SC3.C */
 SC_FUNC int check_userop(void (*oper)(void),int tag1,int tag2,int numparam,
                          value *lval,int *resulttag);
 SC_FUNC int matchtag(int formaltag,int actualtag,int allowcoerce);
-SC_FUNC int expression(cell *val,int *tag,symbol **symptr,int *parenthesized,int chkfuncresult,int in_test);
+SC_FUNC int expression(cell *val,int *tag,symbol **symptr,bool *parenthesized,bool chkfuncresult,bool in_test);
 SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *fsaname,char *statename);
 SC_FUNC cell array_totalsize(symbol *sym);
 
@@ -765,7 +763,7 @@ SC_FUNC void stgwrite(const char *st);
 SC_FUNC void stgout(unsigned index);
 SC_FUNC void stgdel(unsigned index,cell code_index);
 SC_FUNC int stgget(unsigned *index,cell *code_index);
-SC_FUNC void stgset(int onoff);
+SC_FUNC void stgset(bool onoff);
 SC_FUNC int phopt_init(void);
 SC_FUNC int phopt_cleanup(void);
 
@@ -799,7 +797,7 @@ SC_FUNC stringlist *insert_autolist(const char *string);
 SC_FUNC const char *get_autolist(int index);
 SC_FUNC void delete_autolisttable(void);
 SC_FUNC valuepair *push_heaplist(long first, long second);
-SC_FUNC int popfront_heaplist(long *first, long *second);
+SC_FUNC bool popfront_heaplist(long *first, long *second);
 SC_FUNC void delete_heaplisttable(void);
 SC_FUNC void litarray_add(cell baseaddr,cell offset,cell size);
 SC_FUNC cell litarray_find(cell offset,cell size);
@@ -871,7 +869,7 @@ SC_VDECL int litidx;            /**< index to literal table */
 SC_VDECL int litmax;            /**< current size of the literal table */
 SC_VDECL unsigned stgidx;       /**< index to the staging buffer */
 SC_VDECL int sc_labnum;         /**< number of (internal) labels */
-SC_VDECL int staging;           /**< true if staging output */
+SC_VDECL bool staging;          /**< true if staging output */
 SC_VDECL cell declared;         /**< number of local cells declared */
 SC_VDECL cell glb_declared;     /**< number of global cells declared */
 SC_VDECL cell code_idx;         /**< number of bytes with generated code */
@@ -888,7 +886,7 @@ SC_VDECL int curseg;            /**< 1 if currently parsing CODE, 2 if parsing D
 SC_VDECL cell pc_stksize;       /**< stack size */
 SC_VDECL cell pc_amxlimit;      /**< abstract machine size limit (code + data, or only code) */
 SC_VDECL cell pc_amxram;        /**< abstract machine data size limit */
-SC_VDECL int freading;          /**< is there an input file ready for reading? */
+SC_VDECL bool freading;         /**< is there an input file ready for reading? */
 SC_VDECL int pc_curline;        /**< the line number in the current file */
 SC_VDECL short fnumber;         /**< number of files in the input file table */
 SC_VDECL short fcurrent;        /**< current file being processed */
@@ -897,7 +895,7 @@ SC_VDECL int pc_stmtindent;     /**< current indent of the statement */
 SC_VDECL int indent_nowarn;     /**< skip warning "217 loose indentation" */
 SC_VDECL int pc_tabsize;        /**< number of spaces that a TAB represents */
 SC_VDECL int pc_matchedtabsize; /**< if no tabsize explicitly set, try to detect the tab size */
-SC_VDECL short sc_allowtags;    /**< allow/detect tagnames in lex() */
+SC_VDECL bool sc_allowtags;     /**< allow/detect tagnames in lex() */
 SC_VDECL int sc_status;         /**< read/write status */
 SC_VDECL int sc_rationaltag;    /**< tag for rational numbers */
 SC_VDECL int rational_digits;   /**< number of fractional digits */

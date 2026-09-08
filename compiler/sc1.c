@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7688 2026-08-28 19:43:19Z thiadmer $
+ *  Version: $Id: sc1.c 7691 2026-09-08 15:41:51Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -118,10 +118,10 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
                      constvalue *dimnames[]);
 static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
                       int startlit,int counteddim[],constvalue *lastdim,
-                      constvalue *dimnames[],int *errorfound);
+                      constvalue *dimnames[],bool *errorfound);
 static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
-                       constvalue *dimnames,int *errorfound);
-static cell init(int ident,int usage,int *tag,int *errorfound,int *packcount,cell *packitem);
+                       constvalue *dimnames,bool *errorfound);
+static cell init(int ident,int usage,int *tag,bool *errorfound,int *packcount,cell *packitem);
 static int getstates(const char *symname);
 static statelist *attachstatelist(symbol *sym,int state_id);
 static void funcstub(int fnative);
@@ -142,10 +142,10 @@ static constvalue *find_constval_byval(constvalue *table,cell val);
 static constvalue *clone_consttable(const constvalue *table);
 static symbol *fetchlab(const char *name);
 static void statement(int *lastindent,int allow_decl);
-static void compound(int stmt_sameline);
+static void compound(bool stmt_sameline);
 static int test(int label,int invert,int test_true,int *parenthesized);
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
-                  int *tag,symbol **symptr,int chkfuncresult,int in_test);
+                  int *tag,symbol **symptr,bool chkfuncresult,bool in_test);
 static void doassert(void);
 static void doexit(void);
 static int doif(void);
@@ -202,11 +202,9 @@ int main(int argc, char *argv[])
  */
 int pc_printf(const char *message,...)
 {
-  int ret;
   va_list argptr;
-
   va_start(argptr,message);
-  ret=vprintf(message,argptr);
+  int ret=vprintf(message,argptr);
   va_end(argptr);
   fflush(stdout);
 
@@ -232,9 +230,7 @@ int pc_error(int number,const char *message,const char *filename,int firstline,i
 static char *prefix[3]={ "error", "fatal error", "warning" };
 
   if (number!=0) {
-    const char *pre;
-
-    pre=prefix[number/100];
+    const char *pre=prefix[number/100];
     if (firstline>=0)
       fprintf(stderr,"%s(%d -- %d) : %s %03d: ",filename,firstline,lastline,pre,number);
     else
@@ -494,13 +490,9 @@ int pc_compile(int argc, char *argv[])
    * so they must be volatile (C99 7.13.2.1p3)
    */
   char * volatile tmpname;  /* temporary input file name */
-  char inpfname_org[_MAX_PATH]; /* name of the main input file, before any #file */
   FILE * volatile binf;
   void *inpfmark;
   int lcl_tabsize;
-# if !defined PAWN_LIGHT
-    int hdrsize=0;
-# endif
   char *ptr;
 
   /* set global variables to their initial value */
@@ -561,32 +553,28 @@ int pc_compile(int argc, char *argv[])
     FILE *ftmp;
     int fidx;
 #   if defined __WIN32__ || defined _WIN32
-      tmpname=_tempnam(NULL,"pawn");
+      tmpname=strdup(_tempnam(NULL,"pawn"));
 #   elif defined __MSDOS__ || defined _Windows
-      tmpname=tempnam(NULL,"pawn");
-#   elif defined(MACOS) && !defined(__MACH__)
-      /* tempnam is not supported for the Macintosh CFM build. */
-      error(104,get_sourcefile(1));
-      tmpname=NULL;
-      sname=NULL;
-#   else
-      char mask[] = "pawn.XXXXXX";
-      int tmpfd = mkstemp(mask);
-      char *procname = alloca(64);
-      char linkname[PATH_MAX];
-      ssize_t linklen;
-      sprintf(procname, "/proc/self/fd/%d", tmpfd);
-      /* readlink() does not NUL-terminate its output, and may return -1 */
-      linklen = readlink(procname, linkname, sizeof linkname - 1);
-      if (linklen < 0)
-        linklen = 0;
-      linkname[linklen] = '\0';
-      /* the "cleanup" path free()s tmpname, so take it from the heap */
-      tmpname = strdup(linkname);
-      if (tmpname == NULL)
-        error(103);             /* insufficient memory */
+      tmpname=strdup(tempnam(NULL,"pawn"));
+#   elif defined __LINUX__ || defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__ || defined __APPLE__
+      char mask[]="pawn.XXXXXX";
+      int tmpfd=mkstemp(mask);
+      char procname[64];
+      snprintf(procname,countof(procname),"/proc/self/fd/%d",tmpfd);
+      char *linkbuf=alloca(PATH_MAX);  /* allocate maximum size buffer, it is temporary */
+      int linklen=readlink(procname,linkbuf,PATH_MAX);
       close(tmpfd);
+      if (linklen>0 && linklen<PATH_MAX) {
+        linkbuf[linklen]='\0';  /* readlink() does not NUL-terminate its output, and may return -1 */
+        tmpname=strdup(linkbuf);
+      } else {
+        error(113,"multiple sources on the command line");  /* unsupported feature */
+      }
+#   else
+      error(113,"multiple sources on the command line");  /* unsupported feature */
 #   endif
+    if (!tmpname)
+      error(103);       /* insufficient memory */
     ftmp=(FILE*)pc_createsrc(tmpname);
     for (fidx=0; (sname=get_sourcefile(fidx))!=NULL; fidx++) {
       unsigned char tstring[128];
@@ -638,13 +626,14 @@ int pc_compile(int argc, char *argv[])
   if (sc_listing) {
     char string[150];
     if (pc_matchedtabsize>1 && pc_tabsize>1)
-      sprintf(string,"#pragma tabsize %d\n",pc_tabsize);
+      snprintf(string,countof(string),"#pragma tabsize %d\n",pc_tabsize);
     pc_writeasm(outf,string);
     setfiledirect(inpfname);
   } /* if */
   /* do the first pass through the file (or possibly two or more "first passes") */
   sc_parsenum=0;
   inpfmark=pc_getpossrc(inpf_org,NULL);
+  char inpfname_org[_MAX_PATH]; /* save name of the main input file so it can be restored after each pass */
   strlcpy(inpfname_org,inpfname,sizeof inpfname_org);
   do {
     /* reset "defined" flag of all functions and global variables */
@@ -660,13 +649,6 @@ int pc_compile(int argc, char *argv[])
     pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
     errorset(sRESET,0);
     /* reset the source file */
-    /* the name a #file set in the previous pass must not apply to this one */
-    if (strcmp(inpfname,inpfname_org)!=0) {
-      free(inpfname);
-      inpfname=duplicatestring(inpfname_org);
-      if (inpfname==NULL)
-        error(103);             /* insufficient memory */
-    } /* if */
     inpf=inpf_org;
     freading=true;
     pc_resetsrc(inpf,inpfmark); /* reset file position */
@@ -679,6 +661,15 @@ int pc_compile(int argc, char *argv[])
     preprocess();               /* fetch first line */
     parse();                    /* process all input */
     sc_parsenum++;
+    /* if the name of the main source file was renamed with a #file directive,
+     * the filename must be restored
+     */
+    if (strcmp(inpfname,inpfname_org)!=0) {
+      free(inpfname);
+      inpfname=duplicatestring(inpfname_org);
+      if (inpfname==NULL)
+        error(103);             /* insufficient memory */
+    } /* if */
     if (test_skippedundef()>0)
       sc_reparse=true;          /* conditional compiled code sections may have changed */
   } while (sc_reparse);
@@ -730,61 +721,58 @@ int pc_compile(int argc, char *argv[])
       } /* if */
     } /* if */
 # endif
-  if (sc_listing)
-    goto cleanup;
 
-# if !defined NO_DEFINE
-    delete_substtable();
-# endif
-  delete_inputfiletable();
-  delete_undefsymboltable();
-  litarray_deleteall();         /* this list should already be empty */
-  resetglobals();
-  pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
-  errorset(sRESET,0);
-  /* reset the source file */
-  /* as above: the name a #file set in the previous pass must not apply here */
-  if (strcmp(inpfname,inpfname_org)!=0) {
-    free(inpfname);
-    inpfname=duplicatestring(inpfname_org);
-    if (inpfname==NULL)
+  if (!sc_listing) {
+#   if !defined NO_DEFINE
+      delete_substtable();
+#   endif
+    delete_inputfiletable();
+    delete_undefsymboltable();
+    litarray_deleteall();       /* this list should already be empty */
+    resetglobals();
+    pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
+    errorset(sRESET,0);
+    /* reset the source file */
+    inpf=inpf_org;
+    freading=true;
+    pc_resetsrc(inpf,inpfmark); /* reset file position */
+    pc_curline=skipinput;       /* reset line number */
+    if (!lexinit(false))        /* clear internal flags of lex() */
       error(103);               /* insufficient memory */
-  } /* if */
-  inpf=inpf_org;
-  freading=true;
-  pc_resetsrc(inpf,inpfmark);   /* reset file position */
-  pc_curline=skipinput;         /* reset line number */
-  if (!lexinit(false))          /* clear internal flags of lex() */
-    error(103);                 /* insufficient memory */
-  sc_status=statWRITE;          /* allow to write --this variable was reset by resetglobals() */
-  writeleader(&glbtab,&lbl_nostate,&lbl_exitstate);
-  reduce_referrers(&glbtab);    /* test for unused functions */
-  gen_ovlinfo(&glbtab);         /* generate overlay information */
-  writestatetables(&glbtab,lbl_nostate,lbl_exitstate);  /* create state tables and additional overlay information */
-  /* reset "defined" flag of all functions and global variables */
-  delete_symbols(&glbtab,0,true,false);
-  insert_dbgfile(inpfname);     /* attach to debug information */
-  insert_inputfile(inpfname);   /* save for the error system */
-  plungeprefix(incfname);       /* jump into "default.inc" or alternative prefix file */
-  preprocess();                 /* fetch first line */
-  parse();                      /* process all input */
-  /* inpf is already closed when readline() attempts to pop of a file */
-  writetrailer();               /* write remaining stuff */
+    sc_status=statWRITE;        /* allow to write --this variable was reset by resetglobals() */
+    writeleader(&glbtab,&lbl_nostate,&lbl_exitstate);
+    reduce_referrers(&glbtab);  /* test for unused functions */
+    gen_ovlinfo(&glbtab);       /* generate overlay information */
+    writestatetables(&glbtab,lbl_nostate,lbl_exitstate);  /* create state tables and additional overlay information */
+    /* reset "defined" flag of all functions and global variables */
+    delete_symbols(&glbtab,0,true,false);
+    insert_dbgfile(inpfname);   /* attach to debug information */
+    insert_inputfile(inpfname); /* save for the error system */
+    plungeprefix(incfname);     /* jump into "default.inc" or alternative prefix file */
+    preprocess();               /* fetch first line */
+    parse();                    /* process all input */
+    /* inpf is already closed when readline() attempts to pop of a file */
+    writetrailer();             /* write remaining stuff */
 
-  entry=testsymbols(&glbtab,0,true,false);  /* test for unused or undefined
-                                             * functions and variables */
-  if (!entry)
-    error(13);                  /* no entry point (no public functions) */
+    entry=testsymbols(&glbtab,0,true,false);  /* test for unused or undefined
+                                               * functions and variables */
+    if (!entry)
+      error(13);                  /* no entry point (no public functions) */
+  }
 
 cleanup:
-  /* also the target of the longjmp() on a fatal error, and errors 106/112 are
-   * raised from this very path, so releasing a handle must also clear it
+  /* also the target of the longjmp() on a fatal error, meaning that this code
+   * may be re-entered if a fatal error occurs during assembly or report
+   * generation
    */
   if (inpf!=NULL) {             /* main source file is not closed, do it now */
     pc_closesrc(inpf);
     inpf=NULL;
   } /* if */
   /* write the binary file (the file is already open) */
+# if !defined PAWN_LIGHT
+    int hdrsize=0;
+# endif
   if (!(sc_asmfile || sc_listing) && errnum==0 && jmpcode==0) {
     assert(binf!=NULL);
     pc_resetasm(outf);          /* flush and loop back, for reading */
@@ -850,7 +838,7 @@ cleanup:
       if (pc_overlays>1 && max_ovlsize>pc_overlays) {
         char symname[2*sNAMEMAX+16];  /* allow space for user defined operators */
         assert(max_ovlname!=NULL);
-        funcdisplayname(symname,max_ovlname);
+        funcdisplayname(symname,countof(symname),max_ovlname);
         error(112,symname,(max_ovlsize-pc_overlays)*pc_cellsize);
       } /* if */
       if (flag_exceed)
@@ -858,27 +846,10 @@ cleanup:
     } /* if */
 # endif
 
-  if (tmpname!=NULL) {
-    remove(tmpname);
-#   if defined FORTIFY
-      /* Fortify does not know about the memory allocated by tempnam(), so
-       * it should not check the "free()" call for that memory
-       */
-      Fortify_Enable(FORTIFY_OFF);
-#   endif
-    free(tmpname);
-#   if defined FORTIFY
-      Fortify_Enable(FORTIFY_ENABLED);
-#   endif
-  } /* if */
-  if (inpfname!=NULL) {
-    free(inpfname);
-    inpfname=NULL;             /* diagnostics below still read it */
-  } /* if */
   if (litq!=NULL) {
     free(litq);
     litq=NULL;
-  } /* if */
+  }
   /* when aborting inside an include file, pop off and erase all names on the stack */
   while ((i=POPSTK_I())!=-1) {
     (void)POPSTK_I();   /* fcurrent */
@@ -890,15 +861,23 @@ cleanup:
     inpf=(FILE *)POPSTK_P();
     assert(inpfname!=NULL && inpfname!=(char*)-1);
     free(inpfname);
-    inpfname=NULL;
     assert(inpf!=NULL && inpf!=(FILE*)-1);
     pc_closesrc(inpf);
-    inpf=NULL;
-  } /* if */
+  } /* while */
   lexinit(true);                          /* reset and release buffers */
   phopt_cleanup();
   stgbuffer_cleanup();
   clearstk();
+  clear_warningstack();
+  if (tmpname!=NULL) {
+    remove(tmpname);
+    free(tmpname);
+    tmpname=NULL;
+  } /* if */
+  if (inpfname!=NULL) {
+    free(inpfname);
+    inpfname=NULL;
+  }
   assert(jmpcode!=0 || loctab.next==NULL);/* on normal flow, local symbols
                                            * should already have been deleted */
   delete_symbols(&loctab,0,true,true);    /* delete local variables if not yet
@@ -922,14 +901,17 @@ cleanup:
 # endif
 # if !defined PAWN_LIGHT
     delete_docstringtable();
-    if (pc_globaldoc!=NULL)
+    if (pc_globaldoc!=NULL) {
       free(pc_globaldoc);
-    if (pc_recentdoc!=NULL)
+      pc_globaldoc=NULL;
+    }
+    if (pc_recentdoc!=NULL) {
       free(pc_recentdoc);
+      pc_recentdoc=NULL;
+    }
 # endif
   delete_autolisttable();
   delete_heaplisttable();
-  clear_warningstack();
   if (errnum!=0) {
     if (strlen(errfname)==0)
       pc_printf("\n%d Error%s.\n",errnum,(errnum>1) ? "s" : "");
@@ -1013,7 +995,7 @@ static void resetglobals(void)
   litidx=0;             /* index to literal table */
   stgidx=0;             /* index to the staging buffer */
   sc_labnum=0;          /* top value of (internal) labels */
-  staging=0;            /* true if staging output */
+  staging=false;        /* true if staging output */
   declared=0;           /* number of local cells declared */
   glb_declared=0;       /* number of global cells declared */
   code_idx=0;           /* number of bytes with generated code */
@@ -1209,7 +1191,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
         break;
       case 'C':
         i=atoi(option_value(ptr));
-        if ((i==16 || i==32 || i==64) && i <= PAWN_CELL_SIZE)
+        if ((i==16 || i==32 || i==64) && i<=PAWN_CELL_SIZE)
           pc_cellsize=i/8;
         else
           about();
@@ -1428,7 +1410,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
 #if !defined PAWN_LIGHT
   if (sc_makereport && strlen(rname)==0) {
     if (strlen(oname)==0) {
-      /* not output filename is set, use the name of the first source file,
+      /* no output filename is set, use the name of the first source file,
        * without the path
        */
       const char *name;
@@ -1522,31 +1504,29 @@ static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
     if (sc_rootpath[0]!='\0') {
       char cfgfile[_MAX_PATH];
       const char *ptr;
-      char *base;
-      int i,isoption,found;
-      size_t pathlen;
+      int isoption;
       /* copy the default config file name, but keep a pointer to the location
        * of the base name
        */
       add_path_prefix(cfgfile,countof(cfgfile),sc_rootpath,"target");
-      pathlen=strlen(cfgfile);
+      size_t pathlen=strlen(cfgfile);
       if (pathlen<countof(cfgfile)-1) {
         cfgfile[pathlen++]=DIRSEP_CHAR; /* append '/' after 'target' subdirectory */
         cfgfile[pathlen]='\0';
       }
-      base=cfgfile+pathlen;
+      char *base=cfgfile+pathlen;
       assert(*base=='\0');
       strlcpy(base,"default.cfg",countof(cfgfile)-pathlen);
       /* run through the argument list to see whether a -T option is present */
-      found=0;
-      for (i=1; i<argc; i++) {
+      bool found=false;
+      for (int i=1; i<argc && !found; i++) {
 #       if DIRSEP_CHAR=='/'
           isoption= argv[i][0]=='-';
 #       else
           isoption= argv[i][0]=='/' || argv[i][0]=='-';
 #       endif
         if (isoption && argv[i][1]=='T') {
-          found=1;
+          found=true;
           ptr=option_value(&argv[i][1]);
           if (strchr(ptr,DIRSEP_CHAR)!=NULL)
             strlcpy(cfgfile,ptr,countof(cfgfile));      /* assume full path */
@@ -1761,8 +1741,8 @@ static void setconstants(void)
   add_constant("cellmin",(cell)((ucell)-1<<(8*pc_cellsize-1)),sGLOBAL,0);
   add_constant("charbits",sCHARBITS,sGLOBAL,0);
   add_constant("charmin",0,sGLOBAL,0);
-  add_constant("charmax",~(~0UL << sCHARBITS),sGLOBAL,0);
-  add_constant("ucharmax",((cell)1 << (pc_cellsize-1)*8)-1,sGLOBAL,0);
+  add_constant("charmax",~(~0UL<<sCHARBITS),sGLOBAL,0);
+  add_constant("ucharmax",((cell)1<<(pc_cellsize-1)*8)-1,sGLOBAL,0);
 
   add_constant("__Pawn",VERSION_INT,sGLOBAL,0);
   add_constant("__line",0,sGLOBAL,0);
@@ -1806,21 +1786,21 @@ void sc_attachdocumentation(symbol *sym,int onlylastblock)
     /* either copy the most recent comment block to the current symbol, or
      * append it to the global documentation
      */
-    int wrap=0;
+    bool wrap=false;
     char *str;
     length=strlen(pc_recentdoc);
     if (onlylastblock) {
       assert(sym!=NULL);
       str=sym->documentation;
-      wrap=1;
+      wrap=true;
     } else {
       str=pc_globaldoc;
     } /* if */
     /* set the documentation, or append it to it */
     if (str!=NULL)
-      length+=strlen(str)+1+4;   /* plus 4 for "<p/>" */
+      length+=strlen(str)+1+4;  /* plus 4 for "<p/>" (see below) */
     if (wrap)
-      length+=9+10;              /* "<summary>" and "</summary>", inserted below */
+      length+=9+10;             /* size for <summary> and </summary> (see below) */
     doc=(char*)malloc((length+1)*sizeof(char));
     if (doc!=NULL) {
       char *end;
@@ -2020,12 +2000,11 @@ static int getclassspec(int initialtok,int *fpublic,int *fstatic,int *fstock,int
  */
 static void parse(void)
 {
-  int fconst,fstock,fstatic,fpublic;
-  cell val;
-  char *str;
-
   while (freading){
     /* first try whether a declaration possibly is native or public */
+    int fconst,fstock,fstatic,fpublic;
+    cell val;
+    char *str;
     int tok=lex(&val,&str);  /* read in (new) token */
     switch (tok) {
     case 0:
@@ -2211,7 +2190,7 @@ static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst)
     tok=lexsettoken(tSYMBOL,_EXITFUNC);
   if (tok!=tSYMBOL && tok!=tOPERATOR) {
     lexpush();
-    needtoken(tSYMBOL);
+    needtoken(tSYMBOL); /* only for the error message */
     lexclr(true);       /* drop the rest of the line */
     litidx=0;           /* drop the literal queue too */
     return;
@@ -2247,7 +2226,7 @@ static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst)
  */
 static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,int fstock,int fconst)
 {
-  int ident,tag,ispublic,usage,tok;
+  int ident,tag,ispublic,usage;
   char name[sNAMEMAX+1];
   cell val,size,cidx;
   ucell address;
@@ -2263,7 +2242,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
 # endif
 
   assert(!fpublic || !fstatic);         /* may not both be set */
-  insert_docstring_separator();         /* see comment in newfunc() */
+  insert_docstring_separator();         /* see comment DOCSTRING_SEPARATOR in newfunc() */
   filenum=fcurrent;                     /* save file number at the start of the declaration */
   do {
 #   if !defined PAWN_LIGHT
@@ -2328,20 +2307,20 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
     assert(sc_curstates==0);
     sc_curstates=getstates(name);
     if (sc_curstates<0) {
-      error(85,name);           /* empty state list on declaration */
+      error(85,name);                   /* empty state list on declaration */
       sc_curstates=0;
     } else if (sc_curstates>0 && ispublic) {
-      error(88,name);           /* public variables may not have states */
+      error(88,name);                   /* public variables may not have states */
       sc_curstates=0;
     } /* if */
     /* the look-ahead above may have read a string, which the lexer stores in
      * the literal queue; it cannot continue this declaration anyway
      */
-    tok=lexpeek();
+    int tok=lexpeek();
     if (tok==tSTRING || tok==tPACKSTRING) {
-      error(1,";","[string]");  /* expected token */
-      lexclr(true);             /* drop the rest of the line */
-      litidx=0;                 /* and the literals that came with it */
+      error(1,"=","-string literal-");  /* expected token '=' */
+      skiptotoken(',',true);            /* drop the rest of the declaration */
+      litidx=0;                         /* and the literals that came with it */
     } /* if */
     sym=findconst(name);
     if (sym==NULL) {
@@ -2441,7 +2420,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
           addr=sweep->addr/pc_cellsize;
           /* mark this address range */
           while (sweepsize-->0) {
-            map[addr/8] |= (unsigned char)(1 << (addr % 8));
+            map[addr/8] |= (unsigned char)(1U<<(addr % 8));
             addr++;
           } /* while */
         } /* for */
@@ -2468,7 +2447,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
             addr=sweep->addr/pc_cellsize;
             /* mark this address range */
             while (sweepsize-->0) {
-              map[addr/8] &= (unsigned char)(~(1 << (addr % 8)));
+              map[addr/8] &= (unsigned char)(~(1U<<(addr % 8)));
               addr++;
             } /* while */
           } /* if */
@@ -2476,10 +2455,10 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
         /* now walk through the map and find a starting point that is big enough */
         sweepsize=0;
         for (addr=0; addr<glb_declared; addr++) {
-          if ((map[addr/8] & (1 << (addr % 8)))==0)
+          if ((map[addr/8] & (1U<<(addr % 8)))==0)
             continue;
           for (sweepsize=addr+1; sweepsize<glb_declared; sweepsize++) {
-            if ((map[sweepsize/8] & (1 << (sweepsize % 8)))==0)
+            if ((map[sweepsize/8] & (1U<<(sweepsize % 8)))==0)
               break;    /* zero bit found, skip this range */
             if (sweepsize-addr>=size)
               break;    /* fitting range found, no need to search further */
@@ -2559,7 +2538,7 @@ static int declloc(int fstatic)
   int ident,tag,usage;
   char name[sNAMEMAX+1];
   symbol *sym;
-  cell val,size;
+  cell size;
   char *str;
   value lval = {0};
   int cur_lit=0;
@@ -2580,7 +2559,7 @@ static int declloc(int fstatic)
       litidx=0;                         /* ...clear literal pool... */
       return 0;                         /* ...and quit */
     } /* if */
-    tokeninfo(&val,&str);
+    tokeninfo(NULL,&str);
     assert(strlen(str)<=sNAMEMAX);
     strcpy(name,str);                   /* save symbol name */
     if (name[0]==PUBLIC_CHAR)
@@ -2879,12 +2858,11 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
     if (numdim==1) {
       *size=initvector(ident,usage,tag,dim[0],false,dimnames[0],NULL);
     } else {
-      int errorfound=false;
+      bool errorfound=false;
       int counteddim[sDIMEN_MAX];
       int idx;
       constvalue lastdim={NULL,"",0,0,0};   /* sizes of the final dimension */
       int skipdim=0;
-      int err=0;
 
       if (dim[numdim-1]!=0)
         *size=calc_arraysize(dim,numdim,0); /* calc. full size, if known */
@@ -2897,13 +2875,13 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
           dim[idx]=counteddim[idx];
         } else if (counteddim[idx]<dim[idx]) {
           error(52);            /* array is not fully initialized */
-          err++;
+          errorfound=true;
         } else if (counteddim[idx]>dim[idx]) {
           error(18);            /* initialization data exceeds declared size */
-          err++;
+          errorfound=true;
         } /* if */
       } /* for */
-      if (numdim>1 && dim[numdim-1]==0 && !errorfound && err==0) {
+      if (numdim>1 && dim[numdim-1]==0 && !errorfound) {
         /* also look whether, by any chance, all "counted" final dimensions are
          * the same value; if so, we can store this
          */
@@ -2926,8 +2904,7 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
       /* after all arrays have been initalized, we know the (major) dimensions
        * of the array and we can properly adjust the indirection vectors
        */
-      /* an error leaves the list of final dimension sizes incomplete */
-      if (err==0 && !errorfound)
+      if (!errorfound)
         adjust_indirectiontables(dim,numdim,0,0,curlit,&lastdim,&skipdim);
       delete_consttable(&lastdim);  /* clear list of minor dimension sizes */
     } /* if */
@@ -2939,14 +2916,14 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
 
 static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
                       int startlit,int counteddim[],constvalue *lastdim,
-                      constvalue *dimnames[],int *errorfound)
+                      constvalue *dimnames[],bool *errorfound)
 {
   cell dsize,totalsize;
   int idx,abortparse;
 
   assert(cur>=0 && cur<numdim);
   assert(startlit>=0);
-  assert(cur+2<=numdim);/* there must be 2 dimensions or more to do */
+  assert(cur+2<=numdim);    /* there must be 2 dimensions or more to do */
   assert(errorfound!=NULL && *errorfound==false);
   /* check for a quick exit */
   if (matchtoken(']')) {
@@ -2954,8 +2931,13 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
     return 0;
   } /* if */
   totalsize=0;
-  if (!needtoken('['))
-    startlit=0; /* because literal pool is cleared on a mismatch in needtoken() */
+  if (!needtoken('[')) {
+    if (numdim>1) {
+      errorset(sRESET,0);   /* force additional error, because this is the likely cause */
+      error(52);            /* array is not fully initialized */
+    }
+    startlit=0;             /* because literal pool is cleared on a mismatch in needtoken() */
+  }
   for (idx=0,abortparse=false; !abortparse; idx++) {
     /* We need to store the offset to the newly detected sub-array into the
      * indirection table; i.e. this table needs to be expanded and updated.
@@ -2974,7 +2956,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
        * lengths of the final dimensions in order to set the indirection
        * vectors for the next-to-last dimension.
        */
-      append_constval(lastdim,itoh(idx),dsize,0);
+      append_constval(lastdim,celltohex(idx),dsize,0);
     } /* if */
     /* In a declaration like:
      *    new a[2][2] = [
@@ -3019,7 +3001,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
  *          arrays).
  */
 static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
-                       constvalue *dimnames,int *errorfound)
+                       constvalue *dimnames,bool *errorfound)
 {
   cell prev1=0,prev2=0;
   int ellips=false;
@@ -3179,7 +3161,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
  *
  *  Evaluate one initializer.
  */
-static cell init(int ident,int usage,int *tag,int *errorfound,int *packcount,cell *packitem)
+static cell init(int ident,int usage,int *tag,bool *errorfound,int *packcount,cell *packitem)
 {
   cell val;
   char *str;
@@ -3205,7 +3187,7 @@ static cell init(int ident,int usage,int *tag,int *errorfound,int *packcount,cel
     if (packcount!=NULL && *packcount>=0) {
       assert(packitem!=NULL);
       assert(*packcount<pc_cellsize);
-      if ((ucell)i>=(ucell)(1 << sCHARBITS))
+      if ((ucell)i>=(ucell)(1U<<sCHARBITS))
         error(43,(long)i);    /* constant exceeds range */
       *packcount+=1;
       *packitem|=(cell)(((ucell)i & 0xff) << ((pc_cellsize-*packcount)*sCHARBITS));
@@ -3231,13 +3213,12 @@ static cell init(int ident,int usage,int *tag,int *errorfound,int *packcount,cel
 static cell needsub(char match,constvalue **namelist)
 {
   cell val;
-  int tag;
 
   if (namelist!=NULL)
     *namelist=NULL;
   if (matchtoken(match))    /* we have already seen "[" (or "{") */
     return 0;               /* zero size (like "char msg[]") */
-  tag=pc_addtag(NULL);
+  int tag=pc_addtag(NULL);
   if (namelist!=NULL && matchtoken(tSYMLABEL)) {
     /* this is a name list */
     char *str;
@@ -3257,7 +3238,7 @@ static cell needsub(char match,constvalue **namelist)
     memset(*namelist,0,sizeof(constvalue));
     for ( ;; ) {
       /* add the name that was already parsed */
-      tokeninfo(&val,&str);
+      tokeninfo(NULL,&str);
       assert(strlen(str)>0 && alphanum(str[0]));
       field=append_constval(*namelist,str,index,tag);
       /* get the size (parse optional '[' and '{') */
@@ -3288,9 +3269,10 @@ static cell needsub(char match,constvalue **namelist)
         break;
       } /* if */
       tag=pc_addtag(NULL);
-      /* on failure the token is pushed back, which tokeninfo() asserts against */
-      if (!needtoken(tSYMLABEL))
+      if (!needtoken(tSYMLABEL)) {
+        skiptotoken(match,true);/* invalid symbol, skip to ']' or '}' */
         break;
+      }
     } /* for */
     /* add a sentinel, so that we know the size of the last symbol */
     append_constval(*namelist,"",index,0);
@@ -3344,7 +3326,7 @@ static void decl_const(int scope)
   int enumerate,first;
   symbol *sym;
 
-  insert_docstring_separator();         /* see comment in newfunc() */
+  insert_docstring_separator();         /* see comment DOCSTRING_SEPARATOR in newfunc() */
   do {
 #   if !defined PAWN_LIGHT
       pc_docstring_suspended=true;      /* suspend attaching documentation to global/recent blocks */
@@ -3388,10 +3370,7 @@ static void decl_const(int scope)
         sc_attachdocumentation(sym,true); /* attach any documenation to the constant */
         sym->x.enumlist=enumerate;
       } /* if */
-      /* matchtoken() answers 2 for an implied separator: a newline continues
-       * the list, but so does end of file, where nothing is left to read
-       */
-    } while (enumerate!=0 && freading && matchtoken(tSEPARATOR));
+    } while (enumerate!=0 && matchtoken(tSEPARATOR) && freading);
     if (enumerate!=0)
       needtoken('}');                   /* terminates the constant list */
   } while (matchtoken(','));            /* more? */
@@ -3402,7 +3381,6 @@ static void decl_const(int scope)
 static int getstates(const char *symname)
 {
   char fsaname[sNAMEMAX+1],statename[sNAMEMAX+1];
-  cell val;
   char *str;
   const constvalue *automaton;
   int fsa;
@@ -3425,14 +3403,14 @@ static int getstates(const char *symname)
     int islabel;
     if ((islabel=matchtoken(tLABEL))==0 && !needtoken(tSYMBOL))
       break;
-    tokeninfo(&val,&str);
+    tokeninfo(NULL,&str);
     assert(strlen(str)<sizeof fsaname);
     strcpy(fsaname,str);  /* assume this is the name of the automaton */
     if (islabel || matchtoken(':')) {
       /* token is an automaton name, add the name and get a new token */
       if (!needtoken(tSYMBOL))
         break;
-      tokeninfo(&val,&str);
+      tokeninfo(NULL,&str);
       assert(strlen(str)<sizeof statename);
       strcpy(statename,str);
     } else {
@@ -3501,13 +3479,12 @@ static statelist *attachstatelist(symbol *sym,int state_id)
      * without any states
      */
     if (state_id==FALLBACK && sc_status!=statBROWSE) {
-      /* in the second round, all states should have been accumulated */
-      statelist *stlist;
-      assert(sym->states!=NULL);
-      for (stlist=sym->states->next; stlist!=NULL && stlist->id==FALLBACK; stlist=stlist->next)
-        /* nothing */;
-      if (stlist==NULL)
-        error(85,sym->name);    /* no states are defined for this function */
+      /* in the second round, all states should have been collected */
+      bool validstate=false;
+      for (statelist *stlist=sym->states->next; stlist && !validstate; stlist=stlist->next)
+        validstate= (stlist->id!=FALLBACK);
+      if (!validstate)
+        stateptr=NULL;
     } /* if */
     return stateptr;
   } /* if */
@@ -3643,17 +3620,14 @@ static int operatorname(char *name)
 
 static int operatoradjust(int opertok,symbol *sym,char *opername,int resulttag)
 {
-  int tags[2]={0,0};
-  int count=0;
-  arginfo *arg;
-  char tmpname[sNAMEMAX+1];
-  symbol *oldsym;
-
   if (opertok==0)
     return true;
 
   assert(sym!=NULL && sym->ident==iFUNCTN && sym->dim.arglist!=NULL);
   /* count arguments and save (first two) tags */
+  int count=0;
+  int tags[2]={0,0};
+  arginfo *arg;
   while (arg=&sym->dim.arglist[count], arg->ident!=0) {
     if (count<2) {
       if (arg->numtags>1)
@@ -3706,19 +3680,31 @@ static int operatoradjust(int opertok,symbol *sym,char *opername,int resulttag)
 
   /* change the operator name */
   assert(strlen(opername)>0);
-  operator_symname(tmpname,opername,tags[0],tags[1],count,resulttag);
-  if ((oldsym=findglb(tmpname,sGLOBAL))!=NULL) {
-    int i;
+  char tmpname[sNAMEMAX+1];
+  operator_symname(tmpname,countof(tmpname),opername,tags[0],tags[1],count,resulttag);
+  symbol *oldsym=findglb(tmpname,sGLOBAL);
+  if (oldsym) {
     if ((oldsym->usage & uDEFINE)!=0) {
       char errname[2*sNAMEMAX+16];
-      funcdisplayname(errname,tmpname);
+      funcdisplayname(errname,countof(errname),tmpname);
       error(21,errname);        /* symbol already defined */
     } /* if */
     sym->usage|=oldsym->usage;  /* copy flags from the previous definition */
     sym->index=oldsym->index;   /* copy overlay index */
-    for (i=0; i<oldsym->numrefers; i++)
+    /* copy refer list of old symbol to new symbol */
+    for (int i=0; i<oldsym->numrefers; i++)
       if (oldsym->refer[i]!=NULL)
         refer_symbol(sym,oldsym->refer[i]);
+    oldsym->numrefers=0;
+    /* if any other symbol references the old symbol, change it to the new symbol */
+    for (symbol *scan=glbtab.next; scan!=NULL; scan=scan->next) {
+      if (scan==oldsym)
+        continue;
+      assert(scan->refer!=NULL);
+      for (int i=0; i<scan->numrefers; i++)
+        if (scan->refer[i]==oldsym)
+          scan->refer[i]=sym;
+    } /* for */
     delete_symbol(&glbtab,oldsym);
   } /* if */
   strcpy(sym->name,tmpname);
@@ -3757,15 +3743,15 @@ static int check_operatortag(int opertok,int resulttag,char *opername)
   return true;
 }
 
-static char *tag2str(char *dest,int tag)
+static char *tag2str(char *dest,size_t destsize,int tag)
 {
   tag &= TAGMASK;
   assert(tag>=0);
-  sprintf(dest,"0%x",tag);
+  snprintf(dest,destsize,"0%x",tag);
   return isdigit(dest[1]) ? &dest[1] : dest;
 }
 
-SC_FUNC char *operator_symname(char *symname,char *opername,int tag1,int tag2,int numtags,int resulttag)
+SC_FUNC char *operator_symname(char *symname,size_t symnamesz,const char *opername,int tag1,int tag2,int numtags,int resulttag)
 {
   char tagstr1[10], tagstr2[10];
   int opertok;
@@ -3773,15 +3759,17 @@ SC_FUNC char *operator_symname(char *symname,char *opername,int tag1,int tag2,in
   assert(numtags>=1 && numtags<=2);
   opertok= (opername[1]=='\0') ? opername[0] : 0;
   if (opertok=='=')
-    sprintf(symname,"%s%s%s",tag2str(tagstr1,resulttag),opername,tag2str(tagstr2,tag1));
+    snprintf(symname,symnamesz,"%s%s%s",tag2str(tagstr1,countof(tagstr1),resulttag),
+             opername,tag2str(tagstr2,countof(tagstr2),tag1));
   else if (numtags==1 || opertok=='~')
-    sprintf(symname,"%s%s",opername,tag2str(tagstr1,tag1));
+    snprintf(symname,symnamesz,"%s%s",opername,tag2str(tagstr1,countof(tagstr1),tag1));
   else
-    sprintf(symname,"%s%s%s",tag2str(tagstr1,tag1),opername,tag2str(tagstr2,tag2));
+    snprintf(symname,symnamesz,"%s%s%s",tag2str(tagstr1,countof(tagstr1),tag1),
+             opername,tag2str(tagstr2,countof(tagstr2),tag2));
   return symname;
 }
 
-static int parse_funcname(const char *fname,int *tag1,int *tag2,char *opname,size_t opsize)
+static int parse_funcname(const char *fname,int *tag1,int *tag2,char *opname,size_t opnamesz)
 {
   const char *ptr;
   char *name;
@@ -3800,8 +3788,8 @@ static int parse_funcname(const char *fname,int *tag1,int *tag2,char *opname,siz
   } /* if */
   assert(!unary || *tag1==0);
   assert(*ptr!='\0');
-  /* error recovery can hand us a name with no tag behind it */
-  for (name=opname; *ptr!='\0' && !isdigit(*ptr) && (size_t)(name-opname)<opsize-1; )
+  name=opname;
+  while (*ptr!='\0' && !isdigit(*ptr) && (size_t)(name-opname)<opnamesz-1)
     *name++ = *ptr++;
   *name='\0';
   *tag2=(int)strtol(ptr,NULL,16);
@@ -3817,33 +3805,33 @@ static constvalue *find_tag_byval(int tag)
   return tagsym;
 }
 
-SC_FUNC char *funcdisplayname(char *dest,const char *funcname)
+SC_FUNC char *funcdisplayname(char *dest,size_t destsz,const char *funcname)
 {
   int tags[2];
-  char opname[10];
+  char opname[sNAMEMAX+1];
   constvalue *tagsym[2];
   int unary;
 
   assert(funcname!=NULL);
   if (isalpha(*funcname) || *funcname=='_' || *funcname==PUBLIC_CHAR || *funcname=='\0') {
     if (dest!=funcname)
-      strcpy(dest,funcname);
+      strlcpy(dest,funcname,destsz);
     return dest;
   } /* if */
 
-  unary=parse_funcname(funcname,&tags[0],&tags[1],opname,sizeof opname);
+  unary=parse_funcname(funcname,&tags[0],&tags[1],opname,countof(opname));
   tagsym[1]=find_tag_byval(tags[1]);
   assert(tagsym[1]!=NULL);
   if (unary) {
-    sprintf(dest,"operator%s(%s:)",opname,tagsym[1]->name);
+    snprintf(dest,destsz,"operator%s(%s:)",opname,tagsym[1]->name);
   } else {
     tagsym[0]=find_tag_byval(tags[0]);
     assert(tagsym[0]!=NULL);
     /* special case: the assignment operator has the return value as the 2nd tag */
     if (opname[0]=='=' && opname[1]=='\0')
-      sprintf(dest,"%s:operator%s(%s:)",tagsym[0]->name,opname,tagsym[1]->name);
+      snprintf(dest,destsz,"%s:operator%s(%s:)",tagsym[0]->name,opname,tagsym[1]->name);
     else
-      sprintf(dest,"operator%s(%s:,%s:)",opname,tagsym[0]->name,tagsym[1]->name);
+      snprintf(dest,destsz,"operator%s(%s:,%s:)",opname,tagsym[0]->name,tagsym[1]->name);
   } /* if */
   return dest;
 }
@@ -3970,7 +3958,7 @@ static void funcstub(int fnative)
     if (matchtoken('=')) {
       /* allow number or symbol */
       if (matchtoken(tSYMBOL)) {
-        tokeninfo(&val,&str);
+        tokeninfo(NULL,&str);
         insert_alias(sym->name,str);
         /* see whether the aliased name has a preset index */
         if ((ntvidx=find_constval(&ntvindex_tab,str,-1))!=NULL) {
@@ -4038,8 +4026,6 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   char *str;
   cell val,cidx,glbdecl;
   short filenum;
-  int state_id,ovl_index;
-  statelist *stlist;
 
   assert(litidx==0);    /* literal queue should be empty */
   litidx=0;             /* clear the literal pool (should already be empty) */
@@ -4140,10 +4126,14 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
       error(5);         /* main(), @start(), entry() and exit() functions may not have any arguments */
     sym->usage|=uREAD;  /* these entry & exit points for programs or states are implicitly "used" */
   } /* if */
-  state_id=getstates(symbolname);
+  int state_id=getstates(symbolname);
   if (state_id!=0 && (opertok!=0 || (sym->flags & flgENTRYPOINT)!=0))
     error(82);          /* operators may not have states, main() may neither */
-  stlist=attachstatelist(sym,state_id);
+  statelist *stlist=attachstatelist(sym,state_id);
+  if (stlist==NULL && state_id!=0) {
+    error(85,sym->name);/* no states are defined for this function */
+    state_id=0;
+  }
   /* "declargs()" found the ")"; if a ";" appears after this, it was a
    * prototype */
   if (matchtoken(';')) {
@@ -4171,17 +4161,14 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   if (opertok!=0 && opererror)
     sym->usage &= ~uDEFINE;
   /* if the function has states, dump the label to the start of the function */
-  ovl_index=sym->index;
+  int ovl_index=sym->index;
   if (state_id!=0) {
+    assert(sym->states!=NULL);
     statelist *ptr=sym->states->next;
     while (ptr!=NULL) {
-      /* the state stubs leave the label of a lone fall-back at zero and leave
-       * the error to be reported here (see sc4.c)
-       */
-      assert(sc_status!=statWRITE || ptr->label>0
-             || (ptr->id==FALLBACK && ptr->next==NULL));
+      assert(sc_status!=statWRITE || ptr->label>0);
       if (ptr->id==state_id) {
-        if (pc_overlays==0 && ptr->label>0)
+        if (pc_overlays==0)
           setlabel(ptr->label);
         ovl_index=ptr->label;
         break;          /* no need to search further */
@@ -4204,12 +4191,13 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     if (matchtoken('{')) {
       lexpush();
     } else {
-      /* Insert a separator so that comments following the statement will not
-       * be attached to this function; they should be attached to the next
-       * function. This is not a problem for functions having a compound block,
-       * because the closing brace is an explicit "end token" for the function.
-       * With single statement functions, the preprocessor may overread the
-       * source code before the parser determines an "end of statement".
+      /* DOCSTRING_SEPARATOR Insert a separator so that comments following the
+       * statement will not be attached to this function; they should be
+       * attached to the next function. This is not a problem for functions
+       * having a compound block, because the closing brace is an explicit
+       * "end token" for the function. With single statement functions, the
+       * preprocessor may overread the source code before the parser determines
+       * an "end of statement".
        */
       insert_docstring_separator();
     } /* if */
@@ -4233,7 +4221,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     ffret(remparams);
     if ((sym->usage & uRETVALUE)!=0 && lastst!=tENDLESS) {
       char symname[2*sNAMEMAX+16];  /* allow space for user defined operators */
-      funcdisplayname(symname,sym->name);
+      funcdisplayname(symname,countof(symname),sym->name);
       error(209,symname);       /* function should return a value */
     } /* if */
   } /* if */
@@ -4405,7 +4393,7 @@ static int declargs(symbol *sym,int chkshadow)
         while (numtags<MAXTAGS) {
           if (!matchtoken('_') && !needtoken(tSYMBOL))
             break;
-          tokeninfo(&val,&ptr);
+          tokeninfo(NULL,&ptr);
           tags[numtags++]=pc_addtag(ptr);
           if (matchtoken('}'))
             break;
@@ -4666,8 +4654,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
         if (needtoken(tSYMBOL)) {
           /* save the name of the argument whose size id to take */
           char *symname;
-          cell val;
-          tokeninfo(&val,&symname);
+          tokeninfo(NULL,&symname);
           if ((arg->defvalue.size.symname=duplicatestring(symname)) == NULL)
             error(103);         /* insufficient memory */
           arg->defvalue.size.level=0;
@@ -4720,10 +4707,8 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
 
 static int count_referrers(const symbol *entry)
 {
-  int i,count;
-
-  count=0;
-  for (i=0; i<entry->numrefers; i++)
+  int count=0;
+  for (int i=0; i<entry->numrefers; i++)
     if (entry->refer[i]!=NULL)
       count++;
   return count;
@@ -4971,7 +4956,8 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
       if (count==0)
         fprintf(log,"\t\t\t<location file=\"%s\" line=\"%ld\"/>\n",get_inputfile(sym->fnumber),(long)sym->lnumber);
       count++;
-      fprintf(log,"\t\t\t<member name=\"C:%s\" value=\"%ld\">\n",funcdisplayname(symname,sym->name),(long)sym->addr);
+      fprintf(log,"\t\t\t<member name=\"C:%s\" value=\"%ld\">\n",
+              funcdisplayname(symname,countof(symname),sym->name),(long)sym->addr);
       if (sym->tag!=0 && sym->tag!=tag) {
         tagsym=find_tag_byval(sym->tag);
         assert(tagsym!=NULL);
@@ -4980,7 +4966,8 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
       assert(sym->refer!=NULL);
       for (i=0; i<sym->numrefers; i++) {
         if ((ref=sym->refer[i])!=NULL)
-          fprintf(log,"\t\t\t\t<referrer name=\"%s\"/>\n",xmlencode(symname,funcdisplayname(symname,ref->name)));
+          fprintf(log,"\t\t\t\t<referrer name=\"%s\"/>\n",
+                  xmlencode(symname,funcdisplayname(symname,countof(symname),ref->name)));
       } /* for */
       write_docstring(log,sym->documentation);
       fprintf(log,"\t\t\t</member>\n");
@@ -5002,7 +4989,8 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
         count++;
     if (count==0)
       continue;
-    fprintf(log,"\t\t<member name=\"C:%s\" value=\"%ld\">\n",funcdisplayname(symname,sym->name),(long)sym->addr);
+    fprintf(log,"\t\t<member name=\"C:%s\" value=\"%ld\">\n",
+            funcdisplayname(symname,countof(symname),sym->name),(long)sym->addr);
     if (sym->tag!=0) {
       tagsym=find_tag_byval(sym->tag);
       assert(tagsym!=NULL);
@@ -5015,7 +5003,8 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
     assert(sym->refer!=NULL);
     for (i=0; i<sym->numrefers; i++) {
       if ((ref=sym->refer[i])!=NULL)
-        fprintf(log,"\t\t\t<referrer name=\"%s\"/>\n",xmlencode(symname,funcdisplayname(symname,ref->name)));
+        fprintf(log,"\t\t\t<referrer name=\"%s\"/>\n",
+                xmlencode(symname,funcdisplayname(symname,countof(symname),ref->name)));
     } /* for */
     write_docstring(log,sym->documentation);
     fprintf(log,"\t\t</member>\n");
@@ -5027,7 +5016,7 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
       continue;                 /* hierarchical data type */
     if (sym->ident!=iVARIABLE && sym->ident!=iARRAY)
       continue;
-    funcdisplayname(symname,sym->name);
+    funcdisplayname(symname,countof(symname),sym->name);
     fprintf(log,"\t\t<member name=\"F:%s\" syntax=\"%s",symname,symname);
     if (sym->ident==iARRAY) {
       for (ref=sym; ref!=NULL; ref=finddepend(ref)) {
@@ -5060,7 +5049,8 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
       fprintf(log,"\t\t\t<attribute name=\"public\"/>\n");
     for (i=0; i<sym->numrefers; i++) {
       if ((ref=sym->refer[i])!=NULL)
-        fprintf(log,"\t\t\t<referrer name=\"%s\"/>\n",xmlencode(symname,funcdisplayname(symname,ref->name)));
+        fprintf(log,"\t\t\t<referrer name=\"%s\"/>\n",
+                xmlencode(symname,funcdisplayname(symname,countof(symname),ref->name)));
     } /* for */
     write_docstring(log,sym->documentation);
     fprintf(log,"\t\t</member>\n");
@@ -5076,7 +5066,7 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
       continue;                 /* unused native function */
     if ((sym->usage & (uPUBLIC | uDEFINE))==uPUBLIC)
       continue;
-    funcdisplayname(symname,sym->name);
+    funcdisplayname(symname,countof(symname),sym->name);
     xmlencode(symname,symname);
     fprintf(log,"\t\t<member name=\"M:%s\" syntax=\"%s(",symname,symname);
     /* print only the names of the parameters between the parentheses */
@@ -5125,17 +5115,14 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
     //  fprintf(log,"\t\t\t<codesize value=\"%ld\"/>\n",(long)sym->codeaddr - sym->addr);
     if (sym->states!=NULL) {
       statelist *stlist=sym->states->next;
-      const constvalue *fsa;
       assert(stlist!=NULL);     /* there should be at least one state item */
-      while (stlist!=NULL && stlist->id==FALLBACK)
-        stlist=stlist->next;
-      /* a function whose only state is the fall-back has no automaton to
-       * report; error 85 was already given for it
-       */
-      if (stlist!=NULL) {
-        i=state_getfsa(stlist->id);
-        assert(i>=0);           /* automaton 0 exists */
-        fsa=automaton_findid(i);
+      if (stlist!=NULL && stlist->id==FALLBACK)
+        stlist=stlist->next;    /* skip the fallback state, if that happens to be the first */
+      if (stlist) {
+        assert(stlist->id>0);   /* state id should be found */
+        int fsa_id=state_getfsa(stlist->id);
+        assert(fsa_id>=0);           /* automaton 0 exists */
+        const constvalue *fsa=automaton_findid(fsa_id);
         assert(fsa!=NULL);      /* automaton should be found */
         fprintf(log,"\t\t\t<automaton name=\"%s\"/>\n", strlen(fsa->name)>0 ? fsa->name : "(anonymous)");
         if (makestategraph)
@@ -5146,14 +5133,16 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
     assert(sym->refer!=NULL);
     for (i=0; i<sym->numrefers; i++)
       if ((ref=sym->refer[i])!=NULL)
-        fprintf(log,"\t\t\t<referrer name=\"%s\"/>\n",xmlencode(symname,funcdisplayname(symname,ref->name)));
+        fprintf(log,"\t\t\t<referrer name=\"%s\"/>\n",
+                xmlencode(symname,funcdisplayname(symname,countof(symname),ref->name)));
     /* print all symbols that are required for this function to compile */
     for (ref=root->next; ref!=NULL; ref=ref->next) {
       if (ref==sym)
         continue;
       for (i=0; i<ref->numrefers; i++)
         if (ref->refer[i]==sym)
-          fprintf(log,"\t\t\t<dependency name=\"%s\"/>\n",xmlencode(symname,funcdisplayname(symname,ref->name)));
+          fprintf(log,"\t\t\t<dependency name=\"%s\"/>\n",
+                  xmlencode(symname,funcdisplayname(symname,countof(symname),ref->name)));
     } /* for */
     /* print parameter list, with tag & const information, plus descriptions */
     assert(sym->dim.arglist!=NULL);
@@ -5349,7 +5338,7 @@ static long max_stacksize_recurse(symbol **sourcesym,symbol *sym,long basesize,i
         if (sym->refer[i]==sourcesym[stkpos]) {   /* recursion detection */
           if ((sc_debug & sSYMBOLIC)!=0 || verbosity>=2) {
             char symname[2*sNAMEMAX+16];/* allow space for user defined operators */
-            funcdisplayname(symname,sym->name);
+            funcdisplayname(symname,countof(symname),sym->name);
             errorset(sSETFILE,sym->fnumber);
             errorset(sSETLINE,sym->lnumber);
             error(237,symname);         /* recursive function */
@@ -5532,7 +5521,7 @@ static int testsymbols(symbol *root,int level,int testlabs,int testconst)
       break;
     case iFUNCTN:
       if ((sym->usage & (uDEFINE | uREAD | uNATIVE | uSTOCK | uPUBLIC))==uDEFINE) {
-        funcdisplayname(symname,sym->name);
+        funcdisplayname(symname,countof(symname),sym->name);
         if (strlen(symname)>0) {
           errorset(sSETFILE,sym->fnumber);
           errorset(sSETLINE,sym->lnumber);
@@ -5652,10 +5641,10 @@ static void destructsymbols(symbol *root,int level)
   symbol *sym=root->next;
   while (sym!=NULL && sym->compound>=level) {
     if (sym->ident==iVARIABLE || sym->ident==iARRAY) {
-      char symbolname[16];
-      symbol *opsym;
       /* check that the '~' operator is defined for this tag */
-      operator_symname(symbolname,"~",sym->tag,0,1,0);
+      char symbolname[sNAMEMAX+1];
+      operator_symname(symbolname,countof(symbolname),"~",sym->tag,0,1,0);
+      symbol *opsym;
       if ((opsym=findglb(symbolname,sGLOBAL))!=NULL) {
         cell elements;
         /* save PRI, in case of a return statment */
@@ -5997,32 +5986,41 @@ static void statement(int *lastindent,int allow_decl)
   } /* switch */
 }
 
-static void compound(int stmt_sameline)
+/** compound() handles a compound statement.
+ *
+ *  \param stmt_sameline  If true, it was determined that at least one token
+ *                        (other than '}') appears on the same line as the '{'
+ *                        that started the compound statement.
+ *
+ *  \note The '{' that starts a compound statement is already matched.
+ */
+static void compound(bool stmt_sameline)
 {
   int indent=-1;
   cell save_decl=declared;
   int count_stmt=0;
   int block_start=pc_curline; /* save line where the compound block started */
 
-  /* if there is more text on this line, we should adjust the statement indent */
-  /* lexptr==srcline means nothing was read from this line yet, so there is no
-   * brace behind it to find and lexptr-1 is already outside the buffer
-   */
-  if (stmt_sameline && lexptr>srcline) {
+  /* if there is more text on this line, we should adjust the statement indent;
+     note that when 'stmt_sameline' is true, we know that 'srcline' holds at
+     least two tokens (one of which is '{') and that 'lexptr' points behind
+     the '{' ]*/
+  if (stmt_sameline) {
+    assert(lexptr>srcline);   /* must be true, because '{' was parsed */
     const unsigned char *p=lexptr-1;
-    /* go back to the opening brace, bounded by the start of the line: error
-     * recovery can reach here with the brace no longer on this line
-     */
-    while (p>srcline && *p!='{')
+    /* go back to the opening brace */
+    while (*p!='{') {
+      assert(p>srcline);
       p--;
-    if (*p=='{') {
-      /* go forward, skipping white-space */
+    } /* while */
+    assert(*p=='{');          /* must be found, because it was already parsed earlier */
+    /* go forward, skipping white-space */
+    p++;
+    while (*p<=' ' && *p!='\0')
       p++;
-      while (*p<=' ' && *p!='\0')
-        p++;
-      if (*p!='\0')
-        lex_fetchindent(srcline,p);
-    } /* if */
+    assert(*p!='\0');         /* a token must be found, because 'stmt_sameline' is
+                                 only true when there is something behind the '{' */
+    lex_fetchindent(srcline,p);
   } /* if */
 
   nestlevel+=1;                 /* increase compound statement level */
@@ -6054,7 +6052,7 @@ static void compound(int stmt_sameline)
  *  Global references: stgidx   (referred to only)
  */
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
-                  int *tag,symbol **symptr,int chkfuncresult,int in_test)
+                  int *tag,symbol **symptr,bool chkfuncresult,bool in_test)
 {
   unsigned index;
   int ident;
@@ -6136,11 +6134,10 @@ static int test(int label,int invert,int test_true,int *parenthesized)
   unsigned index;
   cell cidx;
   int ident,tag,tok;
-  int parens,simple_true;
   cell constval;
   symbol *sym;
-  int localstaging=false;
 
+  bool localstaging=false;
   if (!staging) {
     stgset(true);               /* start staging */
     localstaging=true;
@@ -6150,10 +6147,10 @@ static int test(int label,int invert,int test_true,int *parenthesized)
 #   endif
   } /* if */
 
-  parens=true;
-  simple_true= test_true ? NOT_SET : false;
+  bool parens=true;
+  int simple_true= test_true ? NOT_SET : false;
   do {
-    int subparens;
+    bool subparens;
     stgget(&index,&cidx);       /* mark position (of last expression) in
                                  * code generator */
     ident=expression(&constval,&tag,&sym,&subparens,true,true);
@@ -6171,7 +6168,6 @@ static int test(int label,int invert,int test_true,int *parenthesized)
   if (parenthesized!=NULL)
     *parenthesized=parens;
   if (ident==iARRAY || ident==iREFARRAY) {
-    /* an expression with no symbol belongs with the nameless ones */
     char *ptr=(sym!=NULL && strlen(sym->name)>0) ? sym->name : "-unknown-";
     error(33,ptr);              /* array must be indexed */
   } /* if */
@@ -6414,16 +6410,14 @@ static int dofor(void)
 static void doswitch(void)
 {
   int lbl_table,lbl_exit,lbl_case;
-  int swdefault,casecount;
   int tok;
   cell val;
   char *str;
   constvalue caselist = {NULL,"",0,0,0};   /* case list starts empty */
   constvalue *cse,*csp;
   int label;
-  int parens;
 
-  parens=matchtoken('(');
+  int parens=matchtoken('(');
   doexpr(true,false,false,false,NULL,NULL,true,true);/* evaluate switch expression */
   if (parens)
     needtoken(')');
@@ -6436,16 +6430,16 @@ static void doswitch(void)
 
   needtoken('{');
   lbl_exit=getlabel();          /* get label number for jumping out of switch */
-  swdefault=false;
-  casecount=0;
+  bool swdefault=false;
+  int casecount=0;
   do {
     tok=lex(&val,&str);         /* read in (new) token */
     switch (tok) {
-    case tCASE:
-      if (swdefault!=false)
+    case tCASE: {
+      if (swdefault)
         error(15);        /* "default" case must be last in switch statement */
       lbl_case=getlabel();
-      PUSHSTK_I(sc_allowtags);
+      bool save_allowtags=sc_allowtags;
       sc_allowtags=false; /* do not allow tagnames here */
       do {
         casecount++;
@@ -6469,7 +6463,7 @@ static void doswitch(void)
 #       endif
         assert(csp!=NULL);
         assert(csp->next==cse);
-        insert_constval(csp,cse,itoh(lbl_case),val,0);
+        insert_constval(csp,cse,celltohex(lbl_case),val,0);
         if (matchtoken(tDBLDOT)) {
           cell end;
           constexpression(&end,NULL,NULL);
@@ -6486,18 +6480,19 @@ static void doswitch(void)
               error(40,val);            /* duplicate "case" label */
             assert(csp!=NULL);
             assert(csp->next==cse);
-            insert_constval(csp,cse,itoh(lbl_case),val,0);
+            insert_constval(csp,cse,celltohex(lbl_case),val,0);
           } /* if */
         } /* if */
       } while (matchtoken(','));
       needtoken(':');                   /* ':' ends the case */
-      sc_allowtags=(short)POPSTK_I();   /* reset */
+      sc_allowtags=save_allowtags;      /* reset */
       setlabel(lbl_case);
       statement(NULL,false);
       jumplabel(lbl_exit);
       break;
+    } /* case */
     case tDEFAULT:
-      if (swdefault!=false)
+      if (swdefault)
         error(16);         /* multiple defaults in switch */
       lbl_case=getlabel();
       setlabel(lbl_case);
@@ -6600,17 +6595,16 @@ static void dogoto(void)
 
 static void dolabel(void)
 {
-  char *st;
-  cell val;
+  char *name;
   symbol *sym;
 
-  tokeninfo(&val,&st);  /* retrieve label name again */
-  if (find_constval(&tagname_tab,st,-1)!=NULL)
-    error(221,st);      /* label name shadows tagname */
-  sym=fetchlab(st);
+  tokeninfo(NULL,&name);  /* retrieve label name again */
+  if (find_constval(&tagname_tab,name,-1)!=NULL)
+    error(221,name);      /* label name shadows tagname */
+  sym=fetchlab(name);
   assert(sym!=NULL);
   if ((sym->usage & uDEFINE)!=0)
-    error(21,st);       /* symbol already defined */
+    error(21,name);       /* symbol already defined */
   setlabel((int)sym->addr);
   /* since one can jump around variable declarations or out of compound
    * blocks, the stack must be manually adjusted
@@ -6779,7 +6773,7 @@ static void doreturn(void)
     if ((rettype & uRETVALUE)!=0) {
       char symname[2*sNAMEMAX+16];      /* allow space for user defined operators */
       assert(curfunc!=NULL);
-      funcdisplayname(symname,curfunc->name);
+      funcdisplayname(symname,countof(symname),curfunc->name);
       error(209,symname);               /* function should return a value */
     } /* if */
     rettype|=uRETNONE;                  /* function does not return anything */
@@ -6901,8 +6895,7 @@ static void dostate(void)
      * since the report is built after the first compile pass, create a dummy
      * state, so that the transitions can be documented
      */
-    /* without a name there is no transition to document either */
-    if (sc_status==statBROWSE && statename[0]!='\0') {
+    if (sc_status==statBROWSE) {
       memset(&dummyautomaton,0,sizeof dummyautomaton);
       assert(automaton==NULL || strcmp(automaton->name,fsaname)==0);
       assert(strlen(fsaname)<=sNAMEMAX);
@@ -7045,7 +7038,7 @@ static void dostate(void)
       if (pc_overlays>0)
         pushval(0);
       /* the label to jump to is in stlist->name */
-      ffcall(sym,itoh(stlist->label),0);
+      ffcall(sym,celltohex(stlist->label),0);
     } /* if */
   } /* if */
 

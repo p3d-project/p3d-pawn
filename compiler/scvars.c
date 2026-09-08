@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scvars.c 7688 2026-08-28 19:43:19Z thiadmer $
+ *  Version: $Id: scvars.c 7690 2026-09-08 15:13:28Z thiadmer $
  */
 #include <stdio.h>
 #include <stdlib.h>     /* for _MAX_PATH */
@@ -46,7 +46,7 @@ SC_VDEFINE int litidx=0;                    /**< index to literal table */
 SC_VDEFINE int litmax=sDEF_LITMAX;          /**< current size of the literal table */
 SC_VDEFINE unsigned stgidx=0;               /**< index to the staging buffer */
 SC_VDEFINE int sc_labnum=0;                 /**< number of (internal) labels */
-SC_VDEFINE int staging=0;                   /**< true if staging output */
+SC_VDEFINE bool staging=false;              /**< true if staging output */
 SC_VDEFINE cell declared=0;                 /**< number of local cells declared */
 SC_VDEFINE cell glb_declared=0;             /**< number of global cells declared */
 SC_VDEFINE cell code_idx=0;                 /**< number of bytes with generated code */
@@ -64,7 +64,7 @@ SC_VDEFINE int curseg=0;                    /**< 1 if currently parsing CODE, 2 
 SC_VDEFINE cell pc_stksize=sDEF_AMXSTACK;   /**< default stack size */
 SC_VDEFINE cell pc_amxlimit=0;              /**< default abstract machine size limit = none */
 SC_VDEFINE cell pc_amxram=0;                /**< default abstract machine data size limit = none */
-SC_VDEFINE int freading=false;              /**< Is there an input file ready for reading? */
+SC_VDEFINE bool freading=false;             /**< Is there an input file ready for reading? */
 SC_VDEFINE int pc_curline=0;                /**< the line number in the current file */
 SC_VDEFINE short fnumber=0;                 /**< the file number in the file table (debugging) */
 SC_VDEFINE short fcurrent=0;                /**< current file being processed (debugging) */
@@ -73,7 +73,7 @@ SC_VDEFINE int pc_stmtindent=0;             /**< current indent of the statement
 SC_VDEFINE int indent_nowarn=false;         /**< skip warning "217 loose indentation" */
 SC_VDEFINE int pc_tabsize=8;                /**< number of spaces that a TAB represents */
 SC_VDEFINE int pc_matchedtabsize=0;         /**< if no tabsize explicitly set, try to detect the tab size */
-SC_VDEFINE short sc_allowtags=true;         /**< allow/detect tagnames in lex() */
+SC_VDEFINE bool sc_allowtags=true;          /**< allow/detect tagnames in lex() */
 SC_VDEFINE int sc_status;                   /**< read/write status */
 SC_VDEFINE int sc_rationaltag=0;            /**< tag for rational numbers */
 SC_VDEFINE int rational_digits=0;           /**< number of fractional digits */
@@ -90,7 +90,7 @@ SC_VDEFINE uint64_t pc_cryptkey=0;          /**< key for encryption of the gener
 SC_VDEFINE constvalue sc_automaton_tab = {NULL,"",0,0,0}; /* automaton table */
 SC_VDEFINE constvalue sc_state_tab = {NULL,"",0,0,0};     /* state table */
 
-SC_VDEFINE FILE *inpf    = NULL;   /* file read from (source or include) */
+SC_VDEFINE FILE *inpf    = NULL;   /* file currently read from (source or include) */
 SC_VDEFINE FILE *inpf_org= NULL;   /* main source file */
 SC_VDEFINE FILE *outf    = NULL;   /* (intermediate) text file written to */
 

@@ -20,7 +20,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sclist.c 7688 2026-08-28 19:43:19Z thiadmer $
+ *  Version: $Id: sclist.c 7690 2026-09-08 15:13:28Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -499,11 +499,11 @@ SC_FUNC valuepair *push_heaplist(long first, long second)
   return cur;
 }
 
-SC_FUNC int popfront_heaplist(long *first, long *second)
+SC_FUNC bool popfront_heaplist(long *first, long *second)
 {
   valuepair *front=heaplist.next;
   if (front==NULL)
-    return 0;
+    return false;
 
   /* copy fields */
   *first=front->first;
@@ -512,7 +512,7 @@ SC_FUNC int popfront_heaplist(long *first, long *second)
   /* unlink and free */
   heaplist.next=front->next;
   free(front);
-  return 1;
+  return true;
 }
 
 SC_FUNC void delete_heaplisttable(void)
@@ -639,7 +639,7 @@ SC_FUNC stringlist *insert_dbgsymbol(const symbol *sym)
     char string[2*sNAMEMAX+128];
     char symname[2*sNAMEMAX+16];
 
-    funcdisplayname(symname,sym->name);
+    funcdisplayname(symname,countof(symname),sym->name);
     /* address tag:name codestart codeend ident scope [tag:dim ...] */
     if (sym->ident==iFUNCTN) {
       snprintf(string,countof(string),"S:%" PRIxC " %x:%s %" PRIxC " %" PRIxC " %x %x",

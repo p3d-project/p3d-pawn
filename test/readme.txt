@@ -2,7 +2,7 @@ Regression test for the Pawn toolkit
 ====================================
 The REXX script and the set of source files are what I use to check the Pawn
 compiler and (in a lesser extent) the Abstract Machine on a regular basis.
-This test set is for version 4.0 of Pawn.
+This test set is for version 4.0 and later of Pawn.
 
 The script file assumes that it can access the Pawn compiler (PAWNCC.EXE) and
 the simple run-time (PAWNRUN.EXE) in the "..\bin" directory relative from where

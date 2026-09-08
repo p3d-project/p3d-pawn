@@ -57,9 +57,6 @@ entry() <green_wait_interim>
     settimer 5000
     }
 
-exit() <green_wait_interim>
-    button_memo = false
-
 entry() <yellow_wait>
     {
     print "Yellow / Don't walk\n"

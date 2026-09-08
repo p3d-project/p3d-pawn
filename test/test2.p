@@ -496,4 +496,13 @@ main()
         while (true)
             printf "."
     #endif
+
+    #if defined PARENTHESIZED_LVALUE
+        var abc = 1
+        (abc) += 1
+        assert abc == 2
+        ((abc)) += 1
+        assert abc == 3
+        print "OK\n"
+    #endif
     }

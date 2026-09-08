@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: sc7.c 7690 2026-09-08 15:13:28Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -49,27 +49,27 @@
 #include <string.h>
 #include <ctype.h>
 #if defined FORTIFY
-  #include <alloc/Fortify.h>
+# include <alloc/Fortify.h>
 #endif
 #include "sc.h"
 
 #if defined _MSC_VER
-  #pragma warning(push)
-  #pragma warning(disable:4125)  /* decimal digit terminates octal escape sequence */
+# pragma warning(push)
+# pragma warning(disable:4125)  /* decimal digit terminates octal escape sequence */
 #endif
 
 #if defined PAWN_LIGHT
-  #if !defined AMX_NO_PACKED_OPC
-    #define AMX_NO_PACKED_OPC
-  #endif
-  #if !defined AMX_NO_MACRO_INSTR
-    #define AMX_NO_MACRO_INSTR
-  #endif
+# if !defined AMX_NO_PACKED_OPC
+#   define AMX_NO_PACKED_OPC
+# endif
+# if !defined AMX_NO_MACRO_INSTR
+#   define AMX_NO_MACRO_INSTR
+# endif
 #endif
 #include "sc7.scp"
 
 #if defined _MSC_VER
-  #pragma warning(pop)
+# pragma warning(pop)
 #endif
 
 static int stgstring(char *start,char *end);
@@ -219,11 +219,11 @@ SC_FUNC void stgwrite(const char *st)
   } /* if */
 }
 
-/*  stgout
- *
- *  Writes the staging buffer to the output file via stgstring() (for
+/** stgout() writes the staging buffer to the output file via stgstring() (for
  *  reversing expressions in the buffer) and stgopt() (for optimizing). It
  *  resets "stgidx".
+ *
+ *  \param index        The starting point in the staging buffer.
  *
  *  Global references: stgidx  (altered)
  *                     stgbuf  (referred to only)
@@ -243,9 +243,10 @@ SC_FUNC void stgout(unsigned index)
 
   /* second pass: optimize the buffer created in the first pass (always, even
      if the first pass did not re-order sub-instructions, because the first
-     pass stops at level sOPTIMIZE_MACRO); skip when the pipe is empty, which
-     happens on the error-recovery path where the first pass staged nothing and
-     "stgpipe" was never allocated */
+     pass stops at level sOPTIMIZE_MACRO);
+     skip the seconf pass when the pipe is empty, which happens on
+     error-recovery, in which case the first pass staged nothing and "stgpipe"
+     was never allocated */
   if (sc_status==statWRITE && pipeidx>0) {
     assert(stgpipe!=NULL);
     stgopt(stgpipe,stgpipe+pipeidx,true,filewrite);
@@ -258,13 +259,11 @@ typedef struct {
   char *start,*end;
 } argstack;
 
-/*  stgstring
- *
- *  Analyses whether code strings should be output to the file as they appear
- *  in the staging buffer or whether portions of it should be re-ordered.
- *  Re-ordering takes place in function argument lists; Pawn passes arguments
- *  to functions from right to left. When arguments are "named" rather than
- *  positional, the order in the source stream is indeterminate.
+/** stgstring() analyses whether code strings should be output to the file as
+ *  they appear in the staging buffer or whether portions of it should be
+ *  re-ordered. Re-ordering takes place in function argument lists; Pawn passes
+ *  arguments to functions from right to left. When arguments are "named" rather
+ *  than positional, the order in the source stream is indeterminate.
  *  This function calls itself recursively in case it needs to re-order code
  *  strings, and it uses a private stack (or list) to mark the start and the
  *  end of expressions in their correct (reversed) order.
@@ -374,7 +373,7 @@ SC_FUNC int stgget(unsigned *index,cell *code_index)
  *                     stgidx   (altered)
  *                     stgbuf   (contents altered)
  */
-SC_FUNC void stgset(int onoff)
+SC_FUNC void stgset(bool onoff)
 {
   if (onoff!=staging) {
     staging=onoff;
@@ -392,13 +391,13 @@ SC_FUNC void stgset(int onoff)
   }
 }
 
-/* phopt_init
- * Initialize all sequence strings of the peehole optimizer. The strings
- * are embedded in the executable in compressed format, here we expand
- * them (and allocate memory for the sequences).
- */
-static SEQUENCE *sequences;
 
+static SEQUENCE *sequences; /**< list of peephole optimzation sequences */
+
+/** phopt_init() initializes all sequence strings of the peehole optimizer. The
+ *  strings are embedded in the executable in compressed format, here we expand
+ *  them (and allocate memory for the sequences).
+ */
 SC_FUNC int phopt_init(void)
 {
   int number, i;
@@ -463,23 +462,23 @@ SC_FUNC int phopt_cleanup(void)
 #define MAX_OPT_VARS    5
 #define MAX_OPT_CAT     5       /* max. values that are concatenated */
 #if sNAMEMAX > (PAWN_CELL_SIZE/4) * MAX_OPT_CAT
-  #define MAX_ALIAS       sNAMEMAX
+# define MAX_ALIAS       sNAMEMAX
 #else
-  #define MAX_ALIAS       (PAWN_CELL_SIZE/4) * MAX_OPT_CAT
+# define MAX_ALIAS       (PAWN_CELL_SIZE/4) * MAX_OPT_CAT
 #endif
 
 static int matchsequence(char *start,const char *end,const char *pattern,
                          char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1],
-                         int *match_length)
+                         size_t *match_length)
 {
   int var,i,start_sym;
   char str[MAX_ALIAS+1];
   char *start_org=start;
   cell value;
   char *ptr;
-  #if !defined NDEBUG
+# if !defined NDEBUG
     int optsym=false;
-  #endif
+# endif
 
   *match_length=0;
   start_sym=true;
@@ -512,16 +511,13 @@ static int matchsequence(char *start,const char *end,const char *pattern,
         /* sign-extend the value to check whether the value is in the range for
            packed parameters */
         ucell v2=v;
-        /* there are no bits above the cell to set when the cell fills the
-         * type, and shifting by the full width is undefined
-         */
-        if ((v2 & ((ucell)1<<pc_cellsize*8-1))!=0 && (size_t)pc_cellsize*8<8*sizeof(ucell))
+        if ((v2 & ((ucell)1<<pc_cellsize*8-1))!=0)
           v2|=~(ucell)0<<pc_cellsize*8;
         if (*varptr>' ' || v2>=((ucell)1<<((pc_cellsize*4)-1)) && v2<=~((ucell)1<<((pc_cellsize*4)-1)))
           return false;
         /* reconvert the value to a string (without signs or expressions) */
-        varptr=itoh(v);
-        #if !defined NDEBUG
+        varptr=celltohex(v);
+#       if !defined NDEBUG
           assert(strlen(varptr)==2*(size_t)pc_cellsize);
           assert((varptr[0]=='0' || varptr[0]=='f') && (varptr[1]=='0' || varptr[1]=='f'));
           if (pc_cellsize>=32)
@@ -530,7 +526,7 @@ static int matchsequence(char *start,const char *end,const char *pattern,
             assert((varptr[4]=='0' || varptr[4]=='f') && (varptr[5]=='0' || varptr[5]=='f'));
             assert((varptr[6]=='0' || varptr[6]=='f') && (varptr[7]=='0' || varptr[7]=='f'));
           } /* if */
-        #endif
+#       endif
         if (v==0) {
           str[0]='0'; /* make zero transform to '0' rather than '0000' */
           str[1]='\0';
@@ -545,13 +541,13 @@ static int matchsequence(char *start,const char *end,const char *pattern,
         strcpy(symbols[var],str);
       } /* if */
       start_sym=false;
-      #if !defined NDEBUG
+#     if !defined NDEBUG
         optsym=false;
-      #endif
+#     endif
       break;
     case '-':
       value=-hex2cell(pattern+1,&pattern);
-      ptr=itoh((ucell)value);
+      ptr=celltohex((ucell)value);
       while (*ptr!='\0') {
         if (tolower(*start) != tolower(*ptr))
           return false;
@@ -563,7 +559,7 @@ static int matchsequence(char *start,const char *end,const char *pattern,
       break;
     case '+':
       value=hex2cell(pattern+1,&pattern);
-      ptr=itoh((ucell)value);
+      ptr=celltohex((ucell)value);
       while (*ptr!='\0') {
         if (tolower(*start) != tolower(*ptr))
           return false;
@@ -583,9 +579,9 @@ static int matchsequence(char *start,const char *end,const char *pattern,
       while (start<end && (*start=='\t' || *start==' '))
         start++;
       start_sym=true;
-      #if !defined NDEBUG
+#     if !defined NDEBUG
         optsym= (pattern[1]=='%');
-      #endif
+#     endif
       break;
     case '!':
       while (start<end && (*start=='\t' || *start==' '))
@@ -622,15 +618,11 @@ static int matchsequence(char *start,const char *end,const char *pattern,
   return true;
 }
 
-static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1],int *repl_length)
+static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1],size_t *repl_length,size_t maxlength)
 {
-  char *sptr;
-  int var;
-  char *buffer;
-
-  #if !defined NDEBUG
+# if !defined NDEBUG
     int optsym=false;
-  #endif
+# endif
 
   /* calculate the length of the new buffer
    * this is the length of the pattern plus the length of all symbols (note
@@ -639,33 +631,35 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
    */
   assert(repl_length!=NULL);
   *repl_length=0;
-  sptr=(char*)pattern;
-  while (*sptr) {
+  for (const char *sptr=pattern; *sptr; sptr++) {
+    /* for the special characters/operators, see sc7.scp */
     switch (*sptr) {
-    case '%':
+    case '%': {         /* parameter prefix */
       sptr++;           /* skip '%' */
       assert(isdigit(*sptr));
-      var=atoi(sptr);
+      int var=atoi(sptr);
       assert(var>=0 && var<=MAX_OPT_VARS);
       assert(symbols[var][0]!='\0' || optsym);  /* variable should be defined */
       assert(var!=0 || strlen(symbols[var])==(size_t)pc_cellsize || (symbols[var][0]=='-' && strlen(symbols[var])==(size_t)pc_cellsize+1) || atoi(symbols[var])==0);
       *repl_length+=(int)strlen(symbols[var]);
-      #if !defined NDEBUG
+#     if !defined NDEBUG
         optsym=false;
-      #endif
+#     endif
       break;
-    case '~': /* optional space followed by optional symbol */
+    } /* case */
+    case '~': {         /* optional space followed by optional symbol */
       assert(sptr[1]=='%');
       assert(isdigit(sptr[2]));
-      var=atoi(sptr+2);
+      int var=atoi(sptr+2);
       assert(var>=0 && var<=MAX_OPT_VARS);
       if (symbols[var][0]!='\0')
         *repl_length+=1;  /* copy space if following symbol is valid */
-      #if !defined NDEBUG
+#     if !defined NDEBUG
         else optsym=true; /* don't copy space, and symbol is optional */
-      #endif
+#     endif
       break;
-    case '#':
+    } /* case */
+    case '#':           /* literal number, to be expanded to full cell size */
       sptr++;           /* skip '#' */
       assert(alphanum(*sptr) || *sptr=='-');
       if (*sptr=='-')
@@ -674,11 +668,12 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
         sptr++;
       *repl_length+=pc_cellsize*2;
       break;
-    case '!':
+    case '!':           /* line terminator */
       *repl_length+=3;  /* '\n', '\0' & '\t' */
       break;
-    case ';':
+    case ';':           /* ';!' is fully empty replacement */
       if (*(sptr+1)=='!') {
+        assert(sptr==pattern);
         sptr++;         /* skip ';' and skip '!' at the bottom of the loop */
         *repl_length+=1;/* add '\0' */
       } else {
@@ -688,55 +683,70 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
     default:
       *repl_length+=1;
     } /* switch */
-    sptr++;
-  } /* while */
+  } /* for */
 
   /* allocate a buffer to replace the sequence in */
-  if ((buffer=(char*)malloc(*repl_length))==NULL) {
+  char *buffer=(char*)malloc(*repl_length);
+  if (!buffer) {
     error(103);
     return NULL;
   } /* if */
 
   /* replace the pattern into this temporary buffer */
-  #if !defined NDEBUG
+# if !defined NDEBUG
     optsym=false;
-  #endif
-  sptr=buffer;
+# endif
+  char *sptr=buffer;
   if (!(*pattern==';' && *(pattern+1)=='!'))
     *sptr++='\t';       /* the "replace" patterns do not have tabs (but there is no \t for an empty replacement */
   while (*pattern) {
-    assert((int)(sptr-buffer)<*repl_length);
+    assert((size_t)(sptr-buffer)<*repl_length);
     switch (*pattern) {
-    case '%':
+    case '%': {
       /* write out the symbol */
       pattern++;
       assert(isdigit(*pattern));
-      var=atoi(pattern);
+      int var=atoi(pattern);
       assert(var>=0 && var<=MAX_OPT_VARS);
       assert(symbols[var][0]!='\0' || optsym);  /* variable should be defined */
       assert(symbols[var][0]=='\0' || !optsym); /* but optional variable should be undefined */
       strcpy(sptr,symbols[var]);
       sptr+=strlen(symbols[var]);
-      #if !defined NDEBUG
+#     if !defined NDEBUG
         optsym=false;
-      #endif
+#     endif
       break;
-    case '~':
+    } /* case */
+    case '~': {
       assert(pattern[1]=='%');
       assert(isdigit(pattern[2]));
-      var=atoi(pattern+2);
+      int var=atoi(pattern+2);
       assert(var>=0 && var<=MAX_OPT_VARS);
       if (symbols[var][0]!='\0')
         *sptr++=' ';      /* replace ~ by a space */
-      #if !defined NDEBUG
+#     if !defined NDEBUG
         else optsym=true; /* don't copy space, and symbol is optional */
-      #endif
+#     endif
       break;
+    } /* case */
     case '#': {
       ucell v=hex2ucell(pattern+1,NULL);
-      const char *ptr=itoh(v);
+      const char *ptr=celltohex(v);
+      /* the literal is expanded to cell size, but if the length of the
+         replacement string exceeds the maximum length, it is then shrunk by
+         stripping leading zeros (until the length of the replacement string
+         no longer exceeds the maximum length); see also the comment
+         REPLACEMENT_RULE_FIT in stgopt() */
+      size_t len=strlen(ptr);
+      if (*repl_length>maxlength) {
+        while (*repl_length>maxlength && *ptr=='0' && len>1) {
+          ptr++;
+          *repl_length-=1;
+          len-=1;
+        } /* while */
+      }
       strcpy(sptr,ptr);
-      sptr+=strlen(ptr);
+      sptr+=len;
       assert(alphanum(pattern[1]) || pattern[1]=='-');
       if (pattern[1]=='-')
         pattern++;
@@ -765,7 +775,7 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
     pattern++;
   } /* while */
 
-  assert((int)(sptr-buffer)==*repl_length);
+  assert((size_t)(sptr-buffer)==*repl_length);
   return buffer;
 }
 
@@ -774,11 +784,11 @@ static void strreplace(char *dest,const char *replace,int sub_length,int repl_le
   int offset=sub_length-repl_length;
   if (offset>0) {               /* delete a section */
     memmove(dest,dest+offset,dest_length-offset);
-    memset(dest+dest_length-offset,0xcc,offset); /* not needed, but for cleanlyness */
+    memset(dest+dest_length-offset,0xcc,offset); /* not needed, but to aid debuggingg */
   } else if (offset<0) {        /* insert a section */
-    memmove(dest-offset, dest, dest_length);
+    memmove(dest-offset,dest,dest_length);
   } /* if */
-  memcpy(dest, replace, repl_length);
+  memcpy(dest,replace,repl_length);
 }
 
 /*  stgopt
@@ -821,29 +831,32 @@ static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *
         int seq=top_seq;
         assert(seq>=0);
         while (sequences[seq].find!=NULL && *sequences[seq].find>sOPTIMIZE_NUMBER) {
-          int match_length,repl_length;
+          size_t match_length,repl_length;
           char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1];
           if (matchsequence(head,end,sequences[seq].find,symbols,&match_length)) {
-            char *replace=replacesequence(sequences[seq].replace,symbols,&repl_length);
-            /* A replacement that is bigger than the original section would have
-             * to "grow" the staging buffer, which is quite complex, due to the
-             * re-ordering of expressions that can also happen in that buffer.
-             * A rule always replaces a sequence with fewer instructions, but
-             * not necessarily with less text: a literal parameter takes
-             * 2*pc_cellsize characters, so on a large cell a rule that trades
-             * two instructions for one with a parameter is longer written out
-             * than what it matched. Such a rule is skipped, not applied.
+            char *replace=replacesequence(sequences[seq].replace,symbols,&repl_length,match_length);
+            /* REPLACEMENT_RULE_FIT: If the replacement is bigger than the
+             * original section, we would need to "grow" the staging buffer.
+             * However, this is complex due to the re-ordering of expressions
+             * that can also happen in the staging buffer (see also the comment
+             * above stgstring()). In addition, the peephole optimizer is
+             * supposed to replace sequences with *shorter* equivalents. The
+             * caveat is that the criterion of "shorter" for the rules of the
+             * peephole optimizer is: less instructions and/or less operands.
+             * It does not rule out that the text representation of the
+             * replacement may in some circumstances be longer than the text
+             * that is matched. In other words, in some circumstances, some
+             * optimization rules are skipped despite a match.
              */
             if (match_length>=repl_length) {
               strreplace(head,replace,match_length,repl_length,(int)(end-head));
               end-=match_length-repl_length;
-              free(replace);
               code_idx-=opcodes(sequences[seq].opc)+opargs(sequences[seq].arg);
               matches++;
             } else {
-              free(replace);
               seq++;    /* this rule does not fit, try the next one */
             } /* if */
+            free(replace);
           } else {
             seq++;
           } /* if */

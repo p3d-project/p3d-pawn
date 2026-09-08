@@ -246,6 +246,47 @@ static OPCODE opcodelist[] = {
 };
 
 
+/* The opcode is an index into opcodelist[], and nothing has checked that it is
+ * one: a corrupted or truncated file puts an arbitrary value here, and the
+ * masks below allow up to 0xffff (or 0xffffffff) where the table holds a few
+ * hundred entries. Returns NULL for an opcode that is not in the table.
+ */
+/* reads one cell at "cip", with the width the file declares */
+static cell fetch_opcode(const unsigned char *cip)
+{
+  switch (pc_cellsize) {
+  case 2:
+    return (cell)*(uint16_t*)cip;
+  case 4:
+    return (cell)*(uint32_t*)cip;
+  case 8:
+    return (cell)*(uint64_t*)cip;
+  } /* switch */
+  assert(0);
+  return 0;
+}
+
+static OPCODE_PROC find_opcode(cell opc)
+{
+  ucell idx;
+
+  switch (pc_cellsize) {
+  case 2:
+    idx=(ucell)(opc & 0xff);
+    break;
+  case 4:
+    idx=(ucell)(opc & 0xffff);
+    break;
+  case 8:
+    idx=(ucell)(opc & 0xffffffffLU);
+    break;
+  default:
+    assert(0);
+    return NULL;
+  } /* switch */
+  return (idx<countof(opcodelist)) ? opcodelist[(int)idx].func : NULL;
+}
+
 static void label_add(cell address)
 {
   LABEL *item, *last;
@@ -316,9 +357,34 @@ static void print_param(FILE *ftxt,cell param,int eol)
     fprintf(ftxt," ");
 }
 
+/* Bounds of the block loaded from the file. Every parameter the opcode handlers
+ * read comes out of it, at an offset the file itself supplies, so the read has
+ * to be checked against these.
+ */
+static const unsigned char *code_start=NULL;
+static const unsigned char *code_end=NULL;
+
+/* how many cells are still readable from "params" on */
+static cell params_available(const cell *params)
+{
+  const unsigned char *p=(const unsigned char*)params;
+  if (code_start==NULL || p<code_start || p>=code_end)
+    return 0;
+  return (cell)((code_end-p)/pc_cellsize);
+}
+
+/* The number of cases in a case table comes from the file, and the table that
+ * follows is two cells per case. Cap it at what the block can still hold, so a
+ * corrupted count cannot walk the loop past the end.
+ */
+static cell clamp_casecount(const cell *params);
+
 static cell get_param(const cell *params, int index)
 {
   cell value;
+
+  if (index>=params_available(params))
+    return 0;                   /* past the end of the block */
   switch (pc_cellsize) {
   case 2:
     value=(cell)*((uint16_t*)params+index);
@@ -425,14 +491,17 @@ static cell do_proc(FILE *ftxt,const cell *params,cell opcode,cell cip)
       int numpublics=(amxhdr.natives-amxhdr.publics)/sizeof(AMX_FUNCSTUB);
       fseek(fpamx,amxhdr.publics,SEEK_SET);
       for (idx=0; idx<numpublics && nameoffset<0; idx++) {
-        fread(&func,sizeof func,1,fpamx);
+        if (fread(&func,sizeof func,1,fpamx)!=1)
+          break;                        /* table runs past the end of the file */
         if (func.address==cip)
           nameoffset=func.nameofs;
       } /* for */
     } /* if */
     if (nameoffset>=0) {
+      size_t len;
       fseek(fpamx,nameoffset,SEEK_SET);
-      fread(name,1,sNAMEMAX+1,fpamx);
+      len=fread(name,1,sNAMEMAX,fpamx);
+      name[len]='\0';                   /* the file need not hold a terminator */
     } /* if */
 
     print_opcode(ftxt,opcode,cip);
@@ -477,9 +546,21 @@ static cell do_switch(FILE *ftxt,const cell *params,cell opcode,cell cip)
   return 2;
 }
 
-static cell casetbl(FILE *ftxt,const cell *params,cell opcode,cell cip)
+static cell clamp_casecount(const cell *params)
 {
   cell num=get_param(params,0)+1;
+  cell room=(params_available(params)-1)/2;
+
+  if (num<1)
+    num=1;
+  if (num>room+1)
+    num=room+1;
+  return num;
+}
+
+static cell casetbl(FILE *ftxt,const cell *params,cell opcode,cell cip)
+{
+  cell num=clamp_casecount(params);
   if (ftxt!=NULL) {
     int idx;
     print_opcode(ftxt,opcode,cip);
@@ -496,7 +577,7 @@ static cell casetbl(FILE *ftxt,const cell *params,cell opcode,cell cip)
 
 static cell casetbl_ovl(FILE *ftxt,const cell *params,cell opcode,cell cip)
 {
-  cell num=get_param(params,0)+1;
+  cell num=clamp_casecount(params);
   if (ftxt!=NULL) {
     int idx;
     print_opcode(ftxt,opcode,cip);
@@ -511,7 +592,7 @@ static cell casetbl_ovl(FILE *ftxt,const cell *params,cell opcode,cell cip)
   return 2*num+1;
 }
 
-static void addchars(char *str,int64_t value,int pos)
+static void addchars(char *str,uint64_t value,int pos)
 {
   int i;
   str+=pos*pc_cellsize;
@@ -561,6 +642,7 @@ int main(int argc,char *argv[])
   char name[_MAX_PATH];
   FILE *fplist;
   int codesize,count;
+  long filesize;
   unsigned char *code,*cip;
   OPCODE_PROC func;
   cell opc;
@@ -588,7 +670,11 @@ int main(int argc,char *argv[])
   } /* if */
 
   /* load header */
-  fread(&amxhdr,sizeof amxhdr,1,fpamx);
+  if (fread(&amxhdr,sizeof amxhdr,1,fpamx)!=1) {
+    printf("Not a valid AMX file: \"%s\" is too short\n",argv[1]);
+    fclose(fplist);
+    return 1;
+  } /* if */
   if (amxhdr.magic==AMX_MAGIC_16) {
     pc_cellsize=2;
     cellmask=0xffffU;
@@ -605,6 +691,30 @@ int main(int argc,char *argv[])
   } /* if */
   if (amxhdr.flags & AMX_FLAG_CRYPT) {
     printf("This is an encrypted script. Encrypted scripts cannot be disassembled.\n");
+    fclose(fplist);
+    return 1;
+  } /* if */
+
+  /* The offsets in the header have not been checked against each other or
+   * against the file, and everything below is driven by them: the block that is
+   * allocated is hea-cod, while the loops walk dat-cod of it, so dat>hea alone
+   * is enough to run off the end. Check them once, here.
+   */
+  fseek(fpamx,0,SEEK_END);
+  filesize=ftell(fpamx);
+  if (amxhdr.cod<(int32_t)sizeof amxhdr || amxhdr.cod>amxhdr.dat
+      || amxhdr.dat>amxhdr.hea || amxhdr.hea>amxhdr.stp
+      || amxhdr.hea>filesize || (amxhdr.hea-amxhdr.cod)%pc_cellsize!=0
+      || (amxhdr.dat-amxhdr.cod)%pc_cellsize!=0
+      /* the tables are read through these, and "natives - publics" is
+       * subtracted to count the entries of the first one
+       */
+      || amxhdr.publics<(int32_t)sizeof amxhdr || amxhdr.publics>amxhdr.natives
+      || amxhdr.natives>amxhdr.libraries || amxhdr.libraries>amxhdr.pubvars
+      || amxhdr.pubvars>amxhdr.tags || amxhdr.tags>amxhdr.nametable
+      || amxhdr.nametable>filesize)
+  {
+    printf("Not a valid AMX file: the header offsets are inconsistent\n");
     fclose(fplist);
     return 1;
   } /* if */
@@ -628,30 +738,26 @@ int main(int argc,char *argv[])
   } /* if */
 
   /* read the file */
+  code_start=code;
+  code_end=code+codesize;
   fseek(fpamx,amxhdr.cod,SEEK_SET);
-  fread(code,1,codesize,fpamx);
+  if (fread(code,1,codesize,fpamx)!=(size_t)codesize) {
+    printf("Not a valid AMX file: the code block runs past the end of the file\n");
+    free(code);
+    fclose(fplist);
+    return 1;
+  } /* if */
 
   /* do a first run through the code to get jump targets (for labels) */
   cip=code;
   codesize=amxhdr.dat-amxhdr.cod;
   while (cip-code<codesize) {
-    switch (pc_cellsize) {
-    case 2:
-      opc=(cell)*(uint16_t*)cip;
-      func=opcodelist[(int)(opc&0xff)].func;
-      break;
-    case 4:
-      opc=(cell)*(uint32_t*)cip;
-      func=opcodelist[(int)(opc&0xffff)].func;
-      break;
-    case 8:
-      opc=(cell)*(uint64_t*)cip;
-      func=opcodelist[(int)(opc&0xffffffffLU)].func;
-      break;
-    default:
-      assert(0);
-    } /* switch */
+    opc=fetch_opcode(cip);
+    if ((func=find_opcode(opc))==NULL)
+      break;                    /* not a valid opcode: stop scanning for labels */
     opc=func(NULL,(cell*)(cip+pc_cellsize),opc,(cell)(cip-code));
+    if (opc<1 || opc>(codesize-(cip-code))/pc_cellsize)
+      break;                    /* the instruction does not fit in the block */
     cip+=pc_cellsize*opc;
   } /* while */
 
@@ -659,25 +765,20 @@ int main(int argc,char *argv[])
   cip=code;
   codesize=amxhdr.dat-amxhdr.cod;
   while (cip-code<codesize) {
-    switch (pc_cellsize) {
-    case 2:
-      opc=(cell)*(uint16_t*)cip;
-      func=opcodelist[(int)(opc&0xff)].func;
+    opc=fetch_opcode(cip);
+    if ((func=find_opcode(opc))==NULL) {
+      fprintf(fplist,"\n; invalid opcode %08lx at %08lx\n",
+              (long)opc,(long)(cip-code));
       break;
-    case 4:
-      opc=(cell)*(uint32_t*)cip;
-      func=opcodelist[(int)(opc&0xffff)].func;
-      break;
-    case 8:
-      opc=(cell)*(uint64_t*)cip;
-      func=opcodelist[(int)(opc&0xffffffffLU)].func;
-      break;
-    default:
-      assert(0);
-    } /* switch */
+    } /* if */
     if (func==do_jump)
       label_add(get_param((cell*)(cip+pc_cellsize),0)+(cell)(cip-code));
     opc=func(fplist,(cell*)(cip+pc_cellsize),opc,(cell)(cip-code));
+    if (opc<1 || opc>(codesize-(cip-code))/pc_cellsize) {
+      fprintf(fplist,"\n; instruction at %08lx runs past the end of the code\n",
+              (long)(cip-code));
+      break;
+    } /* if */
     cip+=pc_cellsize*opc;
   } /* while */
 
@@ -698,15 +799,15 @@ int main(int argc,char *argv[])
     switch (pc_cellsize) {
     case 2:
       fprintf(fplist,"%0" PRIx16 " ",*(uint16_t*)cip);
-      addchars(name,*(short*)cip,count);
+      addchars(name,*(uint16_t*)cip,count);
       break;
     case 4:
       fprintf(fplist,"%0" PRIx32 " ",*(uint32_t*)cip);
-      addchars(name,*(long*)cip,count);
+      addchars(name,*(uint32_t*)cip,count);
       break;
     case 8:
       fprintf(fplist,"%0" PRIx64 " ",*(uint64_t*)cip);
-      addchars(name,*(int64_t*)cip,count);
+      addchars(name,*(uint64_t*)cip,count);
       break;
     default:
       assert(0);

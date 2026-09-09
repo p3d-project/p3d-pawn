@@ -25,7 +25,7 @@
  *  function. This happens in SC4.C.
  *
  *
- *  Copyright (c) CompuPhase, 2005-2026
+ *  Copyright (c) 2005-2026, CompuPhase and contributors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -39,7 +39,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scstate.c 7691 2026-09-08 15:41:51Z thiadmer $
+ *  Version: $Id: scstate.c 7692 2026-09-09 10:40:34Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>

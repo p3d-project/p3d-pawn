@@ -28,9 +28,10 @@ control. Furthermore, the Pawn IDE uses tinyxml2 from Lee Thomason
 (www.grinninglizard.com). This library is distributed under the zlib license.
 
 The "binreloc" files come from the "autopackage" project. The binreloc module
-lets a Linux/Unix application find its root path, and thereby become independent
+lets a Linux application find its root path, and thereby become independent
 of a particular installation location. Binreloc is written by Hongli Lai, who
-put the source code in the public domain.
+put the source code in the public domain. Luc Hondareyte wrote a similar module
+for FreeBSD, NetBSD and OpenBSD. The "installpath" module has a MIT license.
 
 The "stategraph" utility of the Pawn suite uses the ezXML library. The ezXML
 library is copyright 2004-2006 by Aaron Voisine and it is distributed under the
@@ -59,3 +60,8 @@ and abstract machine better portable to Big Endian machines.
 
 Frank Condello made a port of the Pawn toolkit to MacOS (CFM Carbon). His
 changes are merged into the main source trunk.
+
+NullSablex uncovered and fixed many bugs in the Pawn compiler and other tools,
+using fuzz testing, compiler-inserted run-time checks ("sanitizers") and other
+analysis methods.
+

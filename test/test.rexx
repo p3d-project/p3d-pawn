@@ -2204,4 +2204,13 @@ test174:
    */
   return
 
+test175:
+  say '175. The following test should issue error 030.'
+  say ''
+  say '    Compound statement not closed, but no newline after the ''{'' either.'
+  say '-----'
+  pawncc ' -p minimal'
+  /* Symptoms of detected bug: compiler dropped into an assertion.
+   */
+  return
 

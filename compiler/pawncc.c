@@ -3,7 +3,7 @@
  *  Pawn is a scripting language system consisting of a compiler and an
  *  abstract machine, for building and running programs in the Pawn language.
  *
- *  Copyright (c) CompuPhase, 2006-2016
+ *  Copyright (c) 2006-2026, CompuPhase and contributors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -17,7 +17,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawncc.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: pawncc.c 7692 2026-09-09 10:40:34Z thiadmer $
  */
 #include "sc.h"
 

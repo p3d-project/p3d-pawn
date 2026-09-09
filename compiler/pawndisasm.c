@@ -1,6 +1,6 @@
 /*  Pawn disassembler  - crude, but hopefully useful
  *
- *  Copyright (c) CompuPhase, 2007-2023
+ *  Copyright (c) 2007-2026, CompuPhase and contributors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawndisasm.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: pawndisasm.c 7692 2026-09-09 10:40:34Z thiadmer $
  */
 #include <assert.h>
 #include <inttypes.h>
@@ -246,11 +246,6 @@ static OPCODE opcodelist[] = {
 };
 
 
-/* The opcode is an index into opcodelist[], and nothing has checked that it is
- * one: a corrupted or truncated file puts an arbitrary value here, and the
- * masks below allow up to 0xffff (or 0xffffffff) where the table holds a few
- * hundred entries. Returns NULL for an opcode that is not in the table.
- */
 /* reads one cell at "cip", with the width the file declares */
 static cell fetch_opcode(const unsigned char *cip)
 {
@@ -266,6 +261,9 @@ static cell fetch_opcode(const unsigned char *cip)
   return 0;
 }
 
+/* The opcode is an index into opcodelist[]; low bits are masked to handle
+ * packed instructions. Returns NULL for an opcode that is not in the table.
+ */
 static OPCODE_PROC find_opcode(cell opc)
 {
   ucell idx;
@@ -501,7 +499,7 @@ static cell do_proc(FILE *ftxt,const cell *params,cell opcode,cell cip)
       size_t len;
       fseek(fpamx,nameoffset,SEEK_SET);
       len=fread(name,1,sNAMEMAX,fpamx);
-      name[len]='\0';                   /* the file need not hold a terminator */
+      name[len]='\0';                   /* force zero-terminate, the file need not hold a terminator */
     } /* if */
 
     print_opcode(ftxt,opcode,cip);

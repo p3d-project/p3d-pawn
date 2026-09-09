@@ -27,7 +27,7 @@
  * across function parameter boundaries.
  *
  *
- *  Copyright (c) CompuPhase, 1997-2026
+ *  Copyright (c) 1997-2026, CompuPhase and contributors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7690 2026-09-08 15:13:28Z thiadmer $
+ *  Version: $Id: sc7.c 7692 2026-09-09 10:40:34Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -511,8 +511,8 @@ static int matchsequence(char *start,const char *end,const char *pattern,
         /* sign-extend the value to check whether the value is in the range for
            packed parameters */
         ucell v2=v;
-        if ((v2 & ((ucell)1<<pc_cellsize*8-1))!=0)
-          v2|=~(ucell)0<<pc_cellsize*8;
+        if ((v2 & ((ucell)1<<pc_cellsize*8-1))!=0 && (size_t)pc_cellsize<sizeof(ucell))
+          v2|=~(ucell)0U<<pc_cellsize*8;
         if (*varptr>' ' || v2>=((ucell)1<<((pc_cellsize*4)-1)) && v2<=~((ucell)1<<((pc_cellsize*4)-1)))
           return false;
         /* reconvert the value to a string (without signs or expressions) */

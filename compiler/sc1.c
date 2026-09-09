@@ -7,9 +7,9 @@
  *  originally created by Ron Cain, july 1980, and enhanced by James E. Hendrix.
  *  The modifications in Pawn come close to a complete rewrite, though.
  *
- *  Copyright CompuPhase, 1997-2026
- *  Copyright J.E. Hendrix, 1982, 1983
- *  Copyright R. Cain, 1980
+ *  Copyright (c) 1997-2026, CompuPhase and contributors
+ *  Copyright (c) 1982, 1983, J.E. Hendrix
+ *  Copyright (c) 1980, R. Cain
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7691 2026-09-08 15:41:51Z thiadmer $
+ *  Version: $Id: sc1.c 7692 2026-09-09 10:40:34Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -5908,7 +5908,7 @@ static void statement(int *lastindent,int allow_decl)
   case '{':
     save=pc_curline;
     if (!matchtoken('}'))       /* {} is the empty statement */
-      compound(save==pc_curline);
+      compound(save==pc_curline && freading);
     /* lastst (for "last statement") does not change */
     break;
   case ';':

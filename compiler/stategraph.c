@@ -2,7 +2,7 @@
  * file can be used by the GraphViz programs for further progessing (and to
  * create an image).
  *
- *  Copyright (c) CompuPhase, 2016-2017
+ *  Copyright (c) 2016-2026, CompuPhase and contributors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: stategraph.c 6970 2023-07-28 20:12:00Z thiadmer $
+ *  Version: $Id: stategraph.c 7692 2026-09-09 10:40:34Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>

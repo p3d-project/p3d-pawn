@@ -1,6 +1,6 @@
 /*  Support routines for the Pawn Abstract Machine
  *
- *  Copyright (c) CompuPhase, 2003-2020
+ *  Copyright (c) CompuPhase, 2003-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -29,7 +29,8 @@ size_t AMXAPI aux_ProgramSize(const char *filename)
 
   if ((fp=fopen(filename,"rb")) == NULL)
     return 0;
-  fread(&hdr, sizeof hdr, 1, fp);
+  if (fread(&hdr, 1, sizeof hdr, fp) != sizeof hdr)
+    return 0;
   fclose(fp);
 
   amx_Align16(&hdr.magic);
@@ -46,11 +47,12 @@ int AMXAPI aux_LoadProgram(AMX *amx, const char *filename, void *memblock)
   /* open the file, read and check the header */
   if ((fp = fopen(filename, "rb")) == NULL)
     return AMX_ERR_NOTFOUND;
-  fread(&hdr, sizeof hdr, 1, fp);
+  if (fread(&hdr, 1, sizeof hdr, fp) != sizeof hdr)
+    return AMX_ERR_FORMAT;
   amx_Align16(&hdr.magic);
   amx_Align32((uint32_t *)&hdr.size);
   amx_Align32((uint32_t *)&hdr.stp);
-  if (hdr.magic != AMX_MAGIC) {
+  if (hdr.magic != AMX_MAGIC || hdr.stp == 0 || hdr.size >= hdr.stp) {
     fclose(fp);
     return AMX_ERR_FORMAT;
   } /* if */

@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scvars.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: scvars.c 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #include <stdio.h>
 #include <stdlib.h>     /* for _MAX_PATH */
@@ -47,7 +47,7 @@ SC_VDEFINE int litmax=sDEF_LITMAX;          /**< current size of the literal tab
 SC_VDEFINE unsigned stgidx=0;               /**< index to the staging buffer */
 SC_VDEFINE int sc_labnum=0;                 /**< number of (internal) labels */
 SC_VDEFINE bool staging=false;              /**< true if staging output */
-SC_VDEFINE cell declared=0;                 /**< number of local cells declared */
+SC_VDEFINE cell lcl_declared=0;             /**< number of local cells declared */
 SC_VDEFINE cell glb_declared=0;             /**< number of global cells declared */
 SC_VDEFINE cell code_idx=0;                 /**< number of bytes with generated code */
 SC_VDEFINE int ntv_funcid=0;                /**< incremental number of native function */
@@ -68,16 +68,17 @@ SC_VDEFINE bool freading=false;             /**< Is there an input file ready fo
 SC_VDEFINE int pc_curline=0;                /**< the line number in the current file */
 SC_VDEFINE short fnumber=0;                 /**< the file number in the file table (debugging) */
 SC_VDEFINE short fcurrent=0;                /**< current file being processed (debugging) */
-SC_VDEFINE int pc_sideeffect=0;             /**< true if an expression causes a side-effect */
+SC_VDEFINE short pc_scopelevel=0;           /**< level of active (nested) compound statements (0 = global) */
+SC_VDEFINE bool pc_sideeffect=false;        /**< true if an expression causes a side-effect */
 SC_VDEFINE int pc_stmtindent=0;             /**< current indent of the statement */
 SC_VDEFINE int indent_nowarn=false;         /**< skip warning "217 loose indentation" */
 SC_VDEFINE int pc_tabsize=8;                /**< number of spaces that a TAB represents */
 SC_VDEFINE int pc_matchedtabsize=0;         /**< if no tabsize explicitly set, try to detect the tab size */
 SC_VDEFINE bool sc_allowtags=true;          /**< allow/detect tagnames in lex() */
-SC_VDEFINE int sc_status;                   /**< read/write status */
+SC_VDEFINE int sc_status;                   /**< browse/write/skip status */
 SC_VDEFINE int sc_rationaltag=0;            /**< tag for rational numbers */
 SC_VDEFINE int rational_digits=0;           /**< number of fractional digits */
-SC_VDEFINE int sc_allowproccall=0;          /**< allow/detect tagnames in lex() */
+SC_VDEFINE bool sc_allowproccall=false;     /**< allow/detect tagnames in lex() */
 SC_VDEFINE short sc_is_utf8=false;          /**< is this source file in UTF-8 encoding */
 SC_VDEFINE char *pc_deprecate=NULL;         /**< if non-null, mark next declaration as deprecated */
 SC_VDEFINE int sc_curstates=0;              /**< ID of the current state list */
@@ -87,8 +88,8 @@ SC_VDEFINE int pc_overlays=0;               /**< generate overlay table + instru
 SC_VDEFINE int pc_ovl0size[ovlFIRST][2];    /**< offset & size (in bytes) of the first (special) overlays */
 SC_VDEFINE uint64_t pc_cryptkey=0;          /**< key for encryption of the generated script */
 
-SC_VDEFINE constvalue sc_automaton_tab = {NULL,"",0,0,0}; /* automaton table */
-SC_VDEFINE constvalue sc_state_tab = {NULL,"",0,0,0};     /* state table */
+SC_VDEFINE constvalue sc_automaton_tab={0}; /**< automaton table */
+SC_VDEFINE constvalue sc_state_tab={0};     /**< state table */
 
 SC_VDEFINE FILE *inpf    = NULL;   /* file currently read from (source or include) */
 SC_VDEFINE FILE *inpf_org= NULL;   /* main source file */

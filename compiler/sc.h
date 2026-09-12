@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sc.h 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -135,11 +135,11 @@ typedef struct s_symbol {
                          * end is in "codeaddr") */
   int index;            /* overlay index number or index for native function */
 
-  char scope;           /* sLOCAL, sGLOBAL or sSTATIC */
-  char ident;           /* see below for possible values */
+  short ident;          /* see below for possible values */
   short usage;          /* see below for possible values */
-  char flags;           /* see below for possible values */
-  int compound;         /* compound level (braces nesting level) */
+  short flags;          /* see below for possible values */
+  short scope;          /* sLOCAL, sGLOBAL or sSTATIC */
+  short compound;       /* compound level (braces nesting level) */
   int tag;              /* tagname id */
 
   union {
@@ -197,7 +197,7 @@ typedef struct s_symbol {
  *  VARIABLE / ARRAY
  *  bits: 0     (uDEFINE) the variable is defined in the source file
  *        1     (uREAD) the variable is "read" (accessed) in the source file
- *        2     (uWRITTEN) the variable is altered (assigned a value)
+ *        2     (uWRITTEN) the variable is "set" (assigned a value)
  *        3     (uCONST) the variable is constant (may not be assigned to)
  *        4     (uPUBLIC) the variable is public
  *        5     (uPACKED) the array variable is defined as packed (only for the last dimension of an array)
@@ -621,7 +621,7 @@ SC_FUNC int alphanum(unsigned char c);
 SC_FUNC int ishex(char c);
 SC_FUNC int number(cell *val,const unsigned char *curptr);
 SC_FUNC void delete_symbol(symbol *root,symbol *sym);
-SC_FUNC void delete_symbols(symbol *root,int level,int delete_labels,int delete_functions);
+SC_FUNC void delete_symbols(symbol *root,int level,bool delete_labels,bool delete_functions);
 SC_FUNC int refer_symbol(symbol *entry,symbol *bywhom);
 SC_FUNC void markusage(symbol *sym,int usage);
 SC_FUNC uint32_t namehash(const char *name);
@@ -786,9 +786,13 @@ SC_FUNC stringlist *insert_inputfile(const char *path);
 SC_FUNC const char *get_inputfile(int index);
 SC_FUNC int find_inputfile(const char *path);
 SC_FUNC void delete_inputfiletable(void);
-SC_FUNC stringlist *insert_undefsymbol(const char *string,int linenr);
-SC_FUNC const char *get_undefsymbol(int index,int *linenr);
+SC_FUNC bool insert_undefsymbol(const char *string,short filenr,int linenr);
+SC_FUNC const char *get_undefsymbol(int index,short *filenr,int *linenr);
 SC_FUNC void delete_undefsymboltable(void);
+SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short scope);
+SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *scope,bool *handled);
+SC_FUNC bool find_unusedvar(const char *name,short scope,bool sethandled,short *filenr,int *linenr);
+SC_FUNC void delete_unusedvartable(short scope);
 SC_FUNC stringlist *insert_docstring(const char *string,int append);
 SC_FUNC const char *get_docstring(int index);
 SC_FUNC void delete_docstring(int index);
@@ -870,7 +874,7 @@ SC_VDECL int litmax;            /**< current size of the literal table */
 SC_VDECL unsigned stgidx;       /**< index to the staging buffer */
 SC_VDECL int sc_labnum;         /**< number of (internal) labels */
 SC_VDECL bool staging;          /**< true if staging output */
-SC_VDECL cell declared;         /**< number of local cells declared */
+SC_VDECL cell lcl_declared;     /**< number of local cells declared */
 SC_VDECL cell glb_declared;     /**< number of global cells declared */
 SC_VDECL cell code_idx;         /**< number of bytes with generated code */
 SC_VDECL int ntv_funcid;        /**< incremental number of native function */
@@ -890,16 +894,17 @@ SC_VDECL bool freading;         /**< is there an input file ready for reading? *
 SC_VDECL int pc_curline;        /**< the line number in the current file */
 SC_VDECL short fnumber;         /**< number of files in the input file table */
 SC_VDECL short fcurrent;        /**< current file being processed */
-SC_VDECL int pc_sideeffect;     /**< true if an expression causes a side-effect */
+SC_VDECL short pc_scopelevel;   /**< level of active (nested) compound statements (0 = global) */
+SC_VDECL bool pc_sideeffect;    /**< true if an expression causes a side-effect */
 SC_VDECL int pc_stmtindent;     /**< current indent of the statement */
 SC_VDECL int indent_nowarn;     /**< skip warning "217 loose indentation" */
 SC_VDECL int pc_tabsize;        /**< number of spaces that a TAB represents */
 SC_VDECL int pc_matchedtabsize; /**< if no tabsize explicitly set, try to detect the tab size */
 SC_VDECL bool sc_allowtags;     /**< allow/detect tagnames in lex() */
-SC_VDECL int sc_status;         /**< read/write status */
+SC_VDECL int sc_status;         /**< browse/write/skip status */
 SC_VDECL int sc_rationaltag;    /**< tag for rational numbers */
 SC_VDECL int rational_digits;   /**< number of fractional digits */
-SC_VDECL int sc_allowproccall;  /**< allow/detect tagnames in lex() */
+SC_VDECL bool sc_allowproccall; /**< allow/detect tagnames in lex() */
 SC_VDECL short sc_is_utf8;      /**< is this source file in UTF-8 encoding */
 SC_VDECL char *pc_deprecate;    /**< if non-NULL, mark next declaration as deprecated */
 SC_VDECL int sc_curstates;      /**< ID of the current state list */

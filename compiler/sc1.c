@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sc1.c 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -135,13 +135,13 @@ static void gen_ovlinfo(symbol *root);
 static long max_stacksize(symbol *root,int *recursion);
 static long max_overlaysize(symbol *root,char **funcname);
 static int checkundefined(symbol *root);
-static int testsymbols(symbol *root,int level,int testlabs,int testconst);
+static bool testsymbols(const symbol *root,short level,bool testlabs,bool testconst);
 static int test_skippedundef(void);
 static void destructsymbols(symbol *root,int level);
 static constvalue *find_constval_byval(constvalue *table,cell val);
 static constvalue *clone_consttable(const constvalue *table);
 static symbol *fetchlab(const char *name);
-static void statement(int *lastindent,int allow_decl);
+static void statement(int *lastindent,bool allow_decl);
 static void compound(bool stmt_sameline);
 static int test(int label,int invert,int test_true,int *parenthesized);
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
@@ -164,23 +164,22 @@ static void addwhile(int *ptr);
 static void delwhile(void);
 static int *readwhile(void);
 
-static int lastst     =0;       /* last executed statement type */
-static int nestlevel  =0;       /* number of active (open) compound statements */
-static int endlessloop=0;       /* nesting level of endless loop */
-static int rettype    =0;       /* the type that a "return" expression should have */
-static int skipinput  =0;       /* number of lines to skip from the first input file */
-static int verbosity  =1;       /* verbosity level, 0=quiet, 1=normal, 2=verbose */
-static int sc_reparse =0;       /* needs 3th parse because of changed prototypes? */
-static int sc_parsenum=0;       /* number of the extra parses */
-static int undefined_vars=false;/* if true, undefined symbols were found */
-static int pc_enumsequence=0;   /* sequence number of enumerated constant lists, for reporting these lists */
-static int wq_glb[wqTABSZ];     /* "while queue", internal stack for nested loops */
-static int *wq_ptr;             /* pointer to next entry */
+static int lastst     =0;       /**< last executed statement type */
+static int endlessloop=0;       /**< nesting level of endless loop */
+static int rettype    =0;       /**< the type that a "return" expression should have */
+static int skipinput  =0;       /**< number of lines to skip from the first input file */
+static int verbosity  =1;       /**< verbosity level, 0=quiet, 1=normal, 2=verbose */
+static int sc_reparse =0;       /**< needs 3th parse because of changed prototypes? */
+static int sc_parsenum=0;       /**< number of the extra parses */
+static int undefined_vars=false;/**< if true, undefined symbols were found */
+static int pc_enumsequence=0;   /**< sequence number of enumerated constant lists, for reporting these lists */
+static int wq_glb[wqTABSZ];     /**< "while queue", internal stack for nested loops */
+static int *wq_ptr;             /**< pointer to next entry */
 #if !defined PAWN_LIGHT
-  static char sc_rootpath[_MAX_PATH]; /* base path of the installation */
-  static char sc_binpath[_MAX_PATH];  /* path for the binaries, often sc_rootpath + /bin */
-  static char *pc_globaldoc=NULL;/* main documentation */
-  static char *pc_recentdoc=NULL;/* documentation from the most recent comment block */
+  static char sc_rootpath[_MAX_PATH]; /**< base path of the installation */
+  static char sc_binpath[_MAX_PATH];  /**< path for the binaries, often sc_rootpath + /bin */
+  static char *pc_globaldoc=NULL;     /**< main documentation */
+  static char *pc_recentdoc=NULL;     /**< documentation from the most recent comment block */
   int pc_docstring_suspended=false;
 #endif
 
@@ -990,13 +989,12 @@ static void resetglobals(void)
   /* reset the subset of global variables that is modified by the first pass */
   curfunc=NULL;         /* pointer to current function */
   lastst=0;             /* last executed statement type */
-  nestlevel=0;          /* number of active (open) compound statements */
   rettype=0;            /* the type that a "return" expression should have */
   litidx=0;             /* index to literal table */
   stgidx=0;             /* index to the staging buffer */
   sc_labnum=0;          /* top value of (internal) labels */
   staging=false;        /* true if staging output */
-  declared=0;           /* number of local cells declared */
+  lcl_declared=0;       /* number of local cells declared */
   glb_declared=0;       /* number of global cells declared */
   code_idx=0;           /* number of bytes with generated code */
   ntv_funcid=0;         /* incremental number of native function */
@@ -1005,12 +1003,13 @@ static void resetglobals(void)
   pc_curline=0;         /* the line number in the current file */
   fnumber=0;            /* the file number in the file table (debugging) */
   fcurrent=0;           /* current file being processed (debugging) */
-  pc_sideeffect=0;      /* true if an expression causes a side-effect */
+  pc_scopelevel=0;      /* level of active (nested) compound statements */
+  pc_sideeffect=false;  /* true if an expression causes a side-effect */
   pc_stmtindent=0;      /* current indent of the statement */
   indent_nowarn=false;  /* do not skip warning "217 loose indentation" */
   sc_allowtags=true;    /* allow/detect tagnames */
-  sc_status=statIDLE;
-  sc_allowproccall=false;
+  sc_status=statIDLE;   /* browse/write/skip status */
+  sc_allowproccall=false; /* allow/detect tagnames in lex() */
   sc_alignnext=false;
   pc_docexpr=false;
   pc_deprecate=NULL;
@@ -2091,7 +2090,7 @@ static void parse(void)
  *
  *  Dump the literal pool (strings etc.)
  *
- *  Global references: litidx (referred to only)
+ *  Global references: litidx (read-only)
  */
 static void dumplits(void)
 {
@@ -2217,12 +2216,13 @@ static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst)
   } /* if */
 }
 
-/*  declglb     - declare global symbols
- *
- *  Declare a static (global) variable. Global variables are stored in
+/** declglb() declares global variables. Global variables are stored in
  *  the DATA segment.
  *
- *  global references: glb_declared     (altered)
+ *  global references: glb_declared     (modified)
+ *                     fcurrent         (read-only)
+ *                     sc_curstates     (modified)
+ *                     pc_docstring_suspended (modified)
  */
 static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,int fstock,int fconst)
 {
@@ -2235,7 +2235,6 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
   int dim[sDIMEN_MAX];
   int numdim;
   constvalue *dimnames[sDIMEN_MAX];
-  short filenum;
   symbol *sym;
 # if !defined NDEBUG
     cell glbdecl=0;
@@ -2243,7 +2242,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
 
   assert(!fpublic || !fstatic);         /* may not both be set */
   insert_docstring_separator();         /* see comment DOCSTRING_SEPARATOR in newfunc() */
-  filenum=fcurrent;                     /* save file number at the start of the declaration */
+  short filenum=fcurrent;               /* save file number at the start of the declaration */
   do {
 #   if !defined PAWN_LIGHT
       pc_docstring_suspended=true;      /* suspend attaching documentation to global/recent blocks */
@@ -2524,14 +2523,15 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
   needtoken(tTERM);    /* if not comma, must be semicolon */
 }
 
-/*  declloc     - declare local symbols
+/** declloc() declares local variables.
  *
- *  Declare local (automatic) variables. Since these variables are relative
- *  to the STACK, there is no switch to the DATA segment. These variables
- *  cannot be initialized either.
+ *  Local variables have the scope of the compound block, but "static" variables
+ *  persist after the function ends. Static locals are in the DATA block and
+ *  must be initialized with constant data. Standard locals are relative to the
+ *  STACK; these variables can be initialized with an expression.
  *
- *  global references: declared   (altered)
- *                     funcstatus (referred to only)
+ *  global references: declared   (modified)
+ *                     funcstatus (read-only)
  */
 static int declloc(int fstatic)
 {
@@ -2569,13 +2569,13 @@ static int declloc(int fstatic)
      * the "nesting level" of local variables to verify the
      * multi-definition of symbols.
      */
-    if ((sym=findloc(name))!=NULL && sym->compound==nestlevel)
+    if ((sym=findloc(name))!=NULL && sym->compound==pc_scopelevel)
       error(21,name);                   /* symbol already defined */
     /* Although valid, a local variable whose name is equal to that
      * of a global variable or to that of a local variable at a lower
      * level might indicate a bug.
      */
-    if (((sym=findloc(name))!=NULL && sym->compound!=nestlevel || findglb(name,sGLOBAL)!=NULL) && !undefined_vars)
+    if (((sym=findloc(name))!=NULL && sym->compound!=pc_scopelevel || findglb(name,sGLOBAL)!=NULL) && !undefined_vars)
       error(219,name);                  /* variable shadows another symbol (only give the warning when there are no errors) */
     while (matchtoken('[')) {
       ident=iARRAY;
@@ -2631,8 +2631,8 @@ static int declloc(int fstatic)
       sym=addvariable(name,(cur_lit+glb_declared)*pc_cellsize,ident,sSTATIC,
                       tag,dim,dimnames,numdim,usage);
     } else {
-      declared+=(int)size;      /* variables are put on stack, adjust "declared" */
-      sym=addvariable(name,-declared*pc_cellsize,ident,sLOCAL,tag,
+      lcl_declared+=(int)size;  /* variables are put on stack, adjust "declared" */
+      sym=addvariable(name,-lcl_declared*pc_cellsize,ident,sLOCAL,tag,
                       dim,dimnames,numdim,usage);
       if (ident==iVARIABLE) {
         assert(!staging);
@@ -2640,17 +2640,18 @@ static int declloc(int fstatic)
         assert(stgidx==0);
         staging_start=stgidx;
       } /* if */
-      markexpr(sLDECL,name,-declared*pc_cellsize); /* mark for better optimization */
+      markexpr(sLDECL,name,-lcl_declared*pc_cellsize); /* mark for better optimization */
       modstk(-(int)size*pc_cellsize);
       assert(curfunc!=NULL);
       assert((curfunc->usage & uNATIVE)==0);
-      if (curfunc->x.stacksize<declared+1)
-        curfunc->x.stacksize=(long)declared+1;  /* +1 for PROC opcode */
+      if (curfunc->x.stacksize<lcl_declared+1)
+        curfunc->x.stacksize=(long)lcl_declared+1;  /* +1 for PROC opcode */
     } /* if */
     /* now that we have reserved memory for the variable, we can proceed
-     * to initialize it */
+     * to initialize it
+     */
     assert(sym!=NULL);          /* we declared it, it must be there */
-    sym->compound=nestlevel;    /* for multiple declaration/shadowing check */
+    sym->compound=pc_scopelevel;/* for multiple declaration/shadowing check */
     if (fconst)
       sym->usage|=uCONST;
     if (!fstatic) {             /* static variables already initialized */
@@ -2808,7 +2809,7 @@ static int base;
  *  size    array cells (count), if 0 on input, the routine counts the number of elements
  *  tag     required tagname for the initial value
  *
- *  Global references: litidx (altered)
+ *  Global references: litidx (modified)
  */
 static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim,
                      constvalue *dimnames[])
@@ -4011,11 +4012,11 @@ static void funcstub(int fnative)
  *  out of the following text
  *
  *  Global references: funcstatus,lastst,litidx
- *                     rettype  (altered)
- *                     curfunc  (altered)
- *                     declared (altered)
- *                     glb_declared (altered)
- *                     sc_alignnext (altered)
+ *                     rettype  (modified)
+ *                     curfunc  (modified)
+ *                     declared (modified)
+ *                     glb_declared (modified)
+ *                     sc_alignnext (modified)
  */
 static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,int stock)
 {
@@ -4183,7 +4184,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     alignframe(sc_dataalign);
     sc_alignnext=false;
   } /* if */
-  declared=0;           /* number of local cells */
+  lcl_declared=0;       /* number of local cells */
   rettype=(sym->usage & uRETVALUE);      /* set "return type" variable */
   curfunc=sym;
   define_args();        /* add the symbolic info for the function arguments */
@@ -4207,13 +4208,13 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   sc_curstates=0;
   if ((rettype & uRETVALUE)!=0)
     sym->usage|=uRETVALUE;
-  if (declared!=0) {
+  if (lcl_declared!=0) {
     /* This happens only in a very special (and useless) case, where a function
      * has only a single statement in its body (no compound block) and that
      * statement declares a new variable
      */
-    modstk((int)declared*pc_cellsize);  /* remove all local variables */
-    declared=0;
+    modstk((int)lcl_declared*pc_cellsize);  /* remove all local variables */
+    lcl_declared=0;
   } /* if */
   if ((lastst!=tRETURN) && (lastst!=tGOTO)){
     int remparams=(strcmp(sym->name,_ENTRYFUNC)!=0 && strcmp(sym->name,_EXITFUNC)!=0);
@@ -4271,7 +4272,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     dumplits();                 /* dump literal strings */
     litidx=0;
   } /* if */
-  testsymbols(&loctab,0,true,true);     /* test for unused arguments and labels */
+  testsymbols(&loctab,1,true,true);     /* test for unused arguments and labels */
   delete_symbols(&loctab,0,true,true);  /* clear local variables queue */
   assert(loctab.next==NULL);
   curfunc=NULL;
@@ -4329,10 +4330,14 @@ static int argcompare(arginfo *a1,arginfo *a2)
   return result;
 }
 
-/*  declargs()
+/** declargs() adds an entry in the local symbol table for each argument in the
+ *  argument list.
  *
- *  This routine adds an entry in the local symbol table for each argument
- *  found in the argument list. It returns the number of arguments.
+ *  \param sym          [in, modified] The symbol for the function.
+ *  \param chkshadow    Whether the routine should check (and warn) for argument
+ *                      names that shadow a global variable/constant/function.
+ *
+ *  \return The number of arguments.
  */
 static int declargs(symbol *sym,int chkshadow)
 {
@@ -4695,7 +4700,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
     assert(numtags>0);
     argsym=addvariable(name,offset,ident,sLOCAL,tags[0],
                        arg->dim,arg->dimnames,arg->numdim,usage);
-    argsym->compound=0;
+    argsym->compound=1;         /* arguments are at the same scope as locals in the top compound block */
     if (ident==iREFERENCE)
       argsym->usage|=uREAD;     /* because references are passed back */
     if (fpublic)
@@ -5487,32 +5492,43 @@ static int checkundefined(symbol *root)
   return (count>0);
 }
 
-/*  testsymbols - test for unused local or global variables
+/** testsymbols() checks for unused local or global variables.
  *
- *  "Public" functions are excluded from the check, since these
- *  may be exported to other object modules.
- *  Labels are excluded from the check if the argument 'testlabs'
- *  is 0. Thus, labels are not tested until the end of the function.
- *  Constants may also be excluded (convenient for global constants).
+ *  \param root         [in] The root of the symbol list, which must be either
+ *                      the global symbol list or the local variable list.
+ *  \param level        The scope or nesting level for local symbols. It should
+ *                      be 0 for the global symbol list.
+ *  \param testlabs     Whether to test labels (goto targets). The rationale is
+ *                      that labels are only tested at the end of a function
+ *                      (but not at the end of the compound block).
+ *  \param testconst    Whether to test constants are tested. The rationale is
+ *                      to silently ignore global constants (no code is
+ *                      generated for these anyway).
  *
- *  When the nesting level drops below "level", the check stops.
+ *  \return Whether there is an "entry" point for the program; it is only
+ *          relevant when browsing the global symbol table.
  *
- *  The function returns whether there is an "entry" point for the file.
- *  This flag will only be 1 when browsing the global symbol table.
+ *  \note All symbols of the given `level` and above are tested. Symbols below
+ *        the given level are not tested.
+ *
+ *  \note "Public" functions are excluded from the check, since these may be
+ *        exported to other object modules.
  */
-static int testsymbols(symbol *root,int level,int testlabs,int testconst)
+static bool testsymbols(const symbol *root,short level,bool testlabs,bool testconst)
 {
-  char symname[2*sNAMEMAX+16];
-  int entry=false;
+  bool entry=false;
 
-  symbol *sym=root->next;
-  while (sym!=NULL && sym->compound>=level) {
+  for (symbol *sym=root->next; sym!=NULL; sym=sym->next) {
+    assert(level==0 && sym->compound==0 || level>0 && sym->compound>0);
+    if (sym->compound<level)
+      continue;
+    bool marked_unused=find_unusedvar(sym->name,level,true,NULL,NULL);
     switch (sym->ident) {
     case iLABEL:
       if (testlabs) {
         if ((sym->usage & uDEFINE)==0) {
           error_suggest(19,sym->name,iLABEL);  /* not a label: ... */
-        } else if ((sym->usage & uREAD)==0) {
+        } else if ((sym->usage & uREAD)==0 && !marked_unused) {
           errorset(sSETFILE,sym->fnumber);
           errorset(sSETLINE,sym->lnumber);
           error(203,sym->name);     /* symbol isn't used: ... */
@@ -5520,7 +5536,8 @@ static int testsymbols(symbol *root,int level,int testlabs,int testconst)
       } /* if */
       break;
     case iFUNCTN:
-      if ((sym->usage & (uDEFINE | uREAD | uNATIVE | uSTOCK | uPUBLIC))==uDEFINE) {
+      if ((sym->usage & (uDEFINE | uREAD | uNATIVE | uSTOCK | uPUBLIC))==uDEFINE && !marked_unused) {
+        char symname[2*sNAMEMAX+16];
         funcdisplayname(symname,countof(symname),sym->name);
         if (strlen(symname)>0) {
           errorset(sSETFILE,sym->fnumber);
@@ -5536,7 +5553,7 @@ static int testsymbols(symbol *root,int level,int testlabs,int testconst)
         insert_dbgsymbol(sym);
       break;
     case iCONSTEXPR:
-      if (testconst && (sym->usage & uREAD)==0) {
+      if (testconst && (sym->usage & uREAD)==0 && !marked_unused) {
         errorset(sSETFILE,sym->fnumber);
         errorset(sSETLINE,sym->lnumber);
         error(203,sym->name);       /* symbol isn't used: ... */
@@ -5546,27 +5563,38 @@ static int testsymbols(symbol *root,int level,int testlabs,int testconst)
       /* a variable */
       if (sym->parent!=NULL)
         break;                      /* hierarchical data type */
-      if ((sym->usage & (uWRITTEN | uREAD | uSTOCK))==0) {
-        errorset(sSETFILE,sym->fnumber);
-        errorset(sSETLINE,sym->lnumber);
-        error(203,sym->name,sym->lnumber);  /* symbol isn't used (and not stock) */
-      } else if ((sym->usage & (uREAD | uSTOCK | uPUBLIC))==0 && (sym->ident==iVARIABLE || sym->ident==iARRAY)) {
-        errorset(sSETFILE,sym->fnumber);
-        errorset(sSETLINE,sym->x.lnumber_write);
-        error(204,sym->name);       /* value assigned to symbol is never used */
-#if 0 // ??? not sure whether it is a good idea to force people use "const"
-      } else if ((sym->usage & (uWRITTEN | uPUBLIC | uCONST))==0 && sym->ident==iREFARRAY) {
-        errorset(sSETFILE,sym->fnumber);
-        errorset(sSETLINE,sym->lnumber);
-        error(214,sym->name);       /* make array argument "const" */
-#endif
+      if (!marked_unused) {
+        if ((sym->usage&(uWRITTEN|uREAD|uSTOCK))==0) {
+          errorset(sSETFILE,sym->fnumber);
+          errorset(sSETLINE,sym->lnumber);
+          error(203,sym->name,sym->lnumber);  /* symbol isn't used (and not stock) */
+        } else if ((sym->usage & (uREAD | uSTOCK | uPUBLIC))==0 && (sym->ident==iVARIABLE || sym->ident==iARRAY)) {
+          errorset(sSETFILE,sym->fnumber);
+          errorset(sSETLINE,sym->x.lnumber_write);
+          error(204,sym->name);       /* value assigned to symbol is never used */
+        } /* if */
       } /* if */
       /* also mark the variable (local or global) to the debug information */
       if ((sym->usage & (uWRITTEN | uREAD))!=0)
         insert_dbgsymbol(sym);
     } /* if */
-    sym=sym->next;
-  } /* while */
+  } /* for */
+
+  /* also check the list of symbol names for which a "#pragma unused" was set,
+   * but for which a declaration is missing
+   */
+  const char *name;
+  short filenr,scope;
+  int linenr;
+  bool handled;
+  for (int idx=0; (name=get_unusedvar(idx,&filenr,&linenr,&scope,&handled)); idx++) {
+    if (!handled && scope>=level) {
+      errorset(sSETFILE,filenr);
+      errorset(sSETLINE,linenr);
+      error(17,name);   /* undefined symbol */
+    }
+  }
+  delete_unusedvartable(level);
 
   errorset(sEXPRRELEASE,0); /* clear error data */
   errorset(sRESET,0);
@@ -5587,10 +5615,11 @@ static int testsymbols(symbol *root,int level,int testlabs,int testconst)
 static int test_skippedundef(void)
 {
   int count=0;
-  int idx,linenr;
+  short filenr;
+  int linenr;
   const char *symname;
 
-  for (idx=0; (symname=get_undefsymbol(idx,&linenr))!=NULL; idx++) {
+  for (int idx=0; (symname=get_undefsymbol(idx,&filenr,&linenr))!=NULL; idx++) {
     /* test only functions; the local symbol table has already been erased
        and constants & variables (and the text substution macros) must be
        defined before use) */
@@ -5602,6 +5631,7 @@ static int test_skippedundef(void)
          switch to "write" state just for the warning */
       assert(sc_status==statBROWSE);
       sc_status=statWRITE;
+      errorset(sSETFILE,filenr);
       errorset(sSETLINE,linenr);
       error(208,symname);
       sc_status=statBROWSE;
@@ -5609,6 +5639,8 @@ static int test_skippedundef(void)
     }
   }
 
+  errorset(sEXPRRELEASE,0); /* clear error data */
+  errorset(sRESET,0);
   return count;
 }
 
@@ -5853,12 +5885,21 @@ SC_FUNC symbol *add_constant(const char *name,cell val,int scope,int tag)
   return sym;
 }
 
-/*  statement           - The Statement Parser
+/** statement() parses a single statement. Compound statements are handled
+ *  and seen as a "single" statement; local variable declarations are also
+ *  handled as a special case.
  *
- *  This routine is called whenever the parser needs to know what statement
- *  it encounters (i.e. whenever program syntax requires a statement).
+ *  \param lastindent   [in/out, optional] The current indentation level,
+ *                      which may be adjusted in a compound statement.
+ *                      This parameter may be `NULL`.
+ *  \param allow_decl   Whether to allow local variable declarations.
+ *
+ *  \note For statements inside a compound block, `lastindent` should be
+ *        non-`NULL` and `allow_decl` should be `true`. For single-line
+ *        statements, `lastindent` should be `NULL` and `allow_decl` should be
+ *        `false`.
  */
-static void statement(int *lastindent,int allow_decl)
+static void statement(int *lastindent,bool allow_decl)
 {
   int tok,save;
   cell val;
@@ -5907,9 +5948,11 @@ static void statement(int *lastindent,int allow_decl)
     break;
   case '{':
     save=pc_curline;
+    pc_scopelevel+=1;           /* increase compound statement level */
     if (!matchtoken('}'))       /* {} is the empty statement */
       compound(save==pc_curline && freading);
     /* lastst (for "last statement") does not change */
+    pc_scopelevel-=1;           /* restore compound statement level */
     break;
   case ';':
     error(36);                  /* empty statement */
@@ -5997,7 +6040,7 @@ static void statement(int *lastindent,int allow_decl)
 static void compound(bool stmt_sameline)
 {
   int indent=-1;
-  cell save_decl=declared;
+  cell save_decl=lcl_declared;
   int count_stmt=0;
   int block_start=pc_curline; /* save line where the compound block started */
 
@@ -6023,7 +6066,6 @@ static void compound(bool stmt_sameline)
     lex_fetchindent(srcline,p);
   } /* if */
 
-  nestlevel+=1;                 /* increase compound statement level */
   while (!matchtoken('}')){     /* repeat until compound statement is closed */
     if (!freading){
       error(30,block_start);    /* compound block not closed at end of file */
@@ -6036,20 +6078,18 @@ static void compound(bool stmt_sameline)
     } /* if */
   } /* while */
   if (lastst!=tRETURN)
-    destructsymbols(&loctab,nestlevel);
+    destructsymbols(&loctab,pc_scopelevel);
   if (lastst!=tRETURN && lastst!=tGOTO)
-    modstk((int)(declared-save_decl)*pc_cellsize);  /* delete local variable space */
-  testsymbols(&loctab,nestlevel,false,true);        /* look for unused block locals */
-  declared=save_decl;
-  delete_symbols(&loctab,nestlevel,false,true);     /* erase local symbols, but
-                                                     * retain block local labels
-                                                     * (within the function) */
-  nestlevel-=1;                 /* decrease compound statement level */
+    modstk((int)(lcl_declared-save_decl)*pc_cellsize);  /* delete local variable space */
+  testsymbols(&loctab,pc_scopelevel,false,true);        /* look for unused block locals */
+  lcl_declared=save_decl;
+  delete_symbols(&loctab,pc_scopelevel,false,true);     /* erase local symbols, except
+                                                         * the labels (in the function) */
 }
 
 /*  doexpr
  *
- *  Global references: stgidx   (referred to only)
+ *  Global references: stgidx   (read-only)
  */
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
                   int *tag,symbol **symptr,bool chkfuncresult,bool in_test)
@@ -6306,8 +6346,8 @@ static int dofor(void)
   int result,parens;
   int *ptr;
 
-  save_decl=declared;
-  save_nestlevel=nestlevel;
+  save_decl=lcl_declared;
+  save_nestlevel=pc_scopelevel;
   save_endlessloop=endlessloop;
 
   addwhile(wq);
@@ -6319,7 +6359,7 @@ static int dofor(void)
       /* The variable in expr1 of the for loop is at a
        * 'compound statement' level of it own.
        */
-      nestlevel++;
+      pc_scopelevel++;
       declloc(false);           /* declare local variable */
     } else {
       doexpr(true,true,true,true,NULL,NULL,false,false);  /* expression 1 */
@@ -6333,8 +6373,8 @@ static int dofor(void)
    */
   ptr=readwhile();
   assert(ptr!=NULL);
-  ptr[wqBRK]=(int)declared;
-  ptr[wqCONT]=(int)declared;
+  ptr[wqBRK]=(int)lcl_declared;
+  ptr[wqCONT]=(int)lcl_declared;
   jumplabel(skiplab);           /* skip expression 3 1st time */
   setlabel(wq[wqLOOP]);         /* "continue" goes to this label: expr3 */
   setline(true);
@@ -6377,17 +6417,17 @@ static int dofor(void)
   setlabel(wq[wqEXIT]);
   delwhile();
 
-  assert(nestlevel>=save_nestlevel);
-  if (nestlevel>save_nestlevel) {
+  assert(pc_scopelevel>=save_nestlevel);
+  if (pc_scopelevel>save_nestlevel) {
     /* Clean up the space and the symbol table for the local
      * variable in "expr1".
      */
-    destructsymbols(&loctab,nestlevel);
-    modstk((int)(declared-save_decl)*pc_cellsize);
-    testsymbols(&loctab,nestlevel,false,true);  /* look for unused block locals */
-    declared=save_decl;
-    delete_symbols(&loctab,nestlevel,false,true);
-    nestlevel=save_nestlevel;     /* reset 'compound statement' nesting level */
+    destructsymbols(&loctab,pc_scopelevel);
+    modstk((int)(lcl_declared-save_decl)*pc_cellsize);
+    testsymbols(&loctab,pc_scopelevel,false,true);  /* look for unused block locals */
+    lcl_declared=save_decl;
+    delete_symbols(&loctab,pc_scopelevel,false,true);
+    pc_scopelevel=save_nestlevel;     /* reset 'compound statement' nesting level */
   } /* if */
 
   result=endlessloop ? tENDLESS : tFOR;
@@ -6581,7 +6621,7 @@ static void dogoto(void)
      * symbol may no longer be in the symbol table
      */
     if ((sym->usage & uDEFINE)!=0) {
-      if (sym->compound<nestlevel)
+      if (sym->compound<pc_scopelevel)
         destructsymbols(&loctab,sym->compound+1);
     } else {
       //??? test for symbols with sym->compound==nestlevel, test whether these
@@ -6609,7 +6649,7 @@ static void dolabel(void)
   /* since one can jump around variable declarations or out of compound
    * blocks, the stack must be manually adjusted
    */
-  setstk(-declared*pc_cellsize);
+  setstk(-lcl_declared*pc_cellsize);
   sym->usage|=uDEFINE;  /* label is now defined */
 }
 
@@ -6632,15 +6672,15 @@ static symbol *fetchlab(const char *name)
   } else {
     sym=addsym(name,getlabel(),iLABEL,sLOCAL,0,0);
     assert(sym!=NULL);          /* fatal error 103 must be given on error */
-    sym->x.declared=(int)declared;
-    sym->compound=nestlevel;
+    sym->x.declared=(int)lcl_declared;
+    sym->compound=pc_scopelevel;
   } /* if */
   return sym;
 }
 
 /*  doreturn
  *
- *  Global references: rettype  (altered)
+ *  Global references: rettype  (modified)
  */
 static void doreturn(void)
 {
@@ -6648,6 +6688,7 @@ static void doreturn(void)
   int remparams;
   symbol *sym,*sub;
 
+  assert(curfunc!=NULL);
   if (!matchtoken(tTERM)) {
     /* "return <value>" */
     int ident;
@@ -6779,8 +6820,7 @@ static void doreturn(void)
     rettype|=uRETNONE;                  /* function does not return anything */
   } /* if */
   destructsymbols(&loctab,0);           /* call destructor for *all* locals */
-  modstk((int)declared*pc_cellsize);    /* end of function, remove *all*
-                                         * local variables */
+  modstk((int)lcl_declared*pc_cellsize);/* end of function, remove *all* local variables */
   assert(curfunc!=NULL);
   remparams=(strcmp(curfunc->name,_ENTRYFUNC)!=0 && strcmp(curfunc->name,_EXITFUNC)!=0);
   ffret(remparams);
@@ -6795,8 +6835,8 @@ static void dobreak(void)
   needtoken(tTERM);
   if (ptr==NULL)
     return;
-  destructsymbols(&loctab,nestlevel);
-  modstk(((int)declared-ptr[wqBRK])*pc_cellsize);
+  destructsymbols(&loctab,pc_scopelevel);
+  modstk(((int)lcl_declared-ptr[wqBRK])*pc_cellsize);
   jumplabel(ptr[wqEXIT]);
 }
 
@@ -6808,8 +6848,8 @@ static void docont(void)
   needtoken(tTERM);
   if (ptr==NULL)
     return;
-  destructsymbols(&loctab,nestlevel);
-  modstk(((int)declared-ptr[wqCONT])*pc_cellsize);
+  destructsymbols(&loctab,pc_scopelevel);
+  modstk(((int)lcl_declared-ptr[wqCONT])*pc_cellsize);
   jumplabel(ptr[wqLOOP]);
 }
 
@@ -7110,8 +7150,8 @@ static void addwhile(int *ptr)
 {
   int k;
 
-  ptr[wqBRK]=(int)declared;     /* stack pointer (for "break") */
-  ptr[wqCONT]=(int)declared;    /* for "continue", possibly adjusted later */
+  ptr[wqBRK]=(int)lcl_declared;     /* stack pointer (for "break") */
+  ptr[wqCONT]=(int)lcl_declared;    /* for "continue", possibly adjusted later */
   ptr[wqLOOP]=getlabel();
   ptr[wqEXIT]=getlabel();
   if (wq_ptr>=(wq_glb+wqTABSZ-wqSIZE))

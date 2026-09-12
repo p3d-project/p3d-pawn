@@ -4,6 +4,7 @@
  *  o  Include path list
  *  o  Macro definitions (text substitutions)
  *  o  Documentation tags and automatic listings
+ *  o  Symbol attributes that need to be checked later
  *  o  Debug strings
  *
  *  Copyright (c) 2001-2026, CompuPhase and contributors
@@ -20,7 +21,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sclist.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sclist.c 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -168,19 +169,6 @@ static char *get_string(stringlist *root,int index)
   return NULL;
 }
 
-static stringlist *find_string(stringlist *root,const char *string)
-{
-  stringlist *cur;
-
-  assert(root!=NULL);
-  assert(string!=NULL);
-  for (cur=root->next; cur!=NULL; cur=cur->next) {
-    if (strcmp(cur->text,string)==0)
-      return cur;
-  } /* for */
-  return NULL;
-}
-
 static int find_string_idx(stringlist *root,const char *string)
 {
   stringlist *cur;
@@ -231,7 +219,7 @@ SC_FUNC void delete_stringtable(stringlist *root)
 
 
 /* ----- alias table --------------------------------------------- */
-static stringpair alias_tab = {NULL, NULL, NULL, 0};   /* alias table */
+static stringpair alias_tab={0};   /* alias table */
 
 SC_FUNC stringpair *insert_alias(const char *name,const char *alias)
 {
@@ -262,7 +250,7 @@ SC_FUNC void delete_aliastable(void)
 }
 
 /* ----- include paths list -------------------------------------- */
-static stringlist includepaths = {NULL, NULL};  /* directory list for include files */
+static stringlist includepaths={0};  /* directory list for include files */
 
 SC_FUNC stringlist *insert_path(const char *path)
 {
@@ -284,7 +272,7 @@ SC_FUNC void delete_pathtable(void)
 /* ----- text substitution patterns ------------------------------ */
 #if !defined NO_DEFINE
 
-static stringpair substpair = { NULL, NULL, NULL, 0};  /* list of substitution pairs */
+static stringpair substpair={0};  /* list of substitution pairs */
 
 static stringpair *substindex['z'-PUBLIC_CHAR+1]; /* quick index to first character */
 static void adjustindex(char c)
@@ -350,7 +338,7 @@ SC_FUNC void delete_substtable(void)
 
 
 /* ----- input file list (explicit files) ------------------------ */
-static stringlist sourcefiles = {NULL, NULL};
+static stringlist sourcefiles={0};
 
 SC_FUNC stringlist *insert_sourcefile(const char *string)
 {
@@ -370,7 +358,7 @@ SC_FUNC void delete_sourcefiletable(void)
 
 
 /* ----- parsed file list (explicit + included files) ------------ */
-static stringlist inputfiles = {NULL, NULL};
+static stringlist inputfiles={0};
 
 SC_FUNC stringlist *insert_inputfile(const char *path)
 {
@@ -394,43 +382,202 @@ SC_FUNC void delete_inputfiletable(void)
 }
 
 
-/* ----- symbols that are undefined in #if expressions ----------- */
-static stringlist undefsymbols = {NULL, NULL};
+/* ----- helper function for symbol reference lists -------------- */
+typedef struct s_symbolref {
+  struct s_symbolref *next;
+  char name[sNAMEMAX+1];
+  short scope;          /* local nesting level */
+  short filenr;         /* reference to the location of the definition */
+  int linenr;
+  bool handled;
+} symbolref;
 
-SC_FUNC stringlist *insert_undefsymbol(const char *symbolname,int linenr)
+static symbolref *symbolref_find(const symbolref *root,const char *name,short scope)
 {
-  stringlist *item;
-  char symname[sNAMEMAX+16];
-  sprintf(symname,"%x %s",linenr,symbolname);
-  item=find_string(&undefsymbols,symname);
-  if (item==NULL)
-    item=insert_string(&undefsymbols,symname,0);
+  assert(root!=NULL);
+  assert(name!=NULL);
+  symbolref *item=root->next;
+  while (item && !(strcmp(item->name,name)==0 && item->scope==scope))
+    item=item->next;
   return item;
 }
 
-SC_FUNC const char *get_undefsymbol(int index,int *linenr)
+static symbolref *symbolref_get(const symbolref *root,int index)
 {
-  const char *ptr=get_string(&undefsymbols,index);
-  if (ptr!=NULL) {
-    if (linenr!=NULL)
-      *linenr=(int)strtol(ptr,NULL,16);
-    ptr=strchr(ptr,' ');
-    assert(ptr!=NULL);
-    ptr++;  /* skip space */
-  }
-  return ptr;
+  assert(root!=NULL);
+  assert(index>=0);
+  symbolref *item=root->next;
+  while (item!=NULL && index>0) {
+    item=item->next;
+    index--;
+  } /* while */
+  return item;
+}
+
+static symbolref *symbolref_add(symbolref *root,const char *name,short filenr,int linenr,short scope)
+{
+  assert(root!=NULL);
+  symbolref *item=symbolref_find(root,name,scope);
+  if (!item) {
+    item=malloc(sizeof(symbolref));
+    if (item) {
+      memset(item,0,sizeof(symbolref));
+      assert(name!=NULL && strlen(name)<countof(item->name));
+      strlcpy(item->name,name,countof(item->name));
+      item->filenr=filenr;
+      item->linenr=linenr;
+      item->scope=scope;
+      item->handled=false;
+      item->next=root->next;
+      root->next=item;
+    } /* if */
+  } /* if */
+  return item;
+}
+
+static void symbolref_delete(symbolref *root,short scope)
+{
+  assert(root!=NULL);
+  while (root->next) {
+    symbolref *item=root->next;
+    if (item->scope>=scope) {
+      root->next=item->next;  /* unlink */
+      free(item);
+    } else {
+      root=root->next;
+    } /* if */
+  } /* while */
+}
+
+/* ----- symbols that are undefined in #if expressions ----------- */
+static symbolref undefsymbols={0};
+
+SC_FUNC bool insert_undefsymbol(const char *symbolname,short filenr,int linenr)
+{
+  return (symbolref_add(&undefsymbols,symbolname,filenr,linenr,0)!=NULL);
+}
+
+SC_FUNC const char *get_undefsymbol(int index,short *filenr,int *linenr)
+{
+  symbolref *item=symbolref_get(&undefsymbols,index);
+  if (!item)
+    return NULL;
+  if (filenr!=NULL)
+    *filenr=item->filenr;
+  if (linenr!=NULL)
+    *linenr=item->linenr;
+  return item->name;
 }
 
 SC_FUNC void delete_undefsymboltable(void)
 {
-  delete_stringtable(&undefsymbols);
+  symbolref_delete(&undefsymbols,0);
   assert(undefsymbols.next==NULL);
+}
+
+
+/* ----- deferred symbol checks information ---------------------- */
+static symbolref unusedvar_root={0};
+
+SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short scope)
+{
+  return (symbolref_add(&unusedvar_root,name,filenr,linenr,scope)!=NULL);
+}
+
+/** get_unusedvar() returns the name and location of declaration of a symbol
+ *  that is in the list for unused variables.
+ *
+ *  \param index        The sequence number of the variable to return.
+ *  \param filenr       [out, optional] The file number in which the `#pragma`
+ *                      for the unused variable appears. This parameter may be
+ *                      `NULL`.
+ *  \param linenr       [out, optional] The line number for the `#pragma`.
+ *                      This parameter may be `NULL`.
+ *  \param scope        [out, optional] The nesting scope for the `#pragma`.
+ *  \param handled      [out, optional] The flag whether this unused variable is
+ *                      marked "handled".
+ *
+ *  \return The name of the variable, or `NULL` if no valid variable (with valid
+ *          scope) at that index.
+ */
+SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *scope,bool *handled)
+{
+  symbolref *item=symbolref_get(&unusedvar_root,index);
+  if (!item)
+    return NULL;
+  if (filenr!=NULL)
+    *filenr=item->filenr;
+  if (linenr!=NULL)
+    *linenr=item->linenr;
+  if (scope!=NULL)
+    *scope=item->scope;
+  if (handled!=NULL)
+    *handled=item->handled;
+  return item->name;
+}
+
+/** find_unusedvar() returns whether a symbol with a specific name and scope is
+ *  in the list for unused variables, and returns the location of its
+ *  declaration if so.
+ *
+ *  \param name         [in] The name of the symbol.
+ *  \param scope        The nesting scope that is filtered on (see notes below).
+ *  \param sethandled   Whether the "unused" symbol must be marked as "handled"
+ *                      after it is found.
+ *  \param filenr       [out, optional] The file number in which the `#pragma`
+ *                      for the unused variable appears. This parameter may be
+ *                      `NULL`.
+ *  \param linenr       [out, optional] The line number for the `#pragma`.
+ *                      This parameter may be `NULL`.
+ *
+ *  \return `true` if the symbol is found, `false` otherwise.
+ *
+ *  \note If `scope` is 0, only variables with scope 0 are returned. If `scope`
+ *        is non-zero, all variables with the same or lower scope are returned,
+ *        (but with the exception of global variables, at scope 0). The
+ *        rationale is that this is also the search order for local variables,
+ *        so this maps the `#pragma unused` declarations in the same way as
+ *        local variables.
+ */
+SC_FUNC bool find_unusedvar(const char *name,short scope,bool sethandled,short *filenr,int *linenr)
+{
+  symbolref *match=NULL;
+  symbolref *item;
+  for (int idx=0; (item=symbolref_get(&unusedvar_root,idx))!=NULL; idx++) {
+    if (strcmp(item->name,name)==0) {
+      /* name matches, check scope */
+      if (item->scope==scope) {
+        match=item;     /* exact match found */
+        break;          /* no need to search further */
+      } /* if */
+      if (item->scope<scope && item->scope>0 && (match==NULL || item->scope>match->scope))
+        match=item;     /* non-exact, but better match */
+    } /* if */
+  } /* for */
+  if (match==NULL)
+    return false;       /* no match found */
+  if (filenr!=NULL)
+    *filenr=item->filenr;
+  if (linenr!=NULL)
+    *linenr=item->linenr;
+  if (sethandled)
+    item->handled=true;
+  return true;
+}
+
+/** delete_unusedvartable() removes all items from the list that have a scope
+ *  that is equal or higher than the `scope` parameter.
+ */
+SC_FUNC void delete_unusedvartable(short scope)
+{
+  symbolref_delete(&unusedvar_root,scope);
+  assert(scope>0 || unusedvar_root.next==NULL);
 }
 
 
 /* ----- documentation tags -------------------------------------- */
 #if !defined PAWN_LIGHT
-static stringlist docstrings = {NULL, NULL};
+static stringlist docstrings={0};
 
 SC_FUNC stringlist *insert_docstring(const char *string,int append)
 {
@@ -456,7 +603,7 @@ SC_FUNC void delete_docstringtable(void)
 
 
 /* ----- autolisting --------------------------------------------- */
-static stringlist autolist = {NULL, NULL};
+static stringlist autolist={0};
 
 /** insert_autolist() inserts a string from a documentation comment. */
 SC_FUNC stringlist *insert_autolist(const char *string)
@@ -481,7 +628,7 @@ SC_FUNC void delete_autolisttable(void)
 
 
 /* ----- heap usage list ----------------------------------------- */
-static valuepair heaplist = {NULL, 0, 0};
+static valuepair heaplist={0};
 
 SC_FUNC valuepair *push_heaplist(long first, long second)
 {
@@ -527,8 +674,18 @@ SC_FUNC void delete_heaplisttable(void)
 
 
 /* ----- literal string/array list, for merging duplicate strings ----- */
-static arraymerge litarray_list = { NULL, 0, 0, NULL };
+static arraymerge litarray_list={0};
 
+/** litarray_add() copies data from the literal queue in local storage, for the
+ *  purpose of merging identical literal strings.
+ *
+ *  \param baseaddr     The index in the DATA section, before the literal queue
+ *                      is appended. This is a cell offset (so must be
+ *                      multiplied with the cell size to get a byte offset from
+ *                      the DATA section).
+ *  \param offset       The index in the literal queue where the array starts.
+ *  \param size         The size (in cells) of the array.
+ */
 SC_FUNC void litarray_add(cell baseaddr,cell offset,cell size)
 {
   arraymerge *item=(arraymerge*)malloc(sizeof(arraymerge));
@@ -549,6 +706,18 @@ SC_FUNC void litarray_add(cell baseaddr,cell offset,cell size)
   }
 }
 
+/** litarray_find() looks up an array in the literal queue from data saved
+ *  earlier.
+ *
+ *  \param offset       The index in the literal queue where the array starts.
+ *                      This is a cell offset (so must be multiplied with the
+ *                      cell size to get a byte offset in the literal queue).
+ *  \param size         The size (in cells) of the array.
+ *
+ *  \return The offset of the matching (earlier) literal array in the DATA
+ *          section. This is a cell offset and must be multiplied with the cell
+ *          size to get an address (relative to DATA).
+ */
 SC_FUNC cell litarray_find(cell offset,cell size)
 {
   arraymerge *item;
@@ -684,3 +853,4 @@ SC_FUNC void delete_dbgstringtable(void)
   delete_stringtable(&dbgstrings);
   assert(dbgstrings.next==NULL);
 }
+

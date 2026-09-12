@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sc7.c 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -143,9 +143,9 @@ SC_FUNC void stgbuffer_cleanup(void)
  *                      reordered order, it identifies the start of an
  *                      expression; the "idx" value is the argument position
  *
- *  Global references: stgidx  (altered)
- *                     stgbuf  (altered)
- *                     staging (referred to only)
+ *  Global references: stgidx  (modified)
+ *                     stgbuf  (modified)
+ *                     staging (read-only)
  */
 SC_FUNC void stgmark(char mark)
 {
@@ -191,9 +191,9 @@ static int filewrite(char *str)
  *  Even when writing to the output file directly, all strings are buffered
  *  until a whole line is complete.
  *
- *  Global references: stgidx  (altered)
- *                     stgbuf  (altered)
- *                     staging (referred to only)
+ *  Global references: stgidx  (modified)
+ *                     stgbuf  (modified)
+ *                     staging (read-only)
  */
 SC_FUNC void stgwrite(const char *st)
 {
@@ -225,9 +225,9 @@ SC_FUNC void stgwrite(const char *st)
  *
  *  \param index        The starting point in the staging buffer.
  *
- *  Global references: stgidx  (altered)
- *                     stgbuf  (referred to only)
- *                     staging (referred to only)
+ *  Global references: stgidx  (modified)
+ *                     stgbuf  (read-only)
+ *                     staging (read-only)
  */
 SC_FUNC void stgout(unsigned index)
 {
@@ -345,7 +345,7 @@ static int stgstring(char *start,char *end)
  *
  *  Scraps code from the staging buffer by resetting "stgidx" to "index".
  *
- *  Global references: stgidx (altered)
+ *  Global references: stgidx (modified)
  *                     staging (reffered to only)
  */
 SC_FUNC void stgdel(unsigned index,cell code_index)
@@ -369,9 +369,9 @@ SC_FUNC int stgget(unsigned *index,cell *code_index)
  *  the index (`stgidx`) is set to 0 (it should already be 0). In either case,
  *  the staging buffer (`stgbuf`) is cleared.
  *
- *  Global references: staging  (altered)
- *                     stgidx   (altered)
- *                     stgbuf   (contents altered)
+ *  Global references: staging  (modified)
+ *                     stgidx   (modified)
+ *                     stgbuf   (contents modified)
  */
 SC_FUNC void stgset(bool onoff)
 {

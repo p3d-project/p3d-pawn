@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sc4.c 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -114,10 +114,10 @@ SC_FUNC void writeleader(symbol *root,int *lbl_nostate,int *lbl_ignorestate)
 /*  writetrailer
  *  Not much left of this once important function.
  *
- *  Global references: pc_stksize       (referred to only)
- *                     sc_dataalign     (referred to only)
- *                     code_idx         (altered)
- *                     glb_declared     (altered)
+ *  Global references: pc_stksize       (read-only)
+ *                     sc_dataalign     (read-only)
+ *                     code_idx         (modified)
+ *                     glb_declared     (modified)
  */
 SC_FUNC void writetrailer(void)
 {
@@ -424,7 +424,7 @@ SC_FUNC void markexpr(optmark type,const char *name,cell offset)
 
 /*  startfunc   - declare a CODE entry point (function start)
  *
- *  Global references: funcstatus  (referred to only)
+ *  Global references: funcstatus  (read-only)
  */
 SC_FUNC void startfunc(const char *fname,int index)
 {
@@ -962,7 +962,7 @@ SC_FUNC void ffcall(symbol *sym,const char *label,int numargs)
 
 /*  Return from function
  *
- *  Global references: funcstatus  (referred to only)
+ *  Global references: funcstatus  (read-only)
  */
 SC_FUNC void ffret(int remparams)
 {

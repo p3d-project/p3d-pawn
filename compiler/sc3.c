@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc3.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sc3.c 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -55,8 +55,8 @@ static int primary(value *lval,int *symtok);
 static void clear_value(value *lval);
 static void callfunction(symbol *sym,value *lval_result,int matchparanthesis);
 static int dbltest(void (*oper)(),const value *lval1,const value *lval2);
-static int commutative(void (*oper)());
-static int constant(value *lval);
+static bool commutative(void (*oper)());
+static bool constant(value *lval);
 
 static char lastsymbol[sNAMEMAX+1]; /* name of last function/variable */
 static int bitwise_opercount;       /* count of bitwise operators in an expression */
@@ -529,14 +529,14 @@ static cell checkarrays(value *lval1,value *lval2)
         ltlength=1;                     /* assume destination can hold 1 cell */
       else
         error(46,lval1->sym->name);     /* unknown array size */
-    }
+    } /* if */
     /* if length is negative, it means that lval2 is a literal string; the
        destination size may be smaller than the destination array (provided
        that the destination array is not a symbolic array, checked above) */
     if (length<0) {
       length=-length;
       exactmatch=false;
-    }
+    } /* if */
   } /* if */
   if (lval1->sym->dim.array.level!=level)
     return error(48);           /* array dimensions must match */
@@ -726,16 +726,20 @@ static void plnge2(void (*oper)(void),void (*arrayoper)(cell),
       rvalue(lval2);
     if (lval2->ident==iCONSTEXPR) { /* constant on right side */
       if (commutative(oper)) {      /* test for commutative operators */
-        value lvaltmp = {0};
-        stgdel(index,cidx);         /* scratch pushreg() and constant fetch (then
-                                     * fetch the constant again */
+        /* code for the left operand has been generated and its expression
+         * result has been pushed on the stack, but the right operand is a
+         * constant and the operator is commutative, so scrap the precautionary
+         * "push" of the primary register and the read the constant directly
+         * into the secondary register.
+         */
+        stgdel(index,cidx);
         ldconst(lval2->constval*dbltest(oper,lval1,lval2),sALT);
         /* now, the primary register has the left operand and the secondary
          * register the right operand; swap the "lval" variables so that lval1
          * is associated with the secondary register and lval2 with the
          * primary register, as is the "normal" case.
          */
-        lvaltmp=*lval1;
+        value lvaltmp=*lval1;
         *lval1=*lval2;
         *lval2=lvaltmp;
       } else {
@@ -920,14 +924,14 @@ static int inside_preproc(void)
 /** sc_getstateid() gets the automaton and state structures by scanning the
  *  input stream.
  *
- *  \param automaton  [out] A pointer that will be set to the structure for the
- *                    automaton.
- *  \param state      [out] A pointer that will be set to the structure for the
- *                    state.
- *  \param fsaname    [out] A pointer to the name of the state; this parameter
- *                    may be set to `NULL`.
- *  \param statename  [out] A pointer to the name of the state; this parameter
- *                    may be set to `NULL`.
+ *  \param automaton    [out] A pointer that will be set to the structure for
+ *                      the automaton.
+ *  \param state        [out] A pointer that will be set to the structure for
+ *                      the state.
+ *  \param fsaname      [out, optional] A pointer to the name of the state;
+ *                      this parameter may be set to `NULL`.
+ *  \param statename    [out, optional] A pointer to the name of the state;
+ *                      this parameter may be set to `NULL`.
  *
  *  \return `true` on success, `false` on failure.
  *
@@ -1569,7 +1573,7 @@ static int hier2(value *lval)
     if (!val && find_subst(st,(int)strlen(st))!=NULL)
       val=1;
     if (!val)
-      insert_undefsymbol(st,pc_curline); /* if the symbol is not defined, add it to the "undefined symbols" list */
+      insert_undefsymbol(st,fcurrent,pc_curline); /* if the symbol is not defined, add it to the "undefined symbols" list */
     clear_value(lval);
     lval->ident=iCONSTEXPR;
     lval->constval= val;
@@ -2222,9 +2226,9 @@ static int primary(value *lval,int *symtok)
   if (constant(lval)==0) {
     error(29);          /* expression error, assumed 0 */
     ldconst(0,sPRI);    /* load 0 */
-  /* Normally, gobble up unrecognized symbols, but make an exception for '}',
-   *  because it closes compound statements.
-   */
+    /* Normally, gobble up unrecognized symbols, but make an exception for '}',
+     * because it closes compound statements.
+     */
     if (*symtok=='}')
       lexpush();
   } /* if */
@@ -2809,7 +2813,7 @@ static int nesting=0;
    */
   if (curfunc!=NULL) {
     long totalsize;
-    totalsize=(long)declared+decl_heap+1; /* local variables & return value size,
+    totalsize=(long)lcl_declared+decl_heap+1; /* local variables & return value size,
                                            * +1 for PROC opcode */
     if (lval_result->ident==iREFARRAY)
       totalsize++;                    /* add hidden parameter (on the stack) */
@@ -2855,9 +2859,8 @@ static int dbltest(void (*oper)(),const value *lval1,const value *lval2)
   return pc_cellsize;
 }
 
-/*  commutative
- *
- *  Test whether an operator is commutative, i.e. x oper y == y oper x.
+/** commutative() test whether an operator is commutative,
+ *    i.e. x oper y == y oper x.
  *  Commutative operators are: +  (addition)
  *                             *  (multiplication)
  *                             == (equality)
@@ -2865,30 +2868,24 @@ static int dbltest(void (*oper)(),const value *lval1,const value *lval2)
  *                             &  (bitwise and)
  *                             ^  (bitwise xor)
  *                             |  (bitwise or)
- *
- *  If in an expression, code for the left operand has been generated and
- *  the right operand is a constant and the operator is commutative, the
- *  precautionary "push" of the primary register is scrapped and the constant
- *  is read into the secondary register immediately.
  */
-static int commutative(void (*oper)())
+static bool commutative(void (*oper)())
 {
   return oper==ob_add || oper==os_mult
          || oper==ob_eq || oper==ob_ne
          || oper==ob_and || oper==ob_xor || oper==ob_or;
 }
 
-/*  constant
+/** constant() generates code to fetch a number, a literal character (which is
+ *  returned by lex() as a number as well) or a literal string (lex() stores the
+ *  strings in the literal queue).
  *
- *  Generates code to fetch a number, a literal character (which is returned
- *  by lex() as a number as well) or a literal string (lex() stores the
- *  strings in the literal queue). If the operand was a number, it is stored
- *  in lval->constval.
+ *  If the operand was a number, it is stored in lval->constval.
  *
  *  The function returns 1 if the token was a constant or a string, 0
  *  otherwise.
  */
-static int constant(value *lval)
+static bool constant(value *lval)
 {
   int tok,ident;
   unsigned index;
@@ -2926,7 +2923,6 @@ static int constant(value *lval)
                                  * array assignment). */
     lval->ispacked= (tok==tPACKSTRING);
     lastsymbol[0]='\0';
-    //??? add this to the list of "constant literal arrays"
   } else if (tok=='{' || tok=='[') {
     int match,packcount,tag,lasttag=-1;
     cell packitem;
@@ -2974,7 +2970,6 @@ static int constant(value *lval)
     lval->constval=litidx-val;  /* constval == the size of the literal array */
     lval->ispacked= (match=='}'); /* flag packed array */
     lastsymbol[0]='\0';
-    //??? add this to the list of "constant literal arrays"
   } else {
     return false;               /* no, it cannot be interpreted as a constant */
   } /* if */

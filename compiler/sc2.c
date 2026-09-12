@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sc2.c 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -228,9 +228,9 @@ static void check_empty(const unsigned char *lptr)
  *  sets some options. This routine doesn't use lex(), since lex() doesn't
  *  recognize file names (and directories).
  *
- *  Global references: inpf     (altered)
- *                     inpfname (altered)
- *                     lexptr   (altered)
+ *  Global references: inpf     (modified)
+ *                     inpfname (modified)
+ *                     lexptr   (modified)
  */
 static void doinclude(int silent)
 {
@@ -309,7 +309,7 @@ static void doinclude(int silent)
  *  can be read from the file, readline() attempts to pop off the previous file
  *  from the stack. If that fails too, it sets "freading" to false.
  *
- *  Global references: inpf,pc_curline,inpfname,freading,icomment (altered)
+ *  Global references: inpf,pc_curline,inpfname,freading,icomment (modified)
  */
 static void readline(unsigned char *line,int append)
 {
@@ -477,7 +477,7 @@ static int isquotednumber(const unsigned char *line,const unsigned char *head)
  *  The function also detects (and manages) "documentation comments". The
  *  global variable "icomment" is set to 2 for documentation comments.
  *
- *  Global references: icomment  (altered)
+ *  Global references: icomment  (modified)
  */
 static void stripcom(unsigned char *line)
 {
@@ -952,12 +952,12 @@ static int preproc_expr(cell *val,int *tag)
  *  does not handle escape characters. The input string can be quoted or
  *  unquoted.
  *
- *  \param dest     [out] The outpp_getstringut buffer. This parameter may be
- *                  `NULL`, in which case no output is stored (but the string is
- *                  still parsed).
- *  \param max      The maximum size of the `dest` buffer. This should be 0 if
- *                  `dest` is `NULL`.
- *  \param line     [in] The buffer to read the string from.
+ *  \param dest         [out, optional] The output buffer. This parameter may be
+ *                      `NULL`, in which case no output is stored (but the
+ *                      string is still parsed).
+ *  \param max          The maximum size of the `dest` buffer. This should be 0
+ *                      if `dest` is `NULL`.
+ *  \param line         [in] The buffer to read the string from.
  *
  *  \return A pointer to just behind the closing quote or to the other character
  *          that caused the input to be ended.
@@ -1023,8 +1023,11 @@ enum {
  *     CMD_IF           the line contains a #if/#else/#endif directive
  *     CMD_DIRECTIVE    the line contains some other compiler directive
  *
- *  Global variables: iflevel, ifstack (altered)
- *                    lexptr    (altered)
+ *  Global variables: iflevel, ifstack (modified)
+ *                    lexptr        (modified)
+ *                    fcurrent      (read-only)
+ *                    pc_curline    (read-only)
+ *                    pc_scopelevel (read-only)
  */
 static int command(void)
 {
@@ -1081,7 +1084,7 @@ static int command(void)
         if (sym!=NULL || find_subst(str,(int)strlen(str))!=NULL)
           val=1;
         if (!val)
-          insert_undefsymbol(str,pc_curline); /* if the symbol is not defined, add it to the "undefined symbols" list */
+          insert_undefsymbol(str,fcurrent,pc_curline); /* if the symbol is not defined, add it to the "undefined symbols" list */
         if (tok==tpIFNDEF)
           val=!val;
       } else {
@@ -1318,25 +1321,14 @@ static int command(void)
           char name[sNAMEMAX+1];
           int i,comma;
           do {
-            symbol *sym;
-            /* get the name */
+            /* get the name, store it together with the current line number and
+               scope */
             while (*lexptr<=' ' && *lexptr!='\0')
               lexptr++;
             for (i=0; i<(int)countof(name) && alphanum(*lexptr); i++,lexptr++)
               name[i]=*lexptr;
             name[i]='\0';
-            /* get the symbol */
-            sym=findloc(name);
-            if (sym==NULL)
-              sym=findglb(name,sSTATEVAR);
-            if (sym!=NULL) {
-              sym->usage |= uREAD;
-              if (sym->ident==iVARIABLE || sym->ident==iREFERENCE
-                  || sym->ident==iARRAY || sym->ident==iREFARRAY)
-                sym->usage |= uWRITTEN;
-            } else {
-              error(17,name);     /* undefined symbol */
-            } /* if */
+            add_unusedvar(name,fcurrent,pc_curline,pc_scopelevel);
             /* see if a comma follows the name */
             while (*lexptr<=' ' && *lexptr!='\0')
               lexptr++;
@@ -1916,9 +1908,9 @@ static int scanellipsis(const unsigned char *lptr)
  *  preprocess() if a new line must be read, preprocess() calls command(),
  *  which at his turn calls lex() to identify the token.
  *
- *  Global references: lexptr   (altered)
- *                     srcline  (altered)
- *                     freading (referred to only)
+ *  Global references: lexptr   (modified)
+ *                     srcline  (modified)
+ *                     freading (read-only)
  */
 SC_FUNC void preprocess(void)
 {
@@ -2094,10 +2086,10 @@ SC_FUNC int lex_adjusttabsize(int matchindent)
  *  in global variables. This allows a token to be examined twice. If "_pushed"
  *  is true, this information is returned.
  *
- *  Global references: lexptr        (altered)
- *                     litidx        (referred to only)
- *                     cached_tok, cached_val, cached_str
- *                     is_cached
+ *  Global references: lexptr        (modified)
+ *                     litidx        (read-only)
+ *                     cached_tok, cached_val, cached_str (modified)
+ *                     is_cached     (modified)
  */
 
 static bool is_cached;
@@ -2505,10 +2497,12 @@ SC_FUNC int matchtoken(int token)
  *  matchtoken() or needtoken(). It does no harm using this routine after a call
  *  to lex(), but lex() already returns the same information.
  *
- *  \param val    [out] Set to the cached numeric value, as parsed by the
- *                earlier call to lex(). This parameter may be set to `NULL`.
- *  \param str    [out] Set to the cached text, as parsed by the earlier call to
- *                lex(). This parameter may be set to `NULL`.
+ *  \param val          [out, optional] Set to the cached numeric value,
+ *                      as parsed by the earlier call to lex(). This parameter
+ *                      may be set to `NULL`.
+ *  \param str          [out, optional] Set to the cached text, as parsed by the
+ *                      earlier call to lex(). This parameter may be set to
+ *                      `NULL`.
  *
  *  \return The cached token value (normally, this one is already known).
  */
@@ -2597,7 +2591,7 @@ SC_FUNC bool skiptotoken(int token,bool pushback)
  *  If the parameter "end: is true, match() requires that the first character
  *  behind the recognized token is non-alphanumeric.
  *
- *  Global references: lexptr (altered)
+ *  Global references: lexptr (modified)
  */
 static int match(char *st,int end)
 {
@@ -2638,8 +2632,8 @@ static void chk_grow_litq(void)
  *  Adds a value at the end of the literal queue. The literal queue is used
  *  for literal strings used in functions and for initializing array variables.
  *
- *  Global references: litidx  (altered)
- *                     litq    (altered)
+ *  Global references: litidx  (modified)
+ *                     litq    (modified)
  */
 SC_FUNC void litadd(cell value)
 {
@@ -2653,8 +2647,8 @@ SC_FUNC void litadd(cell value)
  *  Inserts a value into the literal queue. This is sometimes necessary for
  *  initializing multi-dimensional arrays.
  *
- *  Global references: litidx  (altered)
- *                     litq    (altered)
+ *  Global references: litidx  (modified)
+ *                     litq    (modified)
  */
 SC_FUNC void litinsert(cell value,int pos)
 {
@@ -2914,12 +2908,12 @@ SC_FUNC void delete_symbol(symbol *root,symbol *sym)
   free_symbol(sym);
 }
 
-SC_FUNC void delete_symbols(symbol *root,int level,int delete_labels,int delete_functions)
+SC_FUNC void delete_symbols(symbol *root,int level,bool delete_labels,bool delete_functions)
 {
   symbol *base;
   symbol *sym,*parent_sym,*child_sym;
   statelist *stateptr;
-  int mustdelete;
+  bool mustdelete;
 
   /* erase only the symbols with a deeper nesting level than the
    * specified nesting level
@@ -2948,7 +2942,7 @@ SC_FUNC void delete_symbols(symbol *root,int level,int delete_labels,int delete_
       break;
     case iREFARRAY:
       /* a global iREFARRAY symbol is the return value of a function: delete
-       * this only if "globals" must be deleted; other iREFARRAY instances
+       * this only if functions must be deleted; other iREFARRAY instances
        * (locals) are also deleted
        */
       mustdelete=delete_functions;

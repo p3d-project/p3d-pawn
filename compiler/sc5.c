@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sc5.c 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #include <assert.h>
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -73,10 +73,10 @@ static int warnignore;  /* line number for warning to ignore (when error wal als
  *  errors are ignored until lex() finds a semicolon or a keyword
  *  (lex() resets "errflag" in that case).
  *
- *  Global references: inpfname   (reffered to only)
- *                     pc_curline (reffered to only)
- *                     fcurrent   (reffered to only)
- *                     errflag    (altered)
+ *  Global references: inpfname   (read-only)
+ *                     pc_curline (read-only)
+ *                     fcurrent   (read-only)
+ *                     errflag    (modified)
  */
 SC_FUNC int error(unsigned long number,...)
 {

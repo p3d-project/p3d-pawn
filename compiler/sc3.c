@@ -2963,11 +2963,15 @@ static bool constant(value *lval)
     } while (matchtoken(','));
     if (packcount!=0 && match=='}')
       litadd(packitem);         /* store final collected values */
+    /* take the size now: on a missing ']' or '}', needtoken() clears the
+     * literal pool, and litidx no longer tells how many values were stored
+     */
+    cell size=litidx-val;
     if (!needtoken(match))
       skiptotoken(match,false); /* skip all until ']'/'}' or end of expression */
     ldconst((val+glb_declared)*pc_cellsize,sPRI);
     lval->ident=iARRAY;         /* pretend this is a global array */
-    lval->constval=litidx-val;  /* constval == the size of the literal array */
+    lval->constval=size;        /* constval == the size of the literal array */
     lval->ispacked= (match=='}'); /* flag packed array */
     lastsymbol[0]='\0';
   } else {

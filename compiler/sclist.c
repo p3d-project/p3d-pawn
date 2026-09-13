@@ -557,11 +557,11 @@ SC_FUNC bool find_unusedvar(const char *name,short scope,bool sethandled,short *
   if (match==NULL)
     return false;       /* no match found */
   if (filenr!=NULL)
-    *filenr=item->filenr;
+    *filenr=match->filenr;
   if (linenr!=NULL)
-    *linenr=item->linenr;
+    *linenr=match->linenr;
   if (sethandled)
-    item->handled=true;
+    match->handled=true;
   return true;
 }
 

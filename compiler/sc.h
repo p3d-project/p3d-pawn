@@ -246,6 +246,7 @@ typedef struct s_symbol {
  */
 #define flgDEPRECATED 0x01  /* symbol is deprecated (avoid use) */
 #define flgENTRYPOINT 0x02  /* symbol is an entry point for a program */
+#define flgARGUMENT   0x04  /* symbol is a function argument */
 
 #define uTAGOF    0x40  /* set in the "hasdefault" field of the arginfo struct */
 #define uSIZEOF   0x80  /* set in the "hasdefault" field of the arginfo struct */

@@ -2927,6 +2927,10 @@ SC_FUNC void delete_symbols(symbol *root,int level,bool delete_labels,bool delet
       base=sym;                 /* skip the symbol */
       continue;
     } /* if */
+    if ((sym->flags & flgARGUMENT)!=0 && !delete_labels) {
+      base=sym;                 /* arguments, like labels, go with the function */
+      continue;
+    } /* if */
     switch (sym->ident) {
     case iLABEL:
       mustdelete=delete_labels;

@@ -4704,8 +4704,10 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
      * they are declared before that block opens; for an array, the level must
      * also be set on the child symbols of its sub-dimensions
      */
-    for (symbol *sub=argsym; sub!=NULL; sub=finddepend(sub))
+    for (symbol *sub=argsym; sub!=NULL; sub=finddepend(sub)) {
       sub->compound=1;
+      sub->flags|=flgARGUMENT;
+    } /* for */
     if (ident==iREFERENCE)
       argsym->usage|=uREAD;     /* because references are passed back */
     if (fpublic)
@@ -5527,6 +5529,8 @@ static bool testsymbols(const symbol *root,short level,bool testlabs,bool testco
     assert(level==0 && sym->compound==0 || level>0 && sym->compound>0);
     if (sym->compound<level)
       continue;
+    if ((sym->flags & flgARGUMENT)!=0 && !testlabs)
+      continue;   /* arguments belong to the function, like labels: tested at its end */
     bool marked_unused=find_unusedvar(sym->name,level,true,NULL,NULL);
     switch (sym->ident) {
     case iLABEL:
@@ -5584,6 +5588,17 @@ static bool testsymbols(const symbol *root,short level,bool testlabs,bool testco
         insert_dbgsymbol(sym);
     } /* if */
   } /* for */
+
+  /* Level 1 is the level of the function as well as of its top block: the
+   * arguments and labels that live there are tested at the end of the
+   * function, and so the "#pragma unused" entries of that level are resolved
+   * then, not when the top block closes.
+   */
+  if (level==1 && !testlabs) {
+    errorset(sEXPRRELEASE,0);   /* clear error data */
+    errorset(sRESET,0);
+    return entry;
+  } /* if */
 
   /* also check the list of symbol names for which a "#pragma unused" was set,
    * but for which a declaration is missing

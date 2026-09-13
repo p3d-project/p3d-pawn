@@ -6940,7 +6940,12 @@ static void dostate(void)
      * since the report is built after the first compile pass, create a dummy
      * state, so that the transitions can be documented
      */
-    if (sc_status==statBROWSE) {
+    /* sc_getstateid() also fails on a syntax error, before it has read any
+     * name; the state name is then empty, and there is no transition to
+     * document (a dummy state without a name would only trip the checks
+     * below)
+     */
+    if (sc_status==statBROWSE && statename[0]!='\0') {
       memset(&dummyautomaton,0,sizeof dummyautomaton);
       assert(automaton==NULL || strcmp(automaton->name,fsaname)==0);
       assert(strlen(fsaname)<=sNAMEMAX);

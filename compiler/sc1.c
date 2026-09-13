@@ -5594,9 +5594,27 @@ static bool testsymbols(const symbol *root,short level,bool testlabs,bool testco
   bool handled;
   for (int idx=0; (name=get_unusedvar(idx,&filenr,&linenr,&scope,&handled)); idx++) {
     if (!handled && scope>=level) {
-      errorset(sSETFILE,filenr);
-      errorset(sSETLINE,linenr);
-      error(17,name);   /* undefined symbol */
+      /* No symbol of the scope that closes here took this name, but it may
+       * refer to a symbol of an enclosing scope: a local of an outer block, a
+       * function argument, or a global. The test is then deferred to the scope
+       * of that symbol, where the symbol itself is tested. Only a name that is
+       * visible nowhere is an undefined symbol.
+       */
+      const symbol *outer=findloc(name);
+      short target;
+      if (outer!=NULL)
+        target=outer->compound;
+      else if (findglb(name,sSTATEVAR)!=NULL)
+        target=0;
+      else
+        target=level;
+      if (target<level) {
+        rescope_unusedvar(idx,target);
+      } else {
+        errorset(sSETFILE,filenr);
+        errorset(sSETLINE,linenr);
+        error(17,name);   /* undefined symbol */
+      }
     }
   }
   delete_unusedvartable(level);
@@ -5954,8 +5972,17 @@ static void statement(int *lastindent,bool allow_decl)
   case '{':
     save=pc_curline;
     pc_scopelevel+=1;           /* increase compound statement level */
-    if (!matchtoken('}'))       /* {} is the empty statement */
+    if (!matchtoken('}')) {     /* {} is the empty statement */
       compound(save==pc_curline && freading);
+    } else {
+      /* An empty block still has a scope of its own: a "#pragma unused" inside
+       * it is read (by the look-ahead for the '}') at this level. Close the
+       * scope the way compound() does, so that such a directive is resolved
+       * here, before the enclosing scope is tested.
+       */
+      testsymbols(&loctab,pc_scopelevel,false,true);
+      delete_symbols(&loctab,pc_scopelevel,false,true);
+    } /* if */
     /* lastst (for "last statement") does not change */
     pc_scopelevel-=1;           /* restore compound statement level */
     break;

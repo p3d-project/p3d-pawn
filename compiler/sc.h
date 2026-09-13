@@ -792,6 +792,7 @@ SC_FUNC void delete_undefsymboltable(void);
 SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short scope);
 SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *scope,bool *handled);
 SC_FUNC bool find_unusedvar(const char *name,short scope,bool sethandled,short *filenr,int *linenr);
+SC_FUNC void rescope_unusedvar(int index,short scope);
 SC_FUNC void delete_unusedvartable(short scope);
 SC_FUNC stringlist *insert_docstring(const char *string,int append);
 SC_FUNC const char *get_docstring(int index);

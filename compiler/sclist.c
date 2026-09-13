@@ -565,6 +565,26 @@ SC_FUNC bool find_unusedvar(const char *name,short scope,bool sethandled,short *
   return true;
 }
 
+/** rescope_unusedvar() moves an entry of the list of names from "#pragma
+ *  unused" to an enclosing scope, for a name that refers to a symbol declared
+ *  there. If that scope already holds an entry for the name, the moved entry
+ *  would be a duplicate; it is then only marked as "handled", and it is
+ *  removed together with its own scope.
+ *
+ *  \param index        The sequence number of the entry.
+ *  \param scope        The scope to move the entry to; it must be lower than
+ *                      the current scope of the entry.
+ */
+SC_FUNC void rescope_unusedvar(int index,short scope)
+{
+  symbolref *item=symbolref_get(&unusedvar_root,index);
+  assert(item!=NULL && item->scope>scope);
+  if (symbolref_find(&unusedvar_root,item->name,scope)!=NULL)
+    item->handled=true;
+  else
+    item->scope=scope;
+}
+
 /** delete_unusedvartable() removes all items from the list that have a scope
  *  that is equal or higher than the `scope` parameter.
  */

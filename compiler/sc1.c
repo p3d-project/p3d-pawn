@@ -4700,7 +4700,12 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
     assert(numtags>0);
     argsym=addvariable(name,offset,ident,sLOCAL,tags[0],
                        arg->dim,arg->dimnames,arg->numdim,usage);
-    argsym->compound=1;         /* arguments are at the same scope as locals in the top compound block */
+    /* arguments are at the same scope as locals in the top compound block, but
+     * they are declared before that block opens; for an array, the level must
+     * also be set on the child symbols of its sub-dimensions
+     */
+    for (symbol *sub=argsym; sub!=NULL; sub=finddepend(sub))
+      sub->compound=1;
     if (ident==iREFERENCE)
       argsym->usage|=uREAD;     /* because references are passed back */
     if (fpublic)

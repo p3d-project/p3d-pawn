@@ -3231,6 +3231,15 @@ SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int tag,in
   entry.fvisible=NOT_SET; /* assume global visibility (ignored for local symbols) */
   entry.fnumber=fcurrent;
   entry.lnumber=pc_curline;
+  /* a local symbol belongs to the compound block in which it is declared; when
+   * that block closes, testsymbols() and delete_symbols() walk the local table
+   * by this level and stop at the first symbol with a lower one, so every local
+   * symbol must carry it from the start -- this includes local constants and
+   * the child symbols that addvariable() creates for the sub-dimensions of an
+   * array, which none of the callers set afterwards
+   */
+  if (scope!=sGLOBAL)
+    entry.compound=pc_scopelevel;
   entry.numrefers=1;
   entry.refer=refer;
 

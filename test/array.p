@@ -13,13 +13,13 @@ main()
     }
 
 #if defined MIX_DIMENSIONS
-arrayparam(a[2][5] = [ ''Out'', ''Goes'' ])
+arrayparam(const a[2][5] = [ ''Out'', ''Goes'' ])
     {
     #assert sizeof a == 2
     printf ''%s %s You\n'', a[0], a[1]
     }
 #else
-arrayparam(a[][] = [ ''Out'', ''Goes'' ])
+arrayparam(const a[][] = [ ''Out'', ''Goes'' ])
     {
     #assert sizeof a == 2
     printf ''%s %s You\n'', a[0], a[1]

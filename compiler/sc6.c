@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc6.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sc6.c 7694 2026-09-15 19:57:37Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -28,7 +28,9 @@
 #include "lstring.h"
 #include "sc.h"
 #include "../amx/amxdbg.h"
-#include "../amx/keeloq.h"
+#if defined PAWN_KEELOQ
+# include "../amx/keeloq.c"
+#endif
 #if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
 # include <sclinux.h>
 #endif
@@ -206,15 +208,17 @@ static bool write_cell(FILE *fbin,ucell c)
   if (!fbin)
     return false;
   assert((pc_lengthbin(fbin) % pc_cellsize) == 0);
-  if (pc_cryptkey!=0) {
-    uint32_t *ptr=(uint32_t*)&c;
-    assert(pc_cellsize==4 || pc_cellsize==8);
-    *ptr=KeeLoq_Encrypt(*ptr,pc_cryptkey);
-    if (pc_cellsize==8) {
-      ptr++;
+# if defined PAWN_KEELOQ
+    if (pc_cryptkey!=0) {
+      uint32_t *ptr=(uint32_t*)&c;
+      assert(pc_cellsize==4 || pc_cellsize==8);
       *ptr=KeeLoq_Encrypt(*ptr,pc_cryptkey);
+      if (pc_cellsize==8) {
+        ptr++;
+        *ptr=KeeLoq_Encrypt(*ptr,pc_cryptkey);
+      } /* if */
     } /* if */
-  } /* if */
+# endif
   writeerror |= !pc_writebin(fbin,aligncell(&c),pc_cellsize);
   return true;
 }

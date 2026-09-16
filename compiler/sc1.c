@@ -310,12 +310,16 @@ int pc_writesrc(void *handle,const unsigned char *source)
 static fpos_t srcpositions[MAXPOSITIONS];
 static unsigned char srcposalloc[MAXPOSITIONS];
 
+/** pc_clearpossrc() clear source file position marks.
+ */
 void pc_clearpossrc(void)
 {
   memset(srcpositions,0,sizeof srcpositions);
   memset(srcposalloc,0,sizeof srcposalloc);
 }
 
+/** pc_getpossrc() mark the current position in the source file.
+ */
 void *pc_getpossrc(void *handle,void *position)
 {
   if (position==NULL) {
@@ -336,9 +340,9 @@ void *pc_getpossrc(void *handle,void *position)
   return position;
 }
 
-/* pc_resetsrc()
- * "position" may only hold a pointer that was previously obtained from
- * pc_getpossrc()
+/** pc_resetsrc() reset to a position marked earlier.
+ *  "position" may only hold a pointer that was previously obtained from
+ *  pc_getpossrc()
  */
 void pc_resetsrc(void *handle,void *position)
 {
@@ -1261,6 +1265,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
           insert_path(str);
         } /* if */
         break;
+#     if defined PAWN_KEELOQ
       case 'k':
         ptr=option_value(ptr);
         while (*ptr!='\0') {
@@ -1277,6 +1282,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
           ptr++;
         } /* while */
         break;
+#     endif
       case 'l':
         if (*(ptr+1)!='\0')
           about();
@@ -1679,9 +1685,9 @@ static void about(void)
     pc_printf("         -a       output assembler code\n");
     pc_printf("         -C<num>  cell size in bits (default=-C%d)\n",pc_cellsize*8);
     pc_printf("         -c<name> codepage name or number; e.g. 1252 for Windows Latin-1\n");
-#if defined dos_setdrive
+#   if defined dos_setdrive
     pc_printf("         -Dpath   active directory path\n");
-#endif
+#   endif
     pc_printf("         -d<num>  debugging level (default=-d%d)\n",sc_debug);
     pc_printf("             0    no symbolic information, no run-time checks\n");
     pc_printf("             1    run-time checks, no symbolic information\n");
@@ -1689,7 +1695,9 @@ static void about(void)
     pc_printf("             3    same as -d2, but implies -O0\n");
     pc_printf("         -e<name> set name of error file (quiet compile)\n");
     pc_printf("         -i<name> path for include files\n");
+#   if defined PAWN_KEELOQ
     pc_printf("         -k<hex>  key for encrypted scripts\n");
+#   endif
     pc_printf("         -l       create list file (preprocess only)\n");
     pc_printf("         -N<name>=<num> specify index number for native function\n");
     pc_printf("         -o<name> set base name of (P-code) output file\n");
@@ -1699,9 +1707,9 @@ static void about(void)
     pc_printf("             2    supplemental instruction set\n");
     pc_printf("             3    full instruction set (packed opcodes)\n");
     pc_printf("         -p<name> set the \"prefix\" file; omit name to block default prefix file\n");
-#if !defined PAWN_LIGHT
+#   if !defined PAWN_LIGHT
     pc_printf("         -r[name] write cross reference report to console or to specified file\n");
-#endif
+#   endif
     pc_printf("         -S<num>  stack/heap size in cells (default=%d)\n",(int)pc_stksize);
     pc_printf("         -s<num>  skip lines from the input file\n");
     pc_printf("         -t<num>  TAB indent size (in character positions, default=%d)\n",pc_tabsize);
@@ -1713,10 +1721,10 @@ static void about(void)
     pc_printf("         -XD<num> abstract machine data/stack size limit in bytes\n");
     pc_printf("         sym=val  define constant \"sym\" with value \"val\"\n");
     pc_printf("         sym=     define constant \"sym\" with value 0\n");
-#if defined __WIN32__ || defined _WIN32 || defined _Windows || defined __MSDOS__
+#   if defined __WIN32__ || defined _WIN32 || defined _Windows || defined __MSDOS__
     pc_printf("\nOptions may start with a dash or a slash; the options \"-d0\" and \"/d0\" are\n");
     pc_printf("equivalent.\n");
-#endif
+#   endif
     pc_printf("\nOptions with a value may optionally separate the value from the option letter\n");
     pc_printf("with a colon (\":\") or an equal sign (\"=\"). That is, the options \"-d0\", \"-d=0\"\n");
     pc_printf("and \"-d:0\" are all equivalent.\n");

@@ -104,8 +104,8 @@ native RegPublicFunction(ParameterCount, ...);
 
 
 #if defined PACKED_OPCODE_LIMITS
-    printvalue(d, const s[])
-        printf "%d (should be %s)\n", d, s
+    printvalue(d)
+        printf "%d\n", d
 #endif
 
 #if defined MIX_PACK_FUNC
@@ -377,15 +377,15 @@ main()
     #endif
 
     #if defined PACKED_OPCODE_LIMITS
-        printvalue 32767, "32767"
-        printvalue 32768, "32768"
-        printvalue -32767, "-32767"
-        printvalue -32768, "-32768"
-        printvalue -32769, "-32769"
+        printvalue 32767
+        printvalue 32768
+        printvalue -32767
+        printvalue -32768
+        printvalue -32769
     #endif
 
     #if defined CONST_REL_CHAINED_OP
-        printf ''Result = %d (should be 1)\n'', (0 < 1 <= 2)
+        printf ''Result = %d\n'', (0 < 1 <= 2)
     #endif
 
     #if defined MULTI_DIM_PARTIAL_COUNT

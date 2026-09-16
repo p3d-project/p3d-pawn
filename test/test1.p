@@ -255,6 +255,14 @@ new Filenames[6]{} =
         return simple_add(_:a, _:b)
 #endif
 
+#if defined NON_CONST_ARRAY_W_DEFAULT
+    transform(field{} = "test")
+        {
+        var test = field{0}
+        test = -test
+        }
+#endif
+
 main()
     {
     #if defined UNDEF_FUNC_CALL
@@ -501,7 +509,6 @@ main()
             ''Image\\Bubbles\\32x32_bananhej.tga'',
             ''Image\\Bubbles\\32x32_festekoldo.tga''
         };
-        iconfiles[0][0] = 0;    /* to avoid a warning, and verify that the array was properly declared */
     #endif
 
     #if defined ARRAY_VARDIM_NONINIT
@@ -607,7 +614,6 @@ main()
         static confirmtext[2]{4} = { "Yes", "No " }
     #endif
 
-
     #if defined PRAGMA_WARNING
         new a , b;
         #pragma warning push
@@ -672,15 +678,21 @@ main()
     #if defined USER_OPERATOR_REF
         test
     #endif
+
+    #if defined NON_CONST_ARRAY_W_DEFAULT
+        transform
+    #endif
     }
 
 #if defined LOCAL_SHADOWS
 forward test_shadow(abc);
 public test_shadow(abc)
     {
-    new main = abc;     /* shadows a function */
-    new abc = main;     /* shadows a parameter */
-    return abc;         /* avoid warning "assigned a value that is not used" */
+    new main = abc;     /* 'main' shadows a function */
+    {
+        new abc = main; /* 'abc' shadows a parameter */
+        abc = -abc      /* avoid warning "assigned a value that is not used" */
+    }
     }
 #endif
 

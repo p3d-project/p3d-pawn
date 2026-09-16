@@ -38,11 +38,13 @@ IF(APPLE)
   SET(CMAKE_OSX_ARCHITECTURES "i386")
 ENDIF(APPLE)
 
+ADD_DEFINITIONS(-DPAWN_KEELOQ)
+
 # The Pawn compiler
 SET(PAWNCC_SRCS sc1.c sc2.c sc3.c sc4.c sc5.c sc6.c sc7.c
 	scexpand.c sci18n.c sclist.c scmemfil.c scstate.c scvars.c
 	lstring.c memfile.c
-	${CMAKE_CURRENT_SOURCE_DIR}/../amx/keeloq.c)
+)
 IF(WIN32)
   SET(PAWNCC_SRCS ${PAWNCC_SRCS} pawncc.rc)
 ENDIF(WIN32)

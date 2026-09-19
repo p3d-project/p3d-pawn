@@ -18,7 +18,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxcons.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: amxcons.c 7695 2026-09-18 16:11:08Z thiadmer $
  */
 
 #if defined _UNICODE || defined __UNICODE__ || defined UNICODE
@@ -300,17 +300,17 @@
     short prev = current;
     char str[30];
 
-    if (foregr>=0) {
+    if (foregr>=0 && (current & 0x00ff)!=(foregr & 0x0f)) {
       _stprintf(str,"\x1b[%dm",foregr+30);
       amx_putstr(str);
       current=(current & 0xff00) | (foregr & 0x0f);
     } /* if */
-    if (backgr>=0) {
+    if (backgr>=0 && (current & 0xff00)!=((backgr & 0x0f) << 8)) {
       _stprintf(str,"\x1b[%dm",backgr+40);
       amx_putstr(str);
       current=(current & 0x00ff) | ((backgr & 0x0f) << 8);
     } /* if */
-    if (highlight>=0) {
+    if (highlight>=0 && (current & 0x8000) | ((highlight & 0x01) << 15)) {
       _stprintf(str,"\x1b[%dm",highlight);
       amx_putstr(str);
       current=(current & 0x7fff) | ((highlight & 0x01) << 15);

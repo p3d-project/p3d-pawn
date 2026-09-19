@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxaux.c 6131 2020-04-29 19:47:15Z thiadmer $
+ *  Version: $Id: amxaux.c 7693 2026-09-12 19:11:35Z thiadmer $
  */
 #include <stdio.h>
 #include <stdlib.h>

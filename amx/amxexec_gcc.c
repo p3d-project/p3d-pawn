@@ -30,17 +30,17 @@
 #include "osdefs.h"
 #if defined __ECOS__
   /* eCos puts include files in cyg/package_name */
-  #include <cyg/pawn/amx.h>
+# include <cyg/pawn/amx.h>
 #else
-  #include "amx.h"
+# include "amx.h"
 #endif
 
 #if !(defined __GNUC__ || defined __ICC)
-  #error The GNU GCC or the Intel C/C++ compiler is required for this file.
+# error The GNU GCC or the Intel C/C++ compiler is required for this file.
 #endif
 
-#if !defined sizearray
-  #define sizearray(a)  (sizeof(a)/sizeof((a)[0]))
+#if !defined countof
+# define countof(a)     (sizeof(a)/sizeof((a)[0]))
 #endif
 
 /* It is assumed that the abstract machine can simply access the memory area
@@ -48,34 +48,34 @@
  * define the macro sets _R() and _W(), for reading and writing to memory.
  */
 #if !defined _R
-  #define _R_DEFAULT            /* mark default memory access */
-  #define _R(base,addr)         (* (cell *)((unsigned char*)(base)+(int)(addr)))
-  #define _R8(base,addr)        (* (unsigned char *)((unsigned char*)(base)+(int)(addr)))
-  #define _R16(base,addr)       (* (uint16_t *)((unsigned char*)(base)+(int)(addr)))
-  #define _R32(base,addr)       (* (uint32_t *)((unsigned char*)(base)+(int)(addr)))
+# define _R_DEFAULT             /* mark default memory access */
+# define _R(base,addr)          (* (cell *)((unsigned char*)(base)+(int)(addr)))
+# define _R8(base,addr)         (* (unsigned char *)((unsigned char*)(base)+(int)(addr)))
+# define _R16(base,addr)        (* (uint16_t *)((unsigned char*)(base)+(int)(addr)))
+# define _R32(base,addr)        (* (uint32_t *)((unsigned char*)(base)+(int)(addr)))
 #endif
 #if !defined _W
-  #define _W_DEFAULT            /* mark default memory access */
-  #define _W(base,addr,value)   ((*(cell *)((unsigned char*)(base)+(int)(addr)))=(cell)(value))
-  #define _W8(base,addr,value)  ((*(unsigned char *)((unsigned char*)(base)+(int)(addr)))=(unsigned char)(value))
-  #define _W16(base,addr,value) ((*(uint16_t *)((unsigned char*)(base)+(int)(addr)))=(uint16_t)(value))
-  #define _W32(base,addr,value) ((*(uint32_t *)((unsigned char*)(base)+(int)(addr)))=(uint32_t)(value))
+# define _W_DEFAULT             /* mark default memory access */
+# define _W(base,addr,value)    ((*(cell *)((unsigned char*)(base)+(int)(addr)))=(cell)(value))
+# define _W8(base,addr,value)   ((*(unsigned char *)((unsigned char*)(base)+(int)(addr)))=(unsigned char)(value))
+# define _W16(base,addr,value)  ((*(uint16_t *)((unsigned char*)(base)+(int)(addr)))=(uint16_t)(value))
+# define _W32(base,addr,value)  ((*(uint32_t *)((unsigned char*)(base)+(int)(addr)))=(uint32_t)(value))
 #endif
 
 #if -8/3==-2 && 8/-3==-2
-  #define TRUNC_SDIV    /* signed divisions are truncated on this platform */
+# define TRUNC_SDIV     /* signed divisions are truncated on this platform */
 #else
-  #define IABS(a)       ((a)>=0 ? (a) : (-a))
+# define IABS(a)        ((a)>=0 ? (a) : (-a))
 #endif
 
 #if !defined GETPARAM
-  #define GETPARAM(v)   ( v=*cip++ )  /* read a parameter from the opcode stream */
+# define GETPARAM(v)    ( v=*cip++ )  /* read a parameter from the opcode stream */
 #endif
 #if !defined GETPARAM_P
-  #define GETPARAM_P(v,o) ( v=((cell)(o) >> (int)(sizeof(cell)*4)) )
+# define GETPARAM_P(v,o) ( v=((cell)(o) >> (int)(sizeof(cell)*4)) )
 #endif
 #if !defined SKIPPARAM
-  #define SKIPPARAM(n)  ( cip=(cell *)cip+(n) ) /* for obsolete opcodes */
+# define SKIPPARAM(n)   ( cip=(cell *)cip+(n) ) /* for obsolete opcodes */
 #endif
 
 /* PUSH() and POP() are defined in terms of the _R() and _W() macros */
@@ -93,19 +93,19 @@
 
 
 #if !defined AMX_NO_PACKED_OPC && !defined AMX_TOKENTHREADING
-  #define AMX_TOKENTHREADING    /* packed opcodes require token threading */
+# define AMX_TOKENTHREADING    /* packed opcodes require token threading */
 #endif
 #if defined AMX_TOKENTHREADING
-  #if defined AMX_NO_PACKED_OPC
-    #define NEXT(cip,op) goto *amx_opcodelist[*cip++]
-  #else
-    #define NEXT(cip,op) goto *amx_opcodelist[(op=*cip++) & ((1UL << sizeof(cell)*4)-1)]
-  #endif
+# if defined AMX_NO_PACKED_OPC
+#   define NEXT(cip,op) goto *amx_opcodelist[*cip++]
+# else
+#   define NEXT(cip,op) goto *amx_opcodelist[(op=*cip++) & ((1UL << sizeof(cell)*4)-1)]
+# endif
 #else
-  #if !defined AMX_NO_PACKED_OPC
-    #error Packed opcodes support requires token threading
-  #endif
-  #define NEXT(cip,op)   goto **cip++
+# if !defined AMX_NO_PACKED_OPC
+#   error Packed opcodes support requires token threading
+# endif
+# define NEXT(cip,op)   goto **cip++
 #endif
 
 cell amx_exec_run(AMX *amx,cell *retval,unsigned char *data)
@@ -173,9 +173,9 @@ static const void * const amx_opcodelist[] = {
   cell reset_stk, reset_hea, *cip;
   cell offs,val;
   int num,i;
-  #if !defined AMX_NO_PACKED_OPC
+# if !defined AMX_NO_PACKED_OPC
     int op;
-  #endif
+# endif
 
   assert(amx!=NULL);
   /* HACK: return label table and opcode count (for VerifyPcode()) if amx
@@ -186,7 +186,7 @@ static const void * const amx_opcodelist[] = {
     assert(data==NULL);
     assert(retval!=NULL);
     *retval=(cell)amx_opcodelist;
-    return sizearray(amx_opcodelist);
+    return countof(amx_opcodelist);
   } /* if */
 
   /* set up the registers */
@@ -312,10 +312,10 @@ static const void * const amx_opcodelist[] = {
     NEXT(cip,op);
   op_align_pri:
     GETPARAM(offs);
-    #if BYTE_ORDER==LITTLE_ENDIAN
+#   if BYTE_ORDER==LITTLE_ENDIAN
       if (offs<(int)sizeof(cell))
         pri ^= sizeof(cell)-offs;
-    #endif
+#   endif
     NEXT(cip,op);
   op_lctrl:
     GETPARAM(offs);
@@ -471,16 +471,16 @@ static const void * const amx_opcodelist[] = {
       ABORT(amx,AMX_ERR_DIVIDE);
     /* use floored division and matching remainder */
     offs=pri;
-    #if defined TRUNC_SDIV
+#   if defined TRUNC_SDIV
       pri=alt/offs;
       alt=alt%offs;
-    #else
+#   else
       val=alt;                  /* portable routine for truncated division */
       pri=IABS(alt)/IABS(offs);
       if ((cell)(val ^ offs)<0)
         pri=-pri;
       alt=val-pri*offs;         /* calculate the matching remainder */
-    #endif
+#   endif
     /* now "fiddle" with the values to get floored division */
     if (alt!=0 && (cell)(alt ^ offs)<0) {
       pri--;
@@ -539,12 +539,12 @@ static const void * const amx_opcodelist[] = {
     /* verify address */
     if (pri>=hea && pri<stk || (ucell)pri>=(ucell)amx->stp)
       ABORT(amx,AMX_ERR_MEMACCESS);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)pri) += 1;
-    #else
+#   else
       val=_R(data,pri);
       _W(data,pri,val+1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_dec_pri:
     pri--;
@@ -556,12 +556,12 @@ static const void * const amx_opcodelist[] = {
     /* verify address */
     if (pri>=hea && pri<stk || (ucell)pri>=(ucell)amx->stp)
       ABORT(amx,AMX_ERR_MEMACCESS);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)pri) -= 1;
-    #else
+#   else
       val=_R(data,pri);
       _W(data,pri,val-1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_movs:
     GETPARAM(offs);
@@ -577,9 +577,9 @@ static const void * const amx_opcodelist[] = {
       ABORT(amx,AMX_ERR_MEMACCESS);
     if ((alt+offs)>hea && (alt+offs)<stk || (ucell)(alt+offs)>(ucell)amx->stp)
       ABORT(amx,AMX_ERR_MEMACCESS);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       memcpy(data+(int)alt, data+(int)pri, (int)offs);
-    #else
+#   else
       for (i=0; i+sizeof(cell)<offs; i+=sizeof(cell)) {
         val=_R(data,pri+i);
         _W(data,alt+i,val);
@@ -588,7 +588,7 @@ static const void * const amx_opcodelist[] = {
         val=_R8(data,pri+i);
         _W8(data,alt+i,val);
       } /* for */
-    #endif
+#   endif
     NEXT(cip,op);
   op_cmps:
     GETPARAM(offs);
@@ -604,15 +604,15 @@ static const void * const amx_opcodelist[] = {
       ABORT(amx,AMX_ERR_MEMACCESS);
     if ((alt+offs)>hea && (alt+offs)<stk || (ucell)(alt+offs)>(ucell)amx->stp)
       ABORT(amx,AMX_ERR_MEMACCESS);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       pri=memcmp(data+(int)alt, data+(int)pri, (int)offs);
-    #else
+#   else
       val=0;
       for (i=0; i+sizeof(cell)<offs && val==0; i+=sizeof(cell))
         val=_R(data,alt+i)-_R(data,pri+i);
       for ( ; i<offs && val==0; i++)
         val=_R8(data,alt+i)-_R8(data,pri+i);
-    #endif
+#   endif
     NEXT(cip,op);
   op_fill:
     GETPARAM(offs);
@@ -714,7 +714,7 @@ static const void * const amx_opcodelist[] = {
     assert(0);                  /* this should not occur during execution */
     ABORT(amx,AMX_ERR_INVINSTR);
   op_sysreq_d:          /* see op_sysreq */
-    #if !defined AMX_DONT_RELOCATE
+#   if !defined AMX_DONT_RELOCATE
       GETPARAM(offs);
       /* save a few registers */
       amx->cip=(cell)((unsigned char *)cip-amx->code);
@@ -733,11 +733,11 @@ static const void * const amx_opcodelist[] = {
         ABORT(amx,amx->error);
       } /* if */
       NEXT(cip,op);
-    #else
+#   else
       ABORT(amx,AMX_ERR_INVINSTR);
-    #endif
+#   endif
   op_sysreq_nd:    /* see op_sysreq_n */
-    #if !defined AMX_NO_MACRO_INSTR && !defined AMX_DONT_RELOCATE
+#   if !defined AMX_NO_MACRO_INSTR && !defined AMX_DONT_RELOCATE
       GETPARAM(offs);
       GETPARAM(val);
       PUSH(val);
@@ -760,9 +760,9 @@ static const void * const amx_opcodelist[] = {
         ABORT(amx,amx->error);
       } /* if */
       NEXT(cip,op);
-    #else
+#   else
       ABORT(amx,AMX_ERR_INVINSTR);
-    #endif
+#   endif
 
     /* overlay instructions */
 #if !defined AMX_NO_OVERLAY
@@ -906,16 +906,16 @@ static const void * const amx_opcodelist[] = {
       ABORT(amx,AMX_ERR_DIVIDE);
     /* use floored division and matching remainder */
     offs=alt;
-    #if defined TRUNC_SDIV
+#   if defined TRUNC_SDIV
       pri=pri/offs;
       alt=pri%offs;
-    #else
+#   else
       val=pri;                  /* portable routine for truncated division */
       pri=IABS(pri)/IABS(offs);
       if ((cell)(val ^ offs)<0)
         pri=-pri;
       alt=val-pri*offs;         /* calculate the matching remainder */
-    #endif
+#   endif
     /* now "fiddle" with the values to get floored division */
     if (alt!=0 && (cell)(alt ^ offs)<0) {
       pri--;
@@ -957,39 +957,39 @@ static const void * const amx_opcodelist[] = {
     NEXT(cip,op);
   op_inc:
     GETPARAM(offs);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)offs) += 1;
-    #else
+#   else
       val=_R(data,offs);
       _W(data,offs,val+1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_inc_s:
     GETPARAM(offs);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)(frm+offs)) += 1;
-    #else
+#   else
       val=_R(data,frm+offs);
       _W(data,frm+offs,val+1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_dec:
     GETPARAM(offs);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)offs) -= 1;
-    #else
+#   else
       val=_R(data,offs);
       _W(data,offs,val-1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_dec_s:
     GETPARAM(offs);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)(frm+offs)) -= 1;
-    #else
+#   else
       val=_R(data,frm+offs);
       _W(data,frm+offs,val-1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_sysreq_n:
     GETPARAM(offs);
@@ -1161,10 +1161,10 @@ static const void * const amx_opcodelist[] = {
     NEXT(cip,op);
   op_align_p_pri:
     GETPARAM_P(offs,op);
-    #if BYTE_ORDER==LITTLE_ENDIAN
+#   if BYTE_ORDER==LITTLE_ENDIAN
       if ((size_t)offs<sizeof(cell))
         pri ^= sizeof(cell)-offs;
-    #endif
+#   endif
     NEXT(cip,op);
   op_push_p_c:
     GETPARAM_P(offs,op);
@@ -1291,39 +1291,39 @@ static const void * const amx_opcodelist[] = {
     NEXT(cip,op);
   op_inc_p:
     GETPARAM_P(offs,op);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)offs) += 1;
-    #else
+#   else
       val=_R(data,offs);
       _W(data,offs,val+1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_inc_p_s:
     GETPARAM_P(offs,op);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)(frm+offs)) += 1;
-    #else
+#   else
       val=_R(data,frm+offs);
       _W(data,frm+offs,val+1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_dec_p:
     GETPARAM_P(offs,op);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)offs) -= 1;
-    #else
+#   else
       val=_R(data,offs);
       _W(data,offs,val-1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_dec_p_s:
     GETPARAM_P(offs,op);
-    #if defined _R_DEFAULT
+#   if defined _R_DEFAULT
       *(cell *)(data+(int)(frm+offs)) -= 1;
-    #else
+#   else
       val=_R(data,frm+offs);
       _W(data,frm+offs,val-1);
-    #endif
+#   endif
     NEXT(cip,op);
   op_movs_p:
     GETPARAM_P(offs,op);

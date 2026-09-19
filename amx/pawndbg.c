@@ -81,7 +81,7 @@
   #include <unistd.h>
 #endif
 
-#if !defined AMX_NODYNALOAD
+#if defined AMX_DYNALOAD
 # if defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
 #   include <binreloc.h> /* from BinReloc, see www.autopackage.org */
 # elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
@@ -2907,17 +2907,17 @@ extern AMX_NATIVE_INFO console_Natives[];
   unsigned short flags;
   char *ptr;
 
-# if !defined AMX_NODYNALOAD
+# if defined AMX_DYNALOAD
 #   if defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
       /* see www.autopackage.org (now Listaller) for the BinReloc module */
       if (br_init(NULL)) {
-        char *libroot=br_find_exe_dir("");
-        setenv("AMXLIB",libroot,0);
+        char *libroot = br_find_exe_dir("");
+        setenv(AMX_LIBPATH, libroot, 0);
         free(libroot);
       } /* if */
 #   elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
-      char *libroot=get_install_path();
-      setenv("AMXLIB", libroot, 0);
+      char *libroot = get_install_path();
+      setenv(AMX_LIBPATH, libroot, 0);
       free(libroot);
 #   endif
 # endif

@@ -15,7 +15,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawnrun.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: pawnrun.c 7688 2026-08-28 19:43:19Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -30,7 +30,7 @@
 # define CLOCKS_PER_SEC CLK_TCK
 #endif
 
-#if !defined AMX_NODYNALOAD
+#if defined AMX_DYNALOAD
 # if defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
 #   include <binreloc.h> /* from BinReloc, see www.autopackage.org */
 # elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
@@ -328,17 +328,17 @@ int main(int argc,char *argv[])
   if (argc < 2)
     PrintUsage(argv[0]);        /* function "usage" aborts the program */
 
-# if !defined AMX_NODYNALOAD
+# if defined AMX_DYNALOAD
 #   if defined ENABLE_BINRELOC && (defined __LINUX__ || defined __APPLE__)
       /* see www.autopackage.org (now Listaller) for the BinReloc module */
       if (br_init(NULL)) {
-        char *libroot=br_find_exe_dir("");
-        setenv("AMXLIB",libroot,0);
+        char *libroot = br_find_exe_dir("");
+        setenv(AMX_LIBPATH, libroot, 0);
         free(libroot);
       } /* if */
 #   elif defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
-      char *libroot=get_install_path();
-      setenv("AMXLIB", libroot, 0);
+      char *libroot = get_install_path();
+      setenv(AMX_LIBPATH, libroot, 0);
       free(libroot);
 #   endif
 # endif

@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxstring.c 7683 2026-08-20 20:23:32Z thiadmer $
+ *  Version: $Id: amxstring.c 7695 2026-09-18 16:11:08Z thiadmer $
  */
 #include <limits.h>
 #include <string.h>
@@ -47,8 +47,8 @@
 #if !defined isdigit
 # define isdigit(c)     ((unsigned)((c)-'0')<10u)
 #endif
-#if !defined sizearray
-# define sizearray(a)   (sizeof(a) / sizeof((a)[0]))
+#if !defined countof
+# define countof(a)     (sizeof(a) / sizeof((a)[0]))
 #endif
 
 
@@ -75,7 +75,7 @@ static int amx_StrPack(cell *dest,cell *source,int len,int offs)
       i=(len/sizeof(cell))*sizeof(cell);
       pdest+=i;
       len=(len==i) ? sizeof(cell) : sizeof(cell)-(len-i);
-      assert(len>0 && len<=sizeof(cell));
+      assert(len>0 && len<=(int)sizeof(cell));
       for (i=0; i<len; i++)
         *pdest++='\0';
     #endif
@@ -109,7 +109,7 @@ static int amx_StrPack(cell *dest,cell *source,int len,int offs)
     /* for proper alignement, add the offset to both the starting and the ending
      * criterion (so that the number of iterations stays the same)
      */
-    assert(offs>=0 && offs<sizeof(cell));
+    assert(offs>=0 && offs<(int)sizeof(cell));
     for (i=offs; i<len+offs; i++) {
       c=(c<<CHARBITS) | (*source++ & 0xff);
       if (i%sizeof(cell)==sizeof(cell)-1) {
@@ -633,7 +633,7 @@ static cell AMX_NATIVE_CALL n_valstr(AMX *amx,const cell *params)
   } /* if */
   for (temp=value; temp>=10; temp/=10)
     len++;
-  assert(len<=sizearray(str));
+  assert(len<=(int)countof(str));
 
   /* put in the string */
   result=len;
@@ -645,7 +645,7 @@ static cell AMX_NATIVE_CALL n_valstr(AMX *amx,const cell *params)
   if (negate)
     str[0]='-';
   cstr=amx_Address(amx,params[1]);
-  amx_SetString(cstr,str,params[3],sizeof(TCHAR)>1,sizearray(str));
+  amx_SetString(cstr,str,params[3],sizeof(TCHAR)>1,countof(str));
   return result;
 }
 

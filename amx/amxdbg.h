@@ -17,7 +17,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxdbg.h 7152 2024-03-23 20:47:23Z thiadmer $
+ *  Version: $Id: amxdbg.h 7696 2026-09-20 14:46:13Z thiadmer $
  */
 
 #ifndef AMXDBG_H_INCLUDED
@@ -104,11 +104,11 @@ typedef struct tagAMX_DBG_TAG {
   char     name[1];         /* ASCII string, zero-terminated */
 } PACKED AMX_DBG_TAG;
 
-typedef struct tagAMX_DBG_MACHINE {
+typedef struct tagAMX_DBG_AUTOMATON {
   int16_t  automaton;       /* automaton id */
   uint32_t address;         /* address of state variable */
   char     name[1];         /* ASCII string, zero-terminated */
-} PACKED AMX_DBG_MACHINE;
+} PACKED AMX_DBG_AUTOMATON;
 
 typedef struct tagAMX_DBG_STATE {
   int16_t  state;           /* state id */
@@ -122,7 +122,7 @@ typedef struct tagAMX_DBG {
   AMX_DBG_LINE    *linetbl;
   AMX_DBG_SYMBOL  **symboltbl;
   AMX_DBG_TAG     **tagtbl;
-  AMX_DBG_MACHINE **automatontbl;
+  AMX_DBG_AUTOMATON **automatontbl;
   AMX_DBG_STATE   **statetbl;
 } PACKED AMX_DBG;
 

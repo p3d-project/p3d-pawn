@@ -14,18 +14,30 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawndisasm.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: pawndisasm.c 7696 2026-09-20 14:46:13Z thiadmer $
  */
 #include <assert.h>
 #include <inttypes.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined FORTIFY
+# include <alloc/Fortify.h>
+#endif
 #if !defined PAWN_CELL_SIZE
-  #define PAWN_CELL_SIZE 64 /* by default, maximum cell size = 64-bit */
+# define PAWN_CELL_SIZE 64 /* by default, maximum cell size = 64-bit */
 #endif
 #include "../amx/osdefs.h"
 #include "../amx/amx.h"
+#include "../amx/amxdbg.h"
+#if (defined _MSC_VER || defined __GNUC__ || defined __clang__) && !defined __APPLE__
+# include "lstring.h"
+#endif
+
+#include "svnrev.h"
+#define VERSION_STR "4.1." SVNREV_STR
+#define VERSION_INT 0x0401
 
 #if !defined countof
 # define countof(a)     (sizeof(a) / sizeof((a)[0]))
@@ -602,75 +614,110 @@ static void addchars(char *str,uint64_t value,int pos)
   *str='\0';
 }
 
-#if (defined _MSC_VER || defined __GNUC__ || defined __clang__) && !defined __APPLE__
-/* Copy src to string dst of size siz.
- * At most siz-1 characters * will be copied. Always NUL terminates (unless siz == 0).
- * Returns strlen(src); if retval >= siz, truncation occurred                        .
- *                                                                                   .
- *  Copyright (c) 1998 Todd C. Miller <Todd.Miller@courtesan.com>, MIT license.                                                                                  .
- */
-size_t strlcpy(char *dst, const char *src, size_t siz)
+static int fclose_not_stdout(FILE *file)
 {
-	char *d = dst;
-	const char *s = src;
-	size_t n = siz;
-
-	/* Copy as many bytes as will fit */
-	if (n != 0) {
-		while (--n != 0) {
-			if ((*d++ = *s++) == '\0')
-				break;
-		}
-	}
-
-	/* Not enough room in dst, add NUL and traverse rest of src */
-	if (n == 0) {
-		if (siz != 0)
-			*d = '\0';		/* NUL-terminate dst */
-		while (*s++)
-			;
-	}
-
-	return(s - src - 1);	/* count does not include NUL */
+  /* close the file, unless it is stdout */
+  if (file!=stdout)
+    return fclose(file);
+  return 0;
 }
-#endif
+
+static void about(const char *msg)
+{
+  if (msg!=NULL)
+    fprintf(stderr,"Error: %s.\n\n",msg);
+  else
+    printf("Pawn disassembler %-25s Copyright (c) 2007-2026, CompuPhase\n\n",VERSION_STR);
+  printf("Usage:   pawndisasm <filename> [options]\n\n");
+  printf("Options:\n");
+  printf("         -d       dump debug information\n");
+  printf("         -o<name> set base name of (disassembly) output file; use '-o-' to write\n"
+         "                  output to terminal\n");
+  exit(1);
+}
+
+static void parseoptions(int argc,char **argv,char *input,char *output,size_t maxsize,bool *dumpsymbols)
+{
+  assert(argc>0);
+  assert(argv!=NULL);
+  assert(input!=NULL);
+  assert(output!=NULL);
+  assert(maxsize>0);
+  assert(dumpsymbols!=NULL);
+
+  if (argc==1)
+    about(NULL);
+
+  *input='\0';        /* preset */
+  *output='\0';
+  *dumpsymbols=false;
+
+  for (int arg=1; arg<argc; arg++) {
+    bool isoption;
+#   if DIRSEP_CHAR=='/'
+      isoption= argv[arg][0]=='-';
+#   else
+      isoption= argv[arg][0]=='/' || argv[arg][0]=='-';
+#   endif
+    if (isoption) {
+      switch (argv[arg][1]) {
+      case 'd':
+        *dumpsymbols=true;
+        break;
+      case 'o':
+        if (*output=='\0')
+          strlcpy(output,argv[arg]+2,maxsize);
+        else
+          about("multiple output files");
+        break;
+      case '?':
+      case 'h':
+        about(NULL);
+        break;
+      default:
+        about("unknown or unsupported option");
+      } /* switch */
+    } else {
+      if (*input=='\0')
+        strlcpy(input,argv[arg],maxsize);
+      else
+        about("multiple input files, or unrecognized option");
+    } /* if */
+  } /* for */
+
+  if (*input=='\0')
+    about("input file missing");
+
+  if (*output=='\0') {
+    char *ptr;
+    strlcpy(output,input,maxsize);
+    if ((ptr=strrchr(output,'.'))!=NULL && strpbrk(ptr,"\\/:")==NULL)
+      *ptr='\0';                        /* erase existing extension */
+    strlcat(output,".lst",maxsize);     /* append new extension */
+  }
+}
 
 int main(int argc,char *argv[])
 {
-  char name[_MAX_PATH];
-  FILE *fplist;
-  int codesize,count;
-  long filesize;
-  unsigned char *code,*cip;
-  OPCODE_PROC func;
-  cell opc;
-
-  if (argc<2 || argc>3) {
-    printf("Usage: pawndisasm <input> [output]\n");
+  char amxname[_MAX_PATH],lstname[_MAX_PATH];
+  bool dumpdbg;
+  parseoptions(argc,argv,amxname,lstname,_MAX_PATH,&dumpdbg);
+  if ((fpamx=fopen(amxname,"rb"))==NULL) {
+    fprintf(stderr,"Error: unable to open input file \"%s\"\n",amxname);
     return 1;
   } /* if */
-  if (argc==2) {
-    char *ptr;
-    strlcpy(name,argv[1],countof(name));
-    if ((ptr=strrchr(name,'.'))!=NULL && strpbrk(ptr,"\\/:")==NULL)
-      *ptr='\0';          /* erase existing extension */
-    strcat(name,".lst");  /* append new extension */
-  } else {
-    strlcpy(name,argv[2],countof(name));
-  } /* if */
-  if ((fpamx=fopen(argv[1],"rb"))==NULL) {
-    printf("Unable to open input file \"%s\"\n",argv[1]);
-    return 1;
-  } /* if */
-  if ((fplist=fopen(name,"wt"))==NULL) {
-    printf("Unable to create output file \"%s\"\n",name);
+  FILE *fplist= (strcmp(lstname,"-")==0) ? stdout : fopen(lstname,"wt");
+  if (fplist==NULL) {
+    fprintf(stderr,"Error: unable to create output file \"%s\"\n",lstname);
+    fclose(fpamx);
     return 1;
   } /* if */
 
   /* load header */
   if (fread(&amxhdr,sizeof amxhdr,1,fpamx)!=1) {
-    printf("Not a valid AMX file: \"%s\" is too short\n",argv[1]);
-    fclose(fplist);
+    fprintf(stderr,"Error: not a valid AMX file: \"%s\" is too short\n",amxname);
+    fclose(fpamx);
+    fclose_not_stdout(fplist);
     return 1;
   } /* if */
   if (amxhdr.magic==AMX_MAGIC_16) {
@@ -683,13 +730,15 @@ int main(int argc,char *argv[])
     pc_cellsize=8;
     cellmask=(ucell)0xffffffffffffffffLL;  /* suffix "LLU" is unsupported on Microsoft Visual C/C++ */
   } else {
-    printf("Not a valid AMX file\n");
-    fclose(fplist);
+    fprintf(stderr,"Error: not a valid AMX file\n");
+    fclose(fpamx);
+    fclose_not_stdout(fplist);
     return 1;
   } /* if */
   if (amxhdr.flags & AMX_FLAG_CRYPT) {
-    printf("This is an encrypted script. Encrypted scripts cannot be disassembled.\n");
-    fclose(fplist);
+    fprintf(stderr,"Error: this is an encrypted script. Encrypted scripts cannot be disassembled.\n");
+    fclose(fpamx);
+    fclose_not_stdout(fplist);
     return 1;
   } /* if */
 
@@ -699,7 +748,7 @@ int main(int argc,char *argv[])
    * is enough to run off the end. Check them once, here.
    */
   fseek(fpamx,0,SEEK_END);
-  filesize=ftell(fpamx);
+  long filesize=ftell(fpamx);
   if (amxhdr.cod<(int32_t)sizeof amxhdr || amxhdr.cod>amxhdr.dat
       || amxhdr.dat>amxhdr.hea || amxhdr.hea>amxhdr.stp
       || amxhdr.hea>filesize || (amxhdr.hea-amxhdr.cod)%pc_cellsize!=0
@@ -712,12 +761,13 @@ int main(int argc,char *argv[])
       || amxhdr.pubvars>amxhdr.tags || amxhdr.tags>amxhdr.nametable
       || amxhdr.nametable>filesize)
   {
-    printf("Not a valid AMX file: the header offsets are inconsistent\n");
-    fclose(fplist);
+    fprintf(stderr,"Error: not a valid AMX file: the header offsets are inconsistent\n");
+    fclose(fpamx);
+    fclose_not_stdout(fplist);
     return 1;
   } /* if */
 
-  codesize=amxhdr.hea-amxhdr.cod; /* size for both code and data */
+  int codesize=amxhdr.hea-amxhdr.cod;   /* size for both code and data */
   fprintf(fplist,";File version: %d\n",amxhdr.file_version);
   fprintf(fplist,";Cell size: %d bits\n",8*pc_cellsize);
   fprintf(fplist,";Flags:        ");
@@ -729,9 +779,11 @@ int main(int argc,char *argv[])
     fprintf(fplist,"debug-info ");
   fprintf(fplist,"\n\n");
   /* load the code block */
-  if ((code=(unsigned char*)malloc(codesize))==NULL) {
-    printf("Insufficient memory: need %d bytes\n",codesize);
-    fclose(fplist);
+  unsigned char *code=(unsigned char*)malloc(codesize);
+  if (code==NULL) {
+    fprintf(stderr,"Error: insufficient memory: need %d bytes\n",codesize);
+    fclose(fpamx);
+    fclose_not_stdout(fplist);
     return 1;
   } /* if */
 
@@ -740,18 +792,20 @@ int main(int argc,char *argv[])
   code_end=code+codesize;
   fseek(fpamx,amxhdr.cod,SEEK_SET);
   if (fread(code,1,codesize,fpamx)!=(size_t)codesize) {
-    printf("Not a valid AMX file: the code block runs past the end of the file\n");
+    fprintf(stderr,"Error: not a valid AMX file: the code block runs past the end of the file\n");
     free(code);
-    fclose(fplist);
+    fclose(fpamx);
+    fclose_not_stdout(fplist);
     return 1;
   } /* if */
 
   /* do a first run through the code to get jump targets (for labels) */
-  cip=code;
+  unsigned char *cip=code;
   codesize=amxhdr.dat-amxhdr.cod;
   while (cip-code<codesize) {
-    opc=fetch_opcode(cip);
-    if ((func=find_opcode(opc))==NULL)
+    cell opc=fetch_opcode(cip);
+    OPCODE_PROC func=find_opcode(opc);
+    if (func==NULL)
       break;                    /* not a valid opcode: stop scanning for labels */
     opc=func(NULL,(cell*)(cip+pc_cellsize),opc,(cell)(cip-code));
     if (opc<1 || opc>(codesize-(cip-code))/pc_cellsize)
@@ -763,8 +817,9 @@ int main(int argc,char *argv[])
   cip=code;
   codesize=amxhdr.dat-amxhdr.cod;
   while (cip-code<codesize) {
-    opc=fetch_opcode(cip);
-    if ((func=find_opcode(opc))==NULL) {
+    cell opc=fetch_opcode(cip);
+    OPCODE_PROC func=find_opcode(opc);
+    if (func==NULL) {
       fprintf(fplist,"\n; invalid opcode %08lx at %08lx\n",
               (long)opc,(long)(cip-code));
       break;
@@ -784,42 +839,133 @@ int main(int argc,char *argv[])
   fprintf(fplist,"\n\n;DATA");
   cip=code+(amxhdr.dat-amxhdr.cod);
   codesize=amxhdr.hea-amxhdr.cod;
-  count=0;
-  name[0]='\0';
+  int count=0;
+  int cells_per_line= (pc_cellsize==8) ? 4 : 6;
+  char line[128]="";
   while (cip-code<codesize) {
+    assert(strlen(line)+16<countof(line));
     if (count==0) {
-      if (strlen(name)>0) {
-        fprintf(fplist," %s",name);
-        name[0]='\0';
+      if (strlen(line)>0) {
+        fprintf(fplist,"\t; %s",line);
+        line[0]='\0';
       } /* if */
       fprintf(fplist,"\n%08lx  ",(long)((cip-code)-(amxhdr.dat-amxhdr.cod)));
     } /* if */
     switch (pc_cellsize) {
     case 2:
-      fprintf(fplist,"%0" PRIx16 " ",*(uint16_t*)cip);
-      addchars(name,*(uint16_t*)cip,count);
+      fprintf(fplist,"%04" PRIx16 " ",*(uint16_t*)cip);
+      addchars(line,*(uint16_t*)cip,count);
       break;
     case 4:
-      fprintf(fplist,"%0" PRIx32 " ",*(uint32_t*)cip);
-      addchars(name,*(uint32_t*)cip,count);
+      fprintf(fplist,"%08" PRIx32 " ",*(uint32_t*)cip);
+      addchars(line,*(uint32_t*)cip,count);
       break;
     case 8:
-      fprintf(fplist,"%0" PRIx64 " ",*(uint64_t*)cip);
-      addchars(name,*(uint64_t*)cip,count);
+      fprintf(fplist,"%016" PRIx64 " ",*(uint64_t*)cip);
+      addchars(line,*(uint64_t*)cip,count);
       break;
     default:
       assert(0);
     } /* case */
-    count=(count+1) % 4;
+    count=(count+1) % cells_per_line;
     cip+=pc_cellsize;
   } /* while */
-  if (strlen(name)>0)
-    fprintf(fplist," %s",name);
+  if (strlen(line)>0)
+    fprintf(fplist,"\t; %s\n",line);
 
+  /* done with disassembly */
   free(code);
   label_deletall();
+
+  if (dumpdbg) {
+    fseek(fpamx,amxhdr.size,SEEK_SET);
+    AMX_DBG_HDR dbghdr;
+    if (fread(&dbghdr,sizeof dbghdr,1,fpamx)!=1) {
+      fprintf(stderr,"No debug information present\n");
+      fclose(fpamx);
+      fclose_not_stdout(fplist);
+      return 1;
+    } /* if */
+    fprintf(fplist,"\n\nDEBUG INFORMATION\n");
+    if (dbghdr.files>0) {
+      //??? store filenames in a list, so that
+      //    1) the code size can be calculated
+      //    2) the line table can be interleaved with the file table
+      fprintf(fplist,"\nFiles\tAddress\t\tName\n");
+      for (int i=0; i<dbghdr.files; i++) {
+        uint32_t address=0;
+        fread(&address,sizeof address,1,fpamx);
+        char name[sNAMEMAX+1];
+        int n=0,c;
+        while ((c=fgetc(fpamx))!=EOF && c!=0)
+          if (n<sNAMEMAX)
+            name[n++]=c;
+        name[n]='\0';
+        fprintf(fplist,"\t%08X\t%s\n",address,name);
+      } /* for */
+    } /* if */
+    if (dbghdr.lines>0) {
+      //??? store these in a list as well, so that the symbol table can refer
+      //    to line numbers instead of addresses
+      fprintf(fplist,"\nLines\tAddress\t\tLine number\n");
+      for (int i=0; i<dbghdr.lines; i++) {
+        AMX_DBG_LINE dbgline={0};
+        fread(&dbgline,sizeof dbgline,1,fpamx);
+        fprintf(fplist,"\t%08lx\t%d\n",(unsigned long)dbgline.address,dbgline.line);
+      } /* for */
+    } /* if */
+    if (dbghdr.symbols>0) {
+      fprintf(fplist,"\nSymbols\tAddress\t\tScope\t\t\tName\n");
+      unsigned char *buf=malloc(sizeof(AMX_DBG_SYMBOL)+sNAMEMAX+1);
+      if (buf!=NULL) {
+        for (int i=0; i<dbghdr.symbols; i++) {
+          memset(buf,0,sizeof(AMX_DBG_SYMBOL)+sNAMEMAX+1);
+          fread(buf,sizeof(AMX_DBG_SYMBOL),1,fpamx);
+          AMX_DBG_SYMBOL *dbgsym=(AMX_DBG_SYMBOL*)buf;
+          int n=strlen(dbgsym->name);
+          int c;
+          while ((c=fgetc(fpamx))!=EOF && c!=0)
+            if (n<sNAMEMAX)
+              dbgsym->name[n++]=c;
+          dbgsym->name[n]='\0';
+          assert(dbgsym->ident!=10);  /* 'reference to function' is documented, but does not yet exist */
+          if (dbgsym->ident==iFUNCTN) {
+            fprintf(fplist,"\t%08lx\t%08lx:%08lx\t%s",(unsigned long)dbgsym->codestart,
+                    (unsigned long)dbgsym->codestart,(unsigned long)dbgsym->codeend,
+                    dbgsym->name);
+          } else if (dbgsym->scope==1) {
+            fprintf(fplist,"\tFRM(%08lx)\t%08lx:%08lx\t%s",(unsigned long)dbgsym->address,
+                    (unsigned long)dbgsym->codestart,(unsigned long)dbgsym->codeend,
+                    dbgsym->name);
+          } else if (dbgsym->scope==2) {
+            fprintf(fplist,"\tDAT(%08lx)\t%08lx:%08lx\t%s",(unsigned long)dbgsym->address,
+                    (unsigned long)dbgsym->codestart,(unsigned long)dbgsym->codeend,
+                    dbgsym->name);
+          } else {
+            fprintf(fplist,"\tDAT(%08lx)\t\t%s",(unsigned long)dbgsym->address,dbgsym->name);
+          }
+          //??? should also print tag name of the symbol, if any
+          for (int d=0; d<dbgsym->dim; d++) {
+            AMX_DBG_SYMDIM dbgdim={0};
+            fread(&dbgdim,sizeof(AMX_DBG_SYMDIM),1,fpamx);
+            fprintf(fplist,"[%lu]",(unsigned long)dbgdim.size);
+            //??? also print the tag of the index, if any
+          }
+          fprintf(fplist,"\n");
+        } /* for */
+        free(buf);
+      } /* if */
+    } /* if */
+    //??? tags
+    //??? automatons
+    //??? states
+  }
+
   fclose(fpamx);
-  fclose(fplist);
+  fclose_not_stdout(fplist);
+# if defined FORTIFY
+    Fortify_ListAllMemory();
+# endif
   return 0;
 }
 

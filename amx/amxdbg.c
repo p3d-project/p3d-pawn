@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxdbg.c 7683 2026-08-20 20:23:32Z thiadmer $
+ *  Version: $Id: amxdbg.c 7696 2026-09-20 14:46:13Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -97,7 +97,7 @@ int AMXAPI dbg_LoadInfo(AMX_DBG *amxdbg, FILE *fp)
   if (dbghdr.tags > 0)
     amxdbg->tagtbl = (AMX_DBG_TAG**)malloc(dbghdr.tags * sizeof(AMX_DBG_TAG*));
   if (dbghdr.automatons > 0)
-    amxdbg->automatontbl = (AMX_DBG_MACHINE**)malloc(dbghdr.automatons * sizeof(AMX_DBG_MACHINE*));
+    amxdbg->automatontbl = (AMX_DBG_AUTOMATON**)malloc(dbghdr.automatons * sizeof(AMX_DBG_AUTOMATON*));
   if (dbghdr.states > 0)
     amxdbg->statetbl = (AMX_DBG_STATE**)malloc(dbghdr.states * sizeof(AMX_DBG_STATE*));
   if (amxdbg->hdr == NULL
@@ -177,12 +177,12 @@ int AMXAPI dbg_LoadInfo(AMX_DBG *amxdbg, FILE *fp)
   /* automaton name table */
   for (index = 0; index < dbghdr.automatons; index++) {
     assert(amxdbg->automatontbl != NULL);
-    amxdbg->automatontbl[index] = (AMX_DBG_MACHINE *)ptr;
+    amxdbg->automatontbl[index] = (AMX_DBG_AUTOMATON *)ptr;
     #if BYTE_ORDER==BIG_ENDIAN
       amx_Align16(&amxdbg->automatontbl[index]->automaton);
       amx_Align32(&amxdbg->automatontbl[index]->address);
     #endif
-    for (ptr = ptr + sizeof(AMX_DBG_MACHINE) - 1; *ptr != '\0'; ptr++)
+    for (ptr = ptr + sizeof(AMX_DBG_AUTOMATON) - 1; *ptr != '\0'; ptr++)
       /* nothing */;
     ptr++;              /* skip '\0' too */
   } /* for */

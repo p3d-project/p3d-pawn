@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amx.c 7688 2026-08-28 19:43:19Z thiadmer $
+ *  Version: $Id: amx.c 7698 2026-09-22 15:49:36Z thiadmer $
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -1114,32 +1114,32 @@ static int VerifyPcode(AMX *amx)
 
    static void getlibname(char *libname,const char *source)
    {
- #   if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
+#    if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
        char *root=getenv(AMX_LIBPATH);
- #   endif
+#    endif
 
      assert(libname!=NULL && source!=NULL);
      libname[0]='\0';
- #   if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
+#    if defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
        if (root!=NULL && *root!='\0') {
          strcpy(libname,root);
          if (libname[strlen(libname)-1]!='/')
            strcat(libname,"/");
        } /* if */
- #   endif
+#    endif
      strcat(libname,"amx");
      strcat(libname,source);
- #   if defined _Windows
+#    if defined _Windows
        strcat(libname,".dll");
- #   elif defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__
+#    elif defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__
        strcat(libname,".so");
- #   elif defined __APPLE__
+#    elif defined __APPLE__
        strcat(libname,".dylib");
- #   endif
+#    endif
    }
+# else
+#   error Dynamically loadable modules are not supported on this OS
 # endif
-#else
-# error Dynamically loadable modules are not supported on this OS
 #endif
 
 int AMXAPI amx_Init(AMX *amx,void *program)

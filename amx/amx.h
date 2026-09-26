@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amx.h 7683 2026-08-20 20:23:32Z thiadmer $
+ *  Version: $Id: amx.h 7696 2026-09-20 14:46:13Z thiadmer $
  */
 
 #ifndef AMX_H_INCLUDED
@@ -342,7 +342,7 @@ typedef struct tagAMX {
  * structure is used internaly.
  */
 typedef struct tagAMX_HEADER {
-  int32_t size;                 /* size of the "file" */
+  int32_t size;                 /* size of the "file" (excluding debug information) */
   uint16_t magic;               /* signature */
   char    file_version;         /* file format version */
   char    amx_version;          /* required version of the AMX */

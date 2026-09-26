@@ -3,7 +3,7 @@
  *  This file contains extra definitions that are convenient for debugger
  *  support.
  *
- *  Copyright (c) CompuPhase, 2005-2020
+ *  Copyright (c) 2005-2026, CompuPhase
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -17,7 +17,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxdbg.h 7696 2026-09-20 14:46:13Z thiadmer $
+ *  Version: $Id: amxdbg.h 7699 2026-09-25 21:36:04Z thiadmer $
  */
 
 #ifndef AMXDBG_H_INCLUDED
@@ -124,6 +124,7 @@ typedef struct tagAMX_DBG {
   AMX_DBG_TAG     **tagtbl;
   AMX_DBG_AUTOMATON **automatontbl;
   AMX_DBG_STATE   **statetbl;
+  int             cellsize;
 } PACKED AMX_DBG;
 
 #if !defined iVARIABLE
@@ -140,18 +141,20 @@ typedef struct tagAMX_DBG {
 int AMXAPI dbg_FreeInfo(AMX_DBG *amxdbg);
 int AMXAPI dbg_LoadInfo(AMX_DBG *amxdbg, FILE *fp);
 
-int AMXAPI dbg_LinearAddress(AMX *amx, ucell relative_addr, ucell *linear_addr);
-int AMXAPI dbg_LookupFile(AMX_DBG *amxdbg, ucell address, const char **filename);
-int AMXAPI dbg_LookupFunction(AMX_DBG *amxdbg, ucell address, const char **funcname);
-int AMXAPI dbg_LookupLine(AMX_DBG *amxdbg, ucell address, long *line);
+int AMXAPI dbg_LinearAddress(const AMX *amx, ucell relative_addr, ucell *linear_addr);
+int AMXAPI dbg_LookupFile(const AMX_DBG *amxdbg, ucell address, const char **filename);
+int AMXAPI dbg_LookupFunction(const AMX_DBG *amxdbg, ucell address, const char **funcname);
+int AMXAPI dbg_LookupFunctionAddress(const AMX_DBG *amxdbg, const char *funcname, const char *filename, ucell *address);
+int AMXAPI dbg_LookupLineNumber(const AMX_DBG *amxdbg, ucell address, long *line);
+int AMXAPI dbg_LookupLineAddress(const AMX_DBG *amxdbg, long line, const char *filename, ucell *address);
 
-int AMXAPI dbg_GetFunctionAddress(AMX_DBG *amxdbg, const char *funcname, const char *filename, ucell *address);
-int AMXAPI dbg_GetLineAddress(AMX_DBG *amxdbg, long line, const char *filename, ucell *address);
-int AMXAPI dbg_GetAutomatonName(AMX_DBG *amxdbg, int automaton, const char **name);
-int AMXAPI dbg_GetStateName(AMX_DBG *amxdbg, int state, const char **name);
-int AMXAPI dbg_GetTagName(AMX_DBG *amxdbg, int tag, const char **name);
-int AMXAPI dbg_GetVariable(AMX_DBG *amxdbg, const char *symname, ucell scopeaddr, const AMX_DBG_SYMBOL **sym);
-int AMXAPI dbg_GetArrayDim(AMX_DBG *amxdbg, const AMX_DBG_SYMBOL *sym, const AMX_DBG_SYMDIM **symdim);
+int AMXAPI dbg_GetAutomatonName(const AMX_DBG *amxdbg, int automaton, const char **name);
+int AMXAPI dbg_GetStateName(const AMX_DBG *amxdbg, int state, const char **name);
+int AMXAPI dbg_GetTagName(const AMX_DBG *amxdbg, int tag, const char **name);
+int AMXAPI dbg_GetVariable(const AMX_DBG *amxdbg, const char *symname, ucell scopeaddr, const AMX_DBG_SYMBOL **sym);
+int AMXAPI dbg_GetArrayDim(const AMX_DBG *amxdbg, const AMX_DBG_SYMBOL *sym, const AMX_DBG_SYMDIM **symdim);
+int AMXAPI dbg_GetLineInfo(const AMX_DBG *amxdbg, int index, long *line, const char **filename, ucell *address);
+int AMXAPI dbg_GetSymbolInfo(const AMX_DBG *amxdbg, int index, const AMX_DBG_SYMBOL **sym);
 
 #endif /* AMXDBG_STRUCTONLY */
 

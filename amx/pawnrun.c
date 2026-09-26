@@ -15,7 +15,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawnrun.c 7688 2026-08-28 19:43:19Z thiadmer $
+ *  Version: $Id: pawnrun.c 7699 2026-09-25 21:36:04Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -295,7 +295,7 @@ void ExitOnError(AMX *amx, int error)
       /* load the debug info. */
       if ((fp=fopen(g_filename,"rb")) != NULL && dbg_LoadInfo(&amxdbg,fp) == AMX_ERR_NONE) {
         dbg_LookupFile(&amxdbg, amx->cip, &filename);
-        dbg_LookupLine(&amxdbg, amx->cip, &line);
+        dbg_LookupLineNumber(&amxdbg, amx->cip, &line);
         printf("File: %s, line: %ld\n", filename, line);
         dbg_FreeInfo(&amxdbg);
         fclose(fp);

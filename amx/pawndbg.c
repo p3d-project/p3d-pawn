@@ -28,7 +28,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawndbg.c 7684 2026-08-23 20:30:23Z thiadmer $
+ *  Version: $Id: pawndbg.c 7699 2026-09-25 21:36:04Z thiadmer $
  *
  *
  *  Command line options:
@@ -621,7 +621,7 @@ static void source_list(AMX_DBG *amxdbg,int startline,int numlines,int curline)
           amx_printf("%s%3d  %s",prefix,startline+1,cursource[startline]);
       } else {
         /* see if there is a breakpoint on the line */
-        if (amxdbg!=NULL && dbg_GetLineAddress(amxdbg,startline,curfilename,&address)==AMX_ERR_NONE) {
+        if (amxdbg!=NULL && dbg_LookupLineAddress(amxdbg,startline,curfilename,&address)==AMX_ERR_NONE) {
           BREAKPOINT *bp;
           for (bp=breakpoints.next; bp!=NULL; bp=bp->next) {
             assert(bp->type!=BP_NONE);
@@ -1784,9 +1784,9 @@ static int break_set(AMX_DBG *amxdbg,const char *symaddr,int flags)
   bp.type=((flags & 1)!=0) ? BP_TEMP : BP_CODE;
   symaddr=(const char*)skipwhitespace(symaddr);
   if (isdigit(*symaddr)) {
-    err=dbg_GetLineAddress(amxdbg,strtol(symaddr,NULL,10)-1,filename,&bp.addr);
+    err=dbg_LookupLineAddress(amxdbg,strtol(symaddr,NULL,10)-1,filename,&bp.addr);
   } else {
-    err=dbg_GetFunctionAddress(amxdbg,symaddr,filename,&bp.addr);
+    err=dbg_LookupFunctionAddress(amxdbg,symaddr,filename,&bp.addr);
     dbg_LookupFunction(amxdbg, bp.addr, &bp.name);
   } /* if */
   if (err!=AMX_ERR_NONE)
@@ -1829,7 +1829,7 @@ static void break_list(AMX_DBG *amxdbg)
     if (cur->type==BP_CODE) {
       long line;
       const char *filename;
-      dbg_LookupLine(amxdbg,cur->addr,&line);
+      dbg_LookupLineNumber(amxdbg,cur->addr,&line);
       amx_printf("line: %ld",line+1);
       if (cur->name!=NULL) {
         amx_printf("\tfunc: %s",cur->name);
@@ -1887,7 +1887,7 @@ static int break_find(AMX_DBG *amxdbg,const char *symaddr)
         long line;
         if (cur->name!=NULL && strcmp(symaddr,cur->name)==0)
           return number;
-        dbg_LookupLine(amxdbg,cur->addr,&line);
+        dbg_LookupLineNumber(amxdbg,cur->addr,&line);
         if (line==strtol(symaddr,NULL,10)-1)
           return number;
       } /* if */
@@ -2737,7 +2737,7 @@ static int breakcount;  /* breaks since last stop on the same line */
     return AMX_ERR_DEBUG;
 
   /* try to avoid halting on the same line twice */
-  dbg_LookupLine(amxdbg,amx->cip,&line);
+  dbg_LookupLineNumber(amxdbg,amx->cip,&line);
   if (line==lastline && breakcount<5) { /* assume that there are no more than 5 breaks on a single line */
     runmode=org_runmode;
     return AMX_ERR_NONE;

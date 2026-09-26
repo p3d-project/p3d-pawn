@@ -83,7 +83,9 @@ ADD_EXECUTABLE(stategraph ${STATEGRAPH_SRCS})
 TARGET_COMPILE_DEFINITIONS(stategraph PUBLIC EZXML_NOMMAP)
 
 # Simple Pawn disassembler
-SET(PAWNDISASM_SRCS pawndisasm.c lstring.c)
+SET(PAWNDISASM_SRCS pawndisasm.c lstring.c 
+                    ${CMAKE_CURRENT_SOURCE_DIR}/../amx/amxdbg.c
+)
 ADD_EXECUTABLE(pawndisasm ${PAWNDISASM_SRCS})
 
 INSTALL(TARGETS pawnc LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})

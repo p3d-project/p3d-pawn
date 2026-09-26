@@ -22,6 +22,7 @@
 
 #include <assert.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -192,6 +193,29 @@ static int check_separator(char *str)
   return 0;
 }
 
+/** readline() functions like fgets(), but always reads a line that ends with
+ *  a '\n' regardless of whether the file is opened as 'text' or 'binary' (on
+ *  Microsoft Windows, where this makes a difference)
+ */
+static bool readline(FILE *input,char *buffer,size_t buffer_sz)
+{
+  assert(input!=NULL);
+  assert(buffer!=NULL);
+  assert(buffer_sz>0);
+  size_t count=0;
+  int c;
+  while (count<buffer_sz-1 && (c=fgetc(input))>=0) {
+    if (c=='\n' && count>0 && buffer[count-1]=='\r')
+      count--;          /* let '\n' overwrite the '\r' */
+    buffer[count++]=c;
+    if (c=='\n')
+      break;
+  }
+  assert(count<buffer_sz);
+  buffer[count]='\0';
+  return (count>0);
+}
+
 /* readbuffer
  * Reads in the input file and stores all strings in the
  * section between "#ifdef SCPACK" and "#else" in a buffer.
@@ -199,7 +223,7 @@ static int check_separator(char *str)
  * buffer; the \" escape code is handled. Multiple strings
  * on one line are handled.
  */
-unsigned readbuffer(FILE *input, unsigned char *buffer)
+static unsigned readbuffer(FILE *input, unsigned char *buffer)
 {
   char str[256];
   unsigned buffersize;
@@ -210,7 +234,7 @@ unsigned readbuffer(FILE *input, unsigned char *buffer)
 
   rewind(input);
   while (!feof(input)) {
-    while (fgets(str,sizeof str,input)!=NULL) {
+    while (readline(input,str,sizeof str)) {
       linenr++;
       check_tablename(str);
       check_separator(str);
@@ -220,7 +244,7 @@ unsigned readbuffer(FILE *input, unsigned char *buffer)
     if (!strmatch(str,START_TOKEN,NULL))
       return buffersize;  /* no (more) section found, quit */
 
-    while (fgets(str,sizeof str,input)!=NULL) {
+    while (readline(input,str,sizeof str)) {
       linenr++;
       check_if(str,linenr);
       if (check_tablename(str))
@@ -318,7 +342,7 @@ static void write_pairtable(FILE *output, unsigned char pairtable[128][2], char 
   fprintf(output, "/*-*SCPACK end of pair table, do not change or remove this line */\n");
 }
 
-void writefile(FILE *input, FILE *output, unsigned char *buffer, unsigned buffersize, unsigned char pairtable[128][2])
+static void writefile(FILE *input, FILE *output, unsigned char *buffer, unsigned buffersize, unsigned char pairtable[128][2])
 {
   char str[256];
   int insection, indent;
@@ -330,14 +354,14 @@ void writefile(FILE *input, FILE *output, unsigned char *buffer, unsigned buffer
   rewind(input);
   while (!feof(input)) {
     int needseparator;
-    while (fgets(str,sizeof str,input)!=NULL) {
+    while (readline(input,str,sizeof str)) {
       fprintf(output,"%s",str);
       if (check_tablename(str)) {
         write_pairtable(output, pairtable, tablename);
         /* strip an existing pair table from the file */
-        if (fgets(str,sizeof str,input)!=NULL) {
+        if (readline(input,str,sizeof str)) {
           if (strmatch(str,"/*-*SCPACK",NULL)) {
-            while (fgets(str,sizeof str,input)!=NULL)
+            while (readline(input,str,sizeof str))
               if (strmatch(str,"/*-*SCPACK",NULL))
                 break;
           } else {
@@ -377,7 +401,7 @@ void writefile(FILE *input, FILE *output, unsigned char *buffer, unsigned buffer
     bufptr++;
 
     /* skip the input file until the #endif section */
-    while (fgets(str,sizeof str,input)!=NULL) {
+    while (readline(input,str,sizeof str)) {
       if (strmatch(str,"#endif",NULL)) {
         fprintf(output,"%s",str);
         break;          /* done */
@@ -400,7 +424,7 @@ int main(int argc, char **argv)
 
   if (argc < 2 || argc > 3)
     usage();
-  if ((in=fopen(argv[1],"rt"))==NULL) {
+  if ((in=fopen(argv[1],"rb"))==NULL) {
     printf("SCPACK: error opening input %s\n",argv[1]);
     usage();
   } /* if */

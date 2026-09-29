@@ -107,10 +107,10 @@ static void plungeprefix(char *prefixname);
 static void parse(void);
 static void dumplits(void);
 static void dumpzero(int count,const char *label);
-static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst);
-static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,
-                    int fstock,int fconst);
-static int declloc(int fstatic);
+static void declfuncvar(bool fpublic,bool fstatic,bool fstock,bool fconst);
+static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic,
+                    bool fstock,bool fconst);
+static bool declloc(bool fstatic);
 static void decl_const(int scope);
 static cell needsub(char match,constvalue **namelist);
 static void verify_array_namelist(constvalue *namelist[], int numdim);
@@ -590,9 +590,9 @@ long long pc_lengthbin(void *handle)
 {
   assert(handle!=NULL);
 # if defined __GNUC__ || defined __clang___
-    _off_t curpos=ftello((FILE*)handle);
+    off_t curpos=ftello((FILE*)handle);
     fseeko((FILE*)handle,0,SEEK_END);
-    _off_t tail=ftello((FILE*)handle);
+    off_t tail=ftello((FILE*)handle);
     fseeko((FILE*)handle,curpos,SEEK_SET);
     return (long long)tail;
 # elif defined _MSC_VER && defined _WIN32
@@ -2087,12 +2087,8 @@ static void plungeprefix(char *prefixname)
   } /* if */
 }
 
-static int getclassspec(int initialtok,int *fpublic,int *fstatic,int *fstock,int *fconst)
+static bool getclassspec(int initialtok,bool *fpublic,bool *fstatic,bool *fstock,bool *fconst)
 {
-  int tok,err;
-  cell val;
-  char *str;
-
   assert(fconst!=NULL);
   assert(fstock!=NULL);
   assert(fstatic!=NULL);
@@ -2116,45 +2112,48 @@ static int getclassspec(int initialtok,int *fpublic,int *fstatic,int *fstock,int
     break;
   } /* switch */
 
-  err=0;
+  int err=0;
+  int tok;
   do {
-    tok=lex(&val,&str);  /* read in (new) token */
+    cell val;
+    char *str;
+    tok=lex(&val,&str);   /* read in (new) token */
     switch (tok) {
     case tCONST:
       if (*fconst)
-        err=42;          /* invalid combination of class specifiers */
+        err=42;           /* invalid combination of class specifiers */
       *fconst=true;
       break;
     case tSTOCK:
       if (*fstock)
-        err=42;          /* invalid combination of class specifiers */
+        err=42;           /* invalid combination of class specifiers */
       *fstock=true;
       break;
     case tSTATIC:
       if (*fstatic)
-        err=42;          /* invalid combination of class specifiers */
+        err=42;           /* invalid combination of class specifiers */
       *fstatic=true;
       break;
     case tPUBLIC:
       if (*fpublic)
-        err=42;          /* invalid combination of class specifiers */
+        err=42;           /* invalid combination of class specifiers */
       *fpublic=true;
       break;
     default:
       lexpush();
-      tok=0;             /* force break out of loop */
+      tok=0;              /* force break out of loop */
     } /* switch */
   } while (tok && err==0);
 
   /* extra checks */
   if (*fstatic && *fpublic) {
-    err=42;              /* invalid combination of class specifiers */
+    err=42;               /* invalid combination of class specifiers */
     *fstatic=*fpublic=false;
   } /* if */
 
   if (err)
     error(err);
-  return err==0;
+  return (err==0);
 }
 
 /*  parse       - process all input text
@@ -2165,7 +2164,7 @@ static void parse(void)
 {
   while (freading){
     /* first try whether a declaration possibly is native or public */
-    int fconst,fstock,fstatic,fpublic;
+    bool fconst,fstock,fstatic,fpublic;
     cell val;
     char *str;
     int tok=lex(&val,&str);  /* read in (new) token */
@@ -2329,7 +2328,7 @@ static void aligndata(int numbytes)
 
 }
 
-static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst)
+static void declfuncvar(bool fpublic,bool fstatic,bool fstock,bool fconst)
 {
   int tok,tag;
   char *str;
@@ -2387,18 +2386,14 @@ static void declfuncvar(int fpublic,int fstatic,int fstock,int fconst)
  *                     sc_curstates     (modified)
  *                     pc_docstring_suspended (modified)
  */
-static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,int fstock,int fconst)
+static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic,bool fstock,bool fconst)
 {
-  int ident,tag,ispublic,usage;
-  char name[sNAMEMAX+1];
-  cell val,size,cidx;
+  int tag,usage;
+  cell cidx;
   ucell address;
   int glb_incr;
-  char *str;
   int dim[sDIMEN_MAX];
-  int numdim;
   constvalue *dimnames[sDIMEN_MAX];
-  symbol *sym;
 # if !defined NDEBUG
     cell glbdecl=0;
 # endif
@@ -2410,24 +2405,28 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
 #   if !defined PAWN_LIGHT
       pc_docstring_suspended=true;      /* suspend attaching documentation to global/recent blocks */
 #   endif
-    size=1;                             /* single size (no array) */
-    numdim=0;                           /* no dimensions */
-    ident=iVARIABLE;
+    cell size=1;                        /* single size (no array) */
+    int numdim=0;                       /* no dimensions */
+    int ident=iVARIABLE;
+    char name[sNAMEMAX+1];
     if (firstname!=NULL) {
-      assert(strlen(firstname)<=sNAMEMAX);
-      strcpy(name,firstname);           /* save symbol name */
+      assert(strlen(firstname)<countof(name));
+      strlcpy(name,firstname,countof(name)); /* save symbol name */
       tag=firsttag;
       firstname=NULL;
     } else {
       tag=pc_addtag(NULL);
+      cell val;
+      char *str;
       if (lex(&val,&str)!=tSYMBOL) {    /* read in (new) token */
         error_symbolname(20,str);       /* invalid symbol name */
         litidx=0;                       /* clear literal pool (in case there is a string constant instead of a symbol name) */
       } /* if */
-      assert(strlen(str)<=sNAMEMAX);
-      strcpy(name,str);                 /* save symbol name */
+      assert(strlen(str)<countof(name));
+      strlcpy(name,str,countof(name));  /* save symbol name */
     } /* if */
-    ispublic=fpublic;
+    int sym_line=pc_curline;            /* save line number of the symbol name, see comment below addvariable() */
+    bool ispublic=fpublic;
     if (name[0]==PUBLIC_CHAR) {
       ispublic=true;                    /* implicitly public variable */
       assert(!fstatic);
@@ -2436,7 +2435,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
       ident=iARRAY;
       if (numdim==sDIMEN_MAX) {
         error(53);                      /* exceeding maximum number of dimensions */
-        return;
+        return false;
       } /* if */
       size=needsub(']',&dimnames[numdim]); /* get size; size==0 for "var[]" */
 #     if INT_MAX < LONG_MAX
@@ -2451,7 +2450,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
       usage=uPACKED;
       if (numdim==sDIMEN_MAX) {
         error(53);                      /* exceeding maximum number of dimensions */
-        return;
+        return false;
       } /* if */
       size=needsub('}',&dimnames[numdim]);/* get size; size==0 for "var{}" */
       size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
@@ -2484,7 +2483,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
       skiptotoken(',',true);            /* drop the rest of the declaration */
       litidx=0;                         /* and the literals that came with it */
     } /* if */
-    sym=findconst(name);
+    symbol *sym=findconst(name);
     if (sym==NULL) {
       sym=findglb(name,sSTATEVAR);
       /* if a global variable without states is found and this declaration has
@@ -2549,8 +2548,6 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
      * overlaps another
      */
     if (sc_curstates>0) {
-      unsigned char *map;
-
       if (litidx!=0)
         error(89,name); /* state variables may not be initialized */
       /* find an appropriate address for the state variable */
@@ -2558,6 +2555,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
       address=pc_cellsize*glb_declared;
       glb_incr=(int)size;
       /* use a memory map in which every cell occupies one bit */
+      unsigned char *map;
       if (glb_declared>0 && (map=(unsigned char*)malloc((size_t)(glb_declared+7)/8))!=NULL) {
         int fsa=state_getfsa(sc_curstates);
         symbol *sweep;
@@ -2666,7 +2664,8 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
       } /* for */
     } /* if */
     assert(sym!=NULL);
-    sc_curstates=0;
+    sc_curstates=0;             /* clear 'current state' ID when declaration is done */
+    sym->lnumber=sym_line;      /* attempt to parse array dimensions may have overread symbol definition, so reset it */
     if (ispublic)
       sym->usage|=uPUBLIC;
     if (fconst)
@@ -2682,8 +2681,8 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
     } else {
       glb_declared+=glb_incr;   /* add total number of cells (if added to the end) */
     } /* if */
-  } while (matchtoken(',')); /* enddo */   /* more? */
-  needtoken(tTERM);    /* if not comma, must be semicolon */
+  } while (matchtoken(','));    /* more? */
+  return (needtoken(tTERM)!=0); /* if not comma, must be semicolon or end-of-line */
 }
 
 /** declloc() declares local variables.
@@ -2696,24 +2695,22 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
  *  global references: lcl_declared (modified)
  *                     undefined_vars (read-only)
  */
-static int declloc(int fstatic)
+static bool declloc(bool fstatic)
 {
-  int ident;
   value lval={0};
   size_t cur_lit=0;
   int dim[sDIMEN_MAX];
   constvalue *dimnames[sDIMEN_MAX];
-  unsigned staging_start;
 
   bool fconst= (matchtoken(tCONST)==1);
   do {
-    ident=iVARIABLE;
+    int ident=iVARIABLE;
     cell size=1;
     int tag=pc_addtag(NULL);
     if (!needtoken(tSYMBOL)) {
       lexclr(true);                     /* drop the rest of the line... */
       litidx=0;                         /* ...clear literal pool... */
-      return 0;                         /* ...and quit */
+      return false;                     /* ...and quit */
     } /* if */
     char *str;
     tokeninfo(NULL,&str);
@@ -2736,12 +2733,13 @@ static int declloc(int fstatic)
      */
     if ((sym!=NULL && sym->block!=pc_blocklevel || findglb(name,sGLOBAL)!=NULL) && !undefined_vars)
       error(219,name);                  /* variable shadows another symbol (only give the warning when there are no errors) */
+    int sym_line=pc_curline;            /* save line number of the symbol name, see comment below addvariable() */
     int numdim=0;
     while (matchtoken('[')) {
       ident=iARRAY;
       if (numdim == sDIMEN_MAX) {
         error(53);                      /* exceeding maximum number of dimensions */
-        return ident;
+        return false;
       } /* if */
       size=needsub(']',&dimnames[numdim]);/* get size; size==0 for "var[]" */
 #     if INT_MAX < LONG_MAX
@@ -2756,7 +2754,7 @@ static int declloc(int fstatic)
       usage=uPACKED;
       if (numdim == sDIMEN_MAX) {
         error(53);                      /* exceeding maximum number of dimensions */
-        return ident;
+        return false;
       } /* if */
       size=needsub('}',&dimnames[numdim]);/* get size; size==0 for "var{}" */
       size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
@@ -2779,12 +2777,13 @@ static int declloc(int fstatic)
       initials(ident,usage,tag,&size,dim,numdim,dimnames);
       if (size==0) {
         skiptotoken(tTERM,false);
-        return ident;           /* error message already given */
+        return false;           /* error message already given */
       }
       if (numdim==1)
         dim[0]=(int)size;
     } /* if */
     /* reserve memory (on the stack) for the variable */
+    unsigned staging_start;
     if (fstatic) {
       /* write zeros for uninitialized fields */
       while (litidx<cur_lit+size)
@@ -2812,6 +2811,7 @@ static int declloc(int fstatic)
      * to initialize it
      */
     assert(sym!=NULL);          /* we declared it, it must be there */
+    sym->lnumber=sym_line;      /* attempt to parse array dimensions may have overread symbol definition, so reset it */
     if (fconst)
       sym->usage|=uCONST;
     if (!fstatic) {             /* static variables already initialized */
@@ -2897,9 +2897,8 @@ static int declloc(int fstatic)
         } /* if */
       } /* if */
     } /* if */
-  } while (matchtoken(','));  /* more? */
-  needtoken(tTERM);           /* if not comma, must be semicolon */
-  return ident;
+  } while (matchtoken(','));    /* more? */
+  return (needtoken(tTERM)!=0); /* if not comma, must be semicolon/end-of-line */
 }
 
 /* this function returns the maximum value for a cell in case of an error
@@ -4199,7 +4198,7 @@ static void funcstub(int fnative)
 static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,int stock)
 {
   symbol *sym;
-  int argcnt,tok,tag,funcline;
+  int argcnt,tok,tag;
   int opertok,opererror;
   char symbolname[sNAMEMAX+1];
   char *str;
@@ -4243,7 +4242,6 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   if (!matchtoken('('))
     return false;
   /* so it is a function, proceed */
-  funcline=pc_curline;          /* save line at which the function is defined */
   if (symbolname[0]==PUBLIC_CHAR) {
     fpublic=true;               /* implicitly public function */
     if (stock)
@@ -4252,7 +4250,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   sym=fetchfunc(symbolname,tag);/* get a pointer to the function entry */
   if (sym==NULL || (sym->usage & uNATIVE)!=0)
     return true;                /* it was recognized as a function declaration, but not as a valid one */
-  sym->lnumber=pc_curline;
+  sym->lnumber=pc_curline;      /* save line & file at which the function is defined */
   sym->fnumber=fcurrent;
   /* attach a preceding comment to the function's documentation */
   sc_attachdocumentation(sym,true);
@@ -4356,7 +4354,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     } /* while */
   } /* if */
   startfunc(sym->name,ovl_index); /* creates stack frame */
-  insert_dbgline(funcline);
+  insert_dbgline(sym->lnumber);
   setline(false);
   if (pc_pendingflags & flgALIGNDATA)
     alignframe(pc_dataalign);

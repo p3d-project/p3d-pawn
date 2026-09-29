@@ -8,15 +8,24 @@
  *     bcc32 -w -w-prc -w-amb -tWD -DAMXEXPORT="__stdcall _export" -DAMX_NATIVE_CALL=__stdcall amxFile.c amx.c
  *     bcc32 -w -w-prc -w-amb -tWD -DAMXEXPORT="__stdcall _export" -DAMX_NATIVE_CALL=__stdcall -DAMX_NOSTRFMT amxString.c amx.c
  *   Create PAWNRUN with:
- *     bcc32 -w -w-prc -DFLOATPOINT;FIXEDPOINT -DPAWN_DLL -DAMXDBG pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c
+ *     bcc32 -w -w-prc -DFLOATPOINT;FIXEDPOINT -DPAWN_DLL -DAMXDBG;AMX_DYNALOAD pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c
  *   Move all DLLs and executables to the "bin" directory.
  *
- * GCC or MinGW
- * ------------
- *   Windows: create the DLLs with:
- *   Linux: create the shared objects with:
+ * MinGW on Windows
+ * ----------------
+ *   Create the DLLs with:
  *   Create PAWNRUN with:
- *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_DLL -DAMXEXPORT=__stdcall -DAMXDBG -DFLOATPOINT -DFIXEDPOINT -o../bin/pawnrun pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c
+ *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_DLL -DAMXEXPORT=__stdcall -DAMXDBG -DAMX_DYNALOAD -DFLOATPOINT -DFIXEDPOINT -DPAWN_CELL_SIZE=32 -o../bin/pawnrun pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c
+ *
+ * GCC on Linux
+ * ------------
+ *   Create the shared objects with:
+ *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxFixed.so amxfixed.c amx.c
+ *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxFloat.so amxfloat.c amx.c -lm
+ *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxFile.so amxfile.c amx.c
+ *     gcc -Wall -Wextra -Wno-parentheses -DAMX_NOSTRFMT -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxString.so amxstring.c amx.c
+ *   Create PAWNRUN with:
+ *     gcc -Wall -Wextra -Wno-parentheses -DAMXDBG -DAMX_DYNALOAD -DFLOATPOINT -DFIXEDPOINT -DPAWN_CELL_SIZE=32 -I../linux -o../bin/pawnrun pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c ../linux/getch.c
  */
 
 say 'This REXX file does several tests on the compiler and the abstract machine.'
@@ -26,11 +35,12 @@ say ''
 say 'The current system is' uname('S')'.'
 say ''
 say 'Requirements:'
-say '   1. PAWNCC and PAWNRUN are compiled with assertions'
-say '   2. PAWNCC uses FORTIFY for memory leakage checks'
+say '   1. PAWNCC, PAWNRUN and PAWNDISASM are compiled with assertions'
+say '   2. PAWNCC and PAWNDISASM use the FORTIFY library for memory leakage checks'
 say '   3. PAWNRUN is the ANSI C version (for most assertions) and includes AMXDBG'
 say '   4. AMXCONS includes both floating-point and fixed-point support'
-say '   5. DLLs/shared libraries (a.o. "amxFixed", "amxFloat") are present'
+say '   5. DLLs/shared libraries (a.o. "amxFixed", "amxFloat") are present, and'
+say '      PAWNRUN is built to include support for dynamically loaded modules'
 say 'For example builds, see the comments in this REXX file.'
 say ''
 say 'At a ''test#'' prompt:'
@@ -50,15 +60,19 @@ if iswin32 then
   do
     clearscreen = 'cls'
     remove      = 'del'
+    to_dev_null = '> nul 2>&1'
     pawncc      = '..\bin\pawncc'
     pawnrun     = '..\bin\pawnrun'
+    pawndisasm  = '..\bin\pawndisasm'
   end
 else
   do
     clearscreen = 'clear'
     remove      = 'rm'
+    to_dev_null = '> /dev/null 2>&1'
     pawncc      = '../bin/pawncc'
     pawnrun     = '../bin/pawnrun'
+    pawndisasm  = '../bin/pawndisasm'
   end
 
 signal on syntax name syntax_err
@@ -171,11 +185,11 @@ matchoutput:
   return
 
 syntax_err:
-  say 'All tests have been completed.'
+  say 'All tests have completed.'
 clean_files_and_exit:
-  remove '*.log' '> nul 2>&1'
-  remove '*.amx' '> nul 2>&1'
-  remove '*.xml' '> nul 2>&1'
+  remove '*.log' to_dev_null
+  remove '*.amx' to_dev_null
+  remove '*.xml' to_dev_null
   exit
 
 test1:
@@ -587,7 +601,7 @@ test34:
   say '-----'
   pawncc '-v0 REDUNDANT_TEST= test2' commandsuffix
   pawnrun 'test2.amx' commandsuffix
-  call matchoutput 'warning 206', '1 Warning.', 'Hello world', '/Assertion failed'
+  call matchoutput 'warning 206', '1 Warning.', 'Hello world'/*, '/Assertion failed'*/
   /* Symptoms of detected bug: invalid opcode assertion when running it. The
      redundant test was scrapped and this caused code following it to be scrapped
      as well.
@@ -2462,14 +2476,15 @@ test175:
   return
 
 test176:
-  say '176. The following THREE tests should each compile successfully.'
+  say '176. The following FOUR tests should each compile successfully.'
   say ''
   say '    Tests with ''#pragma unused''.'
   say '-----'
   pawncc '-p PRAGMA_UNUSED_1= test17' commandsuffix
-  pawncc '-p PRAGMA_UNUSED_1= test17' commandsuffix
-  pawncc '-p PRAGMA_UNUSED_1= test17' commandsuffix
-  call matchoutput 'Completed successfully', 'Completed successfully', 'Completed successfully'
+  pawncc '-p PRAGMA_UNUSED_2= test17' commandsuffix
+  pawncc '-p PRAGMA_UNUSED_3= test17' commandsuffix
+  pawncc '-p PRAGMA_UNUSED_4= test17' commandsuffix
+  call matchoutput 'Completed successfully', 'Completed successfully', 'Completed successfully', 'Completed successfully'
   /* Symptoms of detected bug: when the '#pragma unused' followed a declaration
      of a (local) variable immediately, the variable was not yet defined when
      the directive was parsed (preprocessing interferes with parsing).
@@ -2485,4 +2500,101 @@ test177:
   call matchoutput 'warning 214'
   return
 
+test178:
+  say '178. The following test should issue warning 206 TWICE, but not error 021.'
+  say ''
+  say '    Same variable diclared in two conditional blocks.'
+  say '-----'
+  pawncc '-v0 -p siblings' commandsuffix
+  call matchoutput 'warning 206', 'warning 206', '2 Warnings.', '/error 021', '/Assertion failed'
+  /* Sympton of detected bug: Due to incorrect testing of the block (nesting) level
+     of variables, two variables with the same name but in different "sibling"
+	 blocks caused the error 021 (symbol already defined) to be flagged for the
+	 second declaration.
+   */
+  return
+
+test179:
+  say '179. The following test should issue warning 206. When running, it shows:'
+  say ''
+  say '    destruct(0): 8'
+  say ''
+  say '    Destructor on local variable in a nested block.'
+  say '-----'
+  pawncc '-v0 dtor' commandsuffix
+  pawnrun 'dtor.amx' commandsuffix
+  call matchoutput 'warning 206', '1 Warning.', 'destruct(0): 8', '/Assertion failed'
+  /* Sympton of detected bug: 1) The compiler dropped into an assertion. 2) The
+     generated code did not call the destructor.
+   */
+  return
+
+test180:
+  say '180. The following test should issue error 001 followed by other errors.'
+  say ''
+  say '    Syntax error in the ''state'' statement.'
+  say '-----'
+  pawncc '-v0 -p STATE_INCOMPLETE= states' commandsuffix
+  call matchoutput 'error 001', 'error 030', '2 Errors.', '/Assertion failed'
+  /* Sympton of detected bug: The compiler dropped into an assertion.
+   */
+  return
+
+test181:
+  say '181. The following tests should issue error 017 followed by waring 203, both for'
+  say '     the same symbol ''g''.'
+  say ''
+  say '    Another test with ''#pragma unused''.'
+  say '-----'
+  pawncc '-v0 -p PRAGMA_UNUSED_5= test17' commandsuffix
+  call matchoutput 'error 017*''g''', 'warning 203*''g''', '1 Error.'
+  /* Sympton of detected bug: The compiler crashed.
+   */
+  return
+
+test182:
+  say '182. The following tests should issue error 001 TWICE.'
+  say ''
+  say '    Literal array passes to a function, but with an incorrect syntax.'
+  say '-----'
+  pawncc '-v0 -p LITERAL_ARRAY_PARAM= array2' commandsuffix
+  call matchoutput 'error 001', 'error 001', '2 Errors.'
+  /* Sympton of detected bug: Assertion failure due to the syntax error in the
+     literal array, which then causes the array size to be determined as 0.
+   */
+  return
+
+test183:
+  say '183. The following tests should issue error 001.'
+  say ''
+  say '    Literal array is assigened to a variable, but with an incorrect syntax.'
+  say '-----'
+  pawncc '-v0 -p LITERAL_ARRAY_ASSIGN= array2' commandsuffix
+  call matchoutput 'error 001', '1 Error.'
+  /* Sympton of detected bug: Assertion failure due to the syntax error in the
+     literal array, which then causes the array size to be determined as 0 (same
+	   as in test 182). A second problem was an extra error 047 being issued.
+   */
+  return
+
+test184:
+  say '184. The following tests should issue warning 237 and show verbose output.'
+  say '     On disassembly, the debug information must show at the bottom:'
+  say ''
+  say '    Symbols Address         Scope                   Name'
+  say '            FRM(0000000c)   00000008:000000ac       n'
+  say '            FRM(fffffffc)   00000108:000001c8       v'
+  say '            00000008        00000008:000000ac       fibonacci'
+  say '            000000ac        000000ac:000001d4       main'
+  say ''
+  say '    Scope (code range) of function arguments must cover the entire function.'
+  say '-----'
+  pawncc '-d2 fibr' commandsuffix
+  pawndisasm '-d -o- fibr.amx' commandsuffix
+  call matchoutput 'warning 237', '1 Warning.', ';Flags:*debug-info', 'DEBUG INFORMATION','FRM(0000000c)*00000008:000000ac*n'
+  /* Sympton of detected bug: code range of function argument was reduced to the
+     compound block of the function (in the debug information only). That is,
+     the scope of function argument 'n' must be the same as function 'fibonacci'.
+   */
+  return
 

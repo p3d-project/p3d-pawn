@@ -1,3 +1,9 @@
+#if defined LITERAL_ARRAY_PARAM
+test(a[]) {
+    return a[0];
+}
+#endif
+
 main()
     {
     #if defined ARRAY2DTO3D
@@ -17,5 +23,14 @@ main()
                 }
             printf ''\n''
             }
+    #endif
+
+    #if defined LITERAL_ARRAY_PARAM
+        return test([1,2);
+    #endif
+
+    #if defined LITERAL_ARRAY_ASSIGN
+        new b[2];
+        b = [1,2); return b[0];
     #endif
     }

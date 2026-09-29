@@ -26,7 +26,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sci18n.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: sci18n.c 7699 2026-09-25 21:36:04Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -387,13 +387,12 @@ SC_FUNC int scan_utf8(FILE *fp,const char *filename)
 # if defined PAWN_NO_UTF8
     return 0;
 # else
-    static void *resetpos=NULL;
     int utf8=true;
     int firstchar=true,bom_found=false;
     const unsigned char *ptr;
 
-    resetpos=pc_getpossrc(fp,resetpos);
-    while (utf8 && pc_readsrc(fp,srcline,sLINEMAX)!=NULL) {
+    long long resetpos=pc_getpossrc(fp);
+    while (utf8 && pc_readsrc(fp,srcline,sLINEMAX)) {
       ptr=srcline;
       if (firstchar) {
         /* check whether the very first character on the very first line

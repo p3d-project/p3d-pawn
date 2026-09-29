@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7693 2026-09-12 19:11:35Z thiadmer $
+ *  Version: $Id: sc5.c 7701 2026-09-29 11:09:02Z thiadmer $
  */
 #include <assert.h>
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -53,7 +53,7 @@
 #define NUM_WARNINGS    (sizeof warnmsg / sizeof warnmsg[0])
 typedef struct s_warnstack {
   struct s_warnstack *next;
-  unsigned char mask[(NUM_WARNINGS + 7) / 8]; /* 8 flags in a char */
+  unsigned char flag[NUM_WARNINGS];
 } warnstack;
 /* the root entry holds the active flags, any other allocated entries contain
  * "pushed" flags
@@ -61,10 +61,12 @@ typedef struct s_warnstack {
 static warnstack warndisable;
 
 static bool errflag=false;
-static int errfile;
-static int errstart;    /* line number at which the instruction started */
-static int errline;     /* forced line number for the error message */
-static int warnignore;  /* line number for warning to ignore (when error wal also given for the line) */
+static int errfile;     /**< forced file number for the error message */
+static int errline;     /**< forced line number for the error message */
+static int errstart;    /**< line number at which the instruction started */
+static int warnignore;  /**< line number for warning to ignore (when error was also given for the line) */
+static int errcount;    /**< number of errors */
+static int warncount;   /**< number of warnings */
 
 /*  error
  *
@@ -81,7 +83,7 @@ static int warnignore;  /* line number for warning to ignore (when error wal als
 SC_FUNC int error(unsigned long number,...)
 {
 static const char *prefix[3]={ "error", "fatal error", "warning" };
-static int lastline,errorcount;
+static int lastline,errcount_on_line;
 static short lastfile;
   const char *msg,*pre;
   const char *filename;
@@ -106,11 +108,12 @@ static short lastfile;
 
   /* also check for disabled warnings */
   if (number>=200) {
-    int index=(number-200)/8;
-    int mask=1 << ((number-200)%8);
-    if ((warndisable.mask[index] & mask)!=0) {
+    assert(number<200+NUM_WARNINGS);
+    if (warndisable.flag[number-200]!=0) {
       errline=-1;
       errfile=-1;
+      if (warndisable.flag[number-200]==wDISABLE_ONCE)
+        warndisable.flag[number-200]=0;
       return 0;
     } /* if */
   } /* if */
@@ -120,13 +123,13 @@ static short lastfile;
     msg=errmsg[number];
     pre=prefix[0];
     errflag=true;       /* set errflag (skip rest of erroneous expression) */
-    errnum++;
+    errcount++;
     warnignore=pc_curline;
   } else if (number<200) {
     assert(((int)number-100)>=0 && (number-100)<countof(fatalmsg));
     msg=fatalmsg[number-100];
     pre=prefix[1];
-    errnum++;           /* a fatal error also counts as an error */
+    errcount++;           /* a fatal error also counts as an error */
   } else {
     assert(((int)number-200)>=0 && (number-200)<countof(warnmsg));
     if (pc_curline==warnignore)
@@ -134,7 +137,7 @@ static short lastfile;
     warnignore=-1;
     msg=warnmsg[number-200];
     pre=prefix[2];
-    warnnum++;
+    warncount++;
   } /* if */
 
   strexpand(string,(const unsigned char*)msg,sizeof string-2,SCPACK_TABLE);
@@ -164,30 +167,33 @@ static short lastfile;
   } /* if */
   assert(filename!=NULL);
 
-  va_start(argptr,number);
-  if (strlen(errfname)==0) {
-    int start= (errstart==errline) ? -1 : errstart;
-    if (pc_error((int)number,string,filename,start,errline,argptr)) {
-      if (outf!=NULL) {
-        pc_closeasm(outf,true);
-        outf=NULL;
+  /* limit the number of errors that are reported on a single line */
+  if (errcount_on_line<3) {
+    va_start(argptr,number);
+    if (strlen(errfname)==0) {
+      int start= (errstart==errline) ? -1 : errstart;
+      if (pc_error((int)number,string,filename,start,errline,argptr)) {
+        if (outf!=NULL) {
+          pc_closeasm(outf,true);
+          outf=NULL;
+        } /* if */
+        longjmp(errbuf,3);        /* user abort */
       } /* if */
-      longjmp(errbuf,3);        /* user abort */
+    } else {
+      FILE *fp=fopen(errfname,"a");
+      if (fp!=NULL) {
+        if (errstart>=0 && errstart!=errline)
+          fprintf(fp,"%s(%d -- %d) : %s %03d: ",filename,errstart,errline,pre,(int)number);
+        else
+          fprintf(fp,"%s(%d) : %s %03d: ",filename,errline,pre,(int)number);
+        vfprintf(fp,string,argptr);
+        fclose(fp);
+      } /* if */
     } /* if */
-  } else {
-    FILE *fp=fopen(errfname,"a");
-    if (fp!=NULL) {
-      if (errstart>=0 && errstart!=errline)
-        fprintf(fp,"%s(%d -- %d) : %s %03d: ",filename,errstart,errline,pre,(int)number);
-      else
-        fprintf(fp,"%s(%d) : %s %03d: ",filename,errline,pre,(int)number);
-      vfprintf(fp,string,argptr);
-      fclose(fp);
-    } /* if */
+    va_end(argptr);
   } /* if */
-  va_end(argptr);
 
-  if (number>=100 && number<200 || errnum>25){
+  if (number>=100 && number<200 || errcount>25){
     if (strlen(errfname)==0) {
       va_start(argptr,number);
       pc_error(0,"\nCompilation aborted.",NULL,0,0,argptr);
@@ -204,13 +210,11 @@ static short lastfile;
   errfile=-1;
   /* check whether we are seeing many errors on the same line */
   if ((errstart<0 && lastline!=pc_curline) || lastline<errstart || lastline>pc_curline || fcurrent!=lastfile)
-    errorcount=0;
+    errcount_on_line=0;
+  if (number<200 || errcount_on_line>0)
+    errcount_on_line++; /* don't count only warnings, unless an error was also flagged */
   lastline=pc_curline;
   lastfile=fcurrent;
-  if (number<200)
-    errorcount++;
-  if (errorcount>=3)
-    error(107);         /* too many error/warning messages on one line */
 
   return 0;
 }
@@ -256,6 +260,30 @@ SC_FUNC int error_suggest_list(unsigned number,const char *name,constvalue *list
   return 0;
 }
 
+/** errorcount() returns the error and warning counts.
+ *
+ *  \param errors       [out, optional] The number of errors detected (this
+ *                      includes fatal errors. This parameter may be set to
+ *                      `NULL`.
+ *  \param warnings     [out, optional] The number of warnings detected. This
+ *                      parameter may be set to `NULL`.
+ *
+ *  \return 0 when no errors or warnings were detected, 1 when there are
+ *          warnings (but no errors), 2 when there are errors.
+ */
+SC_FUNC int errorcount(int *errors,int *warnings)
+{
+  if (errors)
+    *errors=errcount;
+  if (warnings)
+    *warnings=warncount;
+  if (errcount>0)
+    return 2;     /* errors found -> level 2 */
+  if (warncount>0)
+    return 1;     /* no errors, but warnings found -> level 1 */
+  return 0;       /* all is fine -> 0 */
+}
+
 SC_FUNC void errorset(int code,int line)
 {
   switch (code) {
@@ -280,18 +308,29 @@ SC_FUNC void errorset(int code,int line)
   case sSETFILE:
     errfile=line;
     break;
+  case sRESETERRCOUNT:
+    errcount=0;
+    warncount=0;
+    errflag=false;
+    break;
   } /* switch */
 }
 
-/* sc_enablewarning()
- * Enables or disables a warning (errors cannot be disabled).
- * Initially all warnings are enabled. The compiler does this by setting bits
- * for the *disabled* warnings and relying on the array to be zero-initialized.
+/** pc_enablewarning() enables or disables a warning (errors cannot be
+ *  disabled). Initially all warnings are enabled.
  *
- * Parameter enable can be:
- *  o  0 for disable
- *  o  1 for enable
- *  o  2 for toggle
+ *  \param number       The warning number.
+ *  \param enable       One of the following:
+ *                      *  0 for disable
+ *                      *  1 for enable
+ *                      *  2 for toggle
+ *                      *  3 for disable-once
+ *
+ *  \return `true` on success, `false` on a parameter error.
+ *
+ *  \note In the `warndisable` structure, a zero flag means 'enabled' and a
+ *        non-zero means 'disabled'. This is the inverse of the `enable`
+ *        parameter (0 = disable, 1 = enable).
  */
 #if defined __cplusplus
   extern "C"
@@ -299,26 +338,22 @@ SC_FUNC void errorset(int code,int line)
 DLLEXPORT
 int pc_enablewarning(unsigned number,int enable)
 {
-  int index;
-  unsigned char mask;
-
-  if (number<200)
+  if (number<200 || number>=200+NUM_WARNINGS)
     return false;       /* errors and fatal errors cannot be disabled */
   number -= 200;
-  if (number>=NUM_WARNINGS)
-    return false;
 
-  index=number/8;
-  mask=(unsigned char)(1 << (number%8));
   switch (enable) {
-  case 0:
-    warndisable.mask[index] |= mask;
+  case wDISABLE:
+    warndisable.flag[number]=1;
     break;
-  case 1:
-    warndisable.mask[index] &= (unsigned char)~mask;
+  case wENABLE:
+    warndisable.flag[number]=0;
     break;
-  case 2:
-    warndisable.mask[index] ^= mask;
+  case wTOGGLE:
+    warndisable.flag[number]= (warndisable.flag[number]==0);  /* zero -> 1, non-zero -> 0 */
+    break;
+  case wDISABLE_ONCE:
+    warndisable.flag[number]=wDISABLE_ONCE;
     break;
   } /* switch */
 
@@ -332,7 +367,7 @@ SC_FUNC void pushwarnings(void)
 {
   warnstack *p=(warnstack*)malloc(sizeof(warnstack));
   if (p!=NULL) {
-    memcpy(p->mask,warndisable.mask,sizeof(warndisable.mask));
+    memcpy(p->flag,warndisable.flag,sizeof(warndisable.flag));
     p->next=warndisable.next;
     warndisable.next=p;
   } else {
@@ -348,7 +383,7 @@ SC_FUNC void popwarnings(void)
   if (warndisable.next!=NULL) {
     warnstack *p=warndisable.next;
     warndisable.next=p->next;
-    memcpy(warndisable.mask,p->mask,sizeof(warndisable.mask));
+    memcpy(warndisable.flag,p->flag,sizeof(warndisable.flag));
     free(p);
   } else {
     error(98);          /* #pragma warning pop without push */

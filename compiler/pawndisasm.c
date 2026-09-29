@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawndisasm.c 7699 2026-09-25 21:36:04Z thiadmer $
+ *  Version: $Id: pawndisasm.c 7701 2026-09-29 11:09:02Z thiadmer $
  */
 #include <assert.h>
 #include <inttypes.h>
@@ -597,6 +597,17 @@ static cell do_call(FILE *ftxt,const cell *params,cell opcode,ucell cip)
   return 2;
 }
 
+static cell do_jump(FILE *ftxt,const cell *params,cell opcode,ucell cip)
+{
+  if (ftxt!=NULL) {
+    ucell address=get_param(params,0)+cip;
+    print_opcode(ftxt,opcode,cip);
+    print_param(ftxt,address,false,false);
+    fprintf(ftxt,"\t; %s\n",label_get(address));
+  } /* if */
+  return 2;
+}
+
 static cell do_sysreq(FILE *ftxt,const cell *params,cell opcode,ucell cip)
 {
   if (ftxt!=NULL) {
@@ -628,17 +639,6 @@ static cell do_sysreq_n(FILE *ftxt,const cell *params,cell opcode,ucell cip)
     fprintf(ftxt,"\n");
   } /* if */
   return 3;
-}
-
-static cell do_jump(FILE *ftxt,const cell *params,cell opcode,ucell cip)
-{
-  if (ftxt!=NULL) {
-    ucell address=get_param(params,0)+cip;
-    print_opcode(ftxt,opcode,cip);
-    print_param(ftxt,address,false,false);
-    fprintf(ftxt,"\t; %s\n",label_get(address));
-  } /* if */
-  return 2;
 }
 
 static cell do_switch(FILE *ftxt,const cell *params,cell opcode,ucell cip)

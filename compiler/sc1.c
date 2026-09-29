@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7693 2026-09-12 19:11:35Z thiadmer $
+ *  Version: $Id: sc1.c 7701 2026-09-29 11:09:02Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -132,10 +132,10 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
 static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makestategraph);
 static void reduce_referrers(symbol *root);
 static void gen_ovlinfo(symbol *root);
-static long max_stacksize(symbol *root,int *recursion);
+static long max_stacksize(symbol *root,bool *recursion);
 static long max_overlaysize(symbol *root,char **funcname);
 static int checkundefined(symbol *root);
-static bool testsymbols(const symbol *root,short level,bool testlabs,bool testconst);
+static bool testsymbols(const symbol *root,short level,bool testfunclvl,bool testconst);
 static int test_skippedundef(void);
 static void destructsymbols(symbol *root,int level);
 static constvalue *find_constval_byval(constvalue *table,cell val);
@@ -143,7 +143,7 @@ static constvalue *clone_consttable(const constvalue *table);
 static symbol *fetchlab(const char *name);
 static void statement(int *lastindent,bool allow_decl);
 static void compound(bool stmt_sameline);
-static int test(int label,int invert,int test_true,int *parenthesized);
+static int test(int label,bool invert,bool test_true,bool *parenthesized);
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
                   int *tag,symbol **symptr,bool chkfuncresult,bool in_test);
 static void doassert(void);
@@ -183,7 +183,15 @@ static int *wq_ptr;             /**< pointer to next entry */
   int pc_docstring_suspended=false;
 #endif
 
-#if !defined NO_MAIN
+
+/* If you want to embed the compiler into your aplication, there are two steps:
+ *
+ *  1. You build the sources with the macro 'PAWN_NO_MAIN'.
+ *  2. You implement a series of interface functions for reading and writing
+ *     files, printing error messages, and similar. These are documented (in
+ *     comments) in the block below.
+ */
+#if !defined PAWN_NO_MAIN
 
 #if defined __TURBOC__ && !defined __32BIT__
   extern unsigned int _stklen = 0x2000;
@@ -194,10 +202,10 @@ int main(int argc, char *argv[])
   return pc_compile(argc,argv);
 }
 
-/* pc_printf()
- * Called for general purpose "console" output. This function prints general
- * purpose messages; errors go through pc_error(). The function is modelled
- * after printf().
+/** pc_printf()
+ *  Called for general purpose "console" output. This function prints general
+ *  purpose messages; errors go through pc_error(). The function is modelled
+ *  after printf().
  */
 int pc_printf(const char *message,...)
 {
@@ -210,19 +218,20 @@ int pc_printf(const char *message,...)
   return ret;
 }
 
-/* pc_error()
- * Called for producing error output.
- *    number      the error number (as documented in the manual)
- *    message     a string describing the error with embedded %d and %s tokens
- *    filename    the name of the file currently being parsed
- *    firstline   the line number at which the expression started on which
- *                the error was found, or -1 if there is no "starting line"
- *    lastline    the line number at which the error was detected
- *    argptr      a pointer to the first of a series of arguments (for macro
- *                "va_arg")
- * Return:
- *    If the function returns 0, the parser attempts to continue compilation.
- *    On a non-zero return value, the parser aborts.
+/** pc_error()
+ *  Called for producing error output.
+ *  \param number       The error number (as documented in the manual).
+ *  \param message      [in] A string describing the error, with embedded '%d'
+ *                      and '%s' tokens if applicable.
+ *  \param filename     [in] The name of the file currently being parsed.
+ *  \param firstline    The line number at which the expression started on which
+ *                      the error was found, or -1 if there is no "starting
+ *                      line".
+ *  \param lastline     The line number at which the error was detected.
+ *  \param argptr       a pointer to the first of a series of arguments (for
+ *                      macro "va_arg").
+ *  \return If the function returns 0, the parser attempts to
+ *          continuecompilation. On a non-zero return value, the parser aborts.
  */
 int pc_error(int number,const char *message,const char *filename,int firstline,int lastline,va_list argptr)
 {
@@ -240,37 +249,45 @@ static char *prefix[3]={ "error", "fatal error", "warning" };
   return 0;
 }
 
-/* pc_opensrc()
- * Opens a source file (or include file) for reading. The "file" does not have
- * to be a physical file, one might compile from memory.
- *    filename    the name of the "file" to read from
- * Return:
- *    The function must return a pointer, which is used as a "magic cookie" to
- *    all I/O functions. When failing to open the file for reading, the
- *    function must return NULL.
- * Note:
- *    Several "source files" may be open at the same time. Specifically, one
- *    file can be open for reading and another for writing.
+/** pc_opensrc()
+ *  Called to open a source file (or include file) for reading.
+ *
+ *  \param filename     [in] The name of the "file" to read from
+ *
+ *  \return The function must return a pointer, which is used as a "magic
+ *          cookie" to all I/O functions. When failing to open the file for
+ *          reading, the function must return `NULL`.
+ *
+ *  \note Several "source files" may be open at the same time. For example, when
+ *        the compiler plunges into an include file, the file that this was
+ *        included from remain open.
+ *
+ *  \note This implementation reads a physical file. It opens the file in binary
+ *        because functions to get/set file positions are not reliable on text
+ *        files in Microsoft Windows.
  */
 void *pc_opensrc(const char *filename)
 {
   struct stat st;
   if (stat(filename,&st)==0 && S_ISDIR(st.st_mode))
     return NULL;
-  return fopen(filename,"r");
+  return fopen(filename,"rb");
 }
 
-/* pc_createsrc()
- * Creates/overwrites a source file for writing. The "file" does not have
- * to be a physical file, one might compile from memory.
- *    filename    the name of the "file" to create
- * Return:
- *    The function must return a pointer, which is used as a "magic cookie" to
- *    all I/O functions. When failing to open the file for reading, the
- *    function must return NULL.
- * Note:
- *    Several "source files" may be open at the same time. Specifically, one
- *    file can be open for reading and another for writing.
+/** pc_createsrc()
+ *  Called to create/overwrite a source file for writing.
+ *
+ *  \param filename     [in] The name of the "file" to create.
+ *
+ *  \return The function must return a pointer, which is used as a "magic
+ *          cookie" to all I/O functions. When failing to open the file for
+ *          writing, the function must return `NULL`.
+ *
+ *  \note Several "source files" may be open at the same time. Specifically, one
+ *        file can be open for reading and another for writing.
+ *
+ *  \note While the function to open an existing file specifically opens it in
+ *        binary mode, this function uses the default mode.
  */
 void *pc_createsrc(const char *filename)
 {
@@ -278,9 +295,12 @@ void *pc_createsrc(const char *filename)
   return fopen(filename,"w");
 }
 
-/* pc_closesrc()
- * Closes a source file (or include file). The "handle" parameter has the
- * value that pc_opensrc() returned in an earlier call.
+/** pc_closesrc()
+ *  Called to close a source file (or include file).
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_opensrc()` or
+ *                      `pc_createsrc()`.
  */
 void pc_closesrc(void *handle)
 {
@@ -288,77 +308,129 @@ void pc_closesrc(void *handle)
   fclose((FILE*)handle);
 }
 
-/* pc_readsrc()
- * Reads a single line from the source file (or up to a maximum number of
- * characters if the line in the input file is too long).
+/** pc_readsrc()
+ *  Called to read a single line from the source file (or up to a maximum number
+ *  of characters if the line in the input file is too long).
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_opensrc()`.
+ *  \param buffer       [out] Will contain the data read from the file.
+ *                      This buffer is zero-terminated. If a line ends with a
+ *                      newline, this '\n' character is included in the buffer.
+ *  \param buffer_sz    The size of the buffer. This function will only read
+ *                      'buffer_sz - 1' characters from the file, because the
+ *                      zero-terminator is stored too.
+ *
+ *  \return `true` on success, `false` on a read error or end-of-file.
+ *
+ *  \note This function is very similar to `fgets()`, but it gobbles up the '\r'
+ *        character on the end of the line even if the file is opened in binary
+ *        mode. (This is relevant on Microsoft Window only.)
  */
-char *pc_readsrc(void *handle,unsigned char *target,int maxchars)
-{
-  return fgets((char*)target,maxchars,(FILE*)handle);
-}
-
-/* pc_writesrc()
- * Writes to to the source file. There is no automatic line ending; to end a
- * line, write a "\n".
- */
-int pc_writesrc(void *handle,const unsigned char *source)
-{
-  return fputs((char*)source,(FILE*)handle) >= 0;
-}
-
-#define MAXPOSITIONS  4
-static fpos_t srcpositions[MAXPOSITIONS];
-static unsigned char srcposalloc[MAXPOSITIONS];
-
-/** pc_clearpossrc() clear source file position marks.
- */
-void pc_clearpossrc(void)
-{
-  memset(srcpositions,0,sizeof srcpositions);
-  memset(srcposalloc,0,sizeof srcposalloc);
-}
-
-/** pc_getpossrc() mark the current position in the source file.
- */
-void *pc_getpossrc(void *handle,void *position)
-{
-  if (position==NULL) {
-    /* allocate a new slot */
-    int i;
-    for (i=0; i<MAXPOSITIONS && srcposalloc[i]!=0; i++)
-      /* nothing */;
-    assert(i<MAXPOSITIONS); /* if not, there is a queue overrun */
-    if (i>=MAXPOSITIONS)
-      return NULL;
-    position=&srcpositions[i];
-    srcposalloc[i]=1;
-  } else {
-    /* use the gived slot */
-    assert(position>=(void*)srcpositions && position<(void*)((char*)srcpositions+sizeof(srcpositions)));
-  } /* if */
-  fgetpos((FILE*)handle,(fpos_t*)position);
-  return position;
-}
-
-/** pc_resetsrc() reset to a position marked earlier.
- *  "position" may only hold a pointer that was previously obtained from
- *  pc_getpossrc()
- */
-void pc_resetsrc(void *handle,void *position)
+bool pc_readsrc(void *handle,unsigned char *buffer,size_t buffer_sz)
 {
   assert(handle!=NULL);
-  assert(position!=NULL);
-  fsetpos((FILE*)handle,(fpos_t*)position);
-  /* note: the item is not cleared from the pool */
+  assert(buffer!=NULL);
+  assert(buffer_sz>0);
+  size_t count=0;
+  int c;
+  while (count<buffer_sz-1 && (c=fgetc((FILE*)handle))>=0) {
+    if (c=='\n' && count>0 && buffer[count-1]=='\r')
+      count--;          /* let '\n' overwrite the '\r' */
+    buffer[count++]=c;
+    if (c=='\n')
+      break;
+  }
+  assert(count<buffer_sz);
+  buffer[count]='\0';
+  return (count>0);
 }
 
-int pc_eofsrc(void *handle)
+/** pc_writesrc()
+ *  Called to write a line of text to the source file.
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_createsrc()`.
+ *  \param buffer       [in] A zero-terminated text string to write to the
+ *                      output. No '\n' is automatically appended.
+ *
+ *  \return `true` on success, `false` on failure.
+ */
+bool pc_writesrc(void *handle,const unsigned char *buffer)
+{
+  assert(handle!=NULL);
+  return (fputs((char*)buffer,(FILE*)handle)>=0);
+}
+
+/** pc_getpossrc()
+ *  Called to mark the current position in the source file.
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_opensrc()`.
+ *
+ *  \return The current position, or -1 on error.
+ */
+long long pc_getpossrc(void *handle)
+{
+  assert(handle!=NULL);
+# if defined __GNUC__ || defined __clang___
+    return (long long)ftello((FILE*)handle);
+# elif defined _MSC_VER && defined _WIN32
+    return (long long)_ftelli64((FILE*)handle);
+# else
+    return ftell((FILE*)handle);
+# endif
+}
+
+/** pc_resetsrc()
+ *  Called to reset the file 'current position' to a position marked earlier.
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_opensrc()`.
+ *  \param position     The position to set. It should be a position that was
+ *                      previously returned by `pc_getpossrc()`.
+ *
+ *  \return `true` on success, `false` on failure.
+ */
+bool pc_resetsrc(void *handle,long long position)
+{
+  assert(handle!=NULL);
+  if (position<0)
+    return false;
+# if defined __GNUC__ || defined __clang___
+    return (fseeko((FILE *)handle,position,SEEK_SET)==0);
+# elif defined _MSC_VER && defined _WIN32
+    return (_fseeki64((FILE *)handle,position,SEEK_SET)==0);
+# else
+    return (fseek((FILE *)handle,position,SEEK_SET)==0);
+# endif
+}
+
+/** pc_eofsrc()
+ *  Called to test whether the file 'current position' is at the end-of-file.
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_opensrc()`.
+ *
+ *  \return `true` on end-of-file, `false` otherwise.
+ */
+bool pc_eofsrc(void *handle)
 {
   return feof((FILE*)handle) || ferror((FILE*)handle);
 }
 
-/* should return a pointer, which is used as a "magic cookie" to all I/O
- * functions; return NULL for failure
+/** pc_openasm()
+ *  Called to open/create the intermediate (pseudo-assembler) file for both
+ *  writing and reading.
+ *
+ *  \param filename     [in] The name of the "file" to use.
+ *
+ *  \return The function must return a pointer, which is used as a "magic
+ *          cookie" to all I/O functions. When failing to open the file for
+ *          reading, the function must return `NULL`.
+ *
+ *  \note Depending on the the build, this implementation creates/opens a
+ *        physical file or a pseudo-file in memory.
  */
 void *pc_openasm(const char *filename)
 {
@@ -369,7 +441,15 @@ void *pc_openasm(const char *filename)
 # endif
 }
 
-void pc_closeasm(void *handle, int deletefile)
+/** pc_closeasm()
+ *  Called to close the intermediate (assembly) file.
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_openasm()`.
+ *  \param deletefile   Whether to delete the file after closing it, or whether
+ *                      to keep it.
+ */
+void pc_closeasm(void *handle, bool deletefile)
 {
 # if defined __MSDOS__ || defined PAWN_LIGHT
     if (handle!=NULL)
@@ -385,6 +465,13 @@ void pc_closeasm(void *handle, int deletefile)
 # endif
 }
 
+/** pc_resetasm()
+ *  Called to reset the intermediate file to the start, which is needed to
+ *  switch between reading and writing.
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_openasm()`.
+ */
 void pc_resetasm(void *handle)
 {
   assert(handle!=NULL);
@@ -396,60 +483,134 @@ void pc_resetasm(void *handle)
 # endif
 }
 
-int pc_writeasm(void *handle,const char *string)
+/** pc_writeasm()
+ *  Called to write a line of text to the intermediate (assembly) file.
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_openasm()`.
+ *  \param buffer       [in] A zero-terminated text string to write to the
+ *                      output. No '\n' is automatically appended.
+ *
+ *  \return `true` on success, `false` on failure.
+ */
+bool pc_writeasm(void *handle,const char *buffer)
 {
-# if defined __MSDOS__ || defined PAWN_LIGHT
-    return fputs(string,(FILE*)handle) >= 0;
-# else
-    return mfputs((memfile_t*)handle,string);
-# endif
+  #if defined __MSDOS__ || defined PAWN_LIGHT
+    return fputs(buffer,(FILE*)handle) >= 0;
+  #else
+    return mfputs((memfile_t*)handle,buffer);
+  #endif
 }
 
-char *pc_readasm(void *handle, char *string, int maxchars)
+/** pc_readasm()
+ *  Called to read a single line from the intermediate (assembly) file (or up to
+ *  a maximum number of characters if the line in the input file is too long).
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_openasm()`.
+ *  \param buffer       [out] Will contain the data read from the file.
+ *                      This buffer is zero-terminated. If a line ends with a
+ *                      newline, this '\n' character is included in the buffer.
+ *  \param buffer_sz    The size of the buffer. This function will only read
+ *                      'buffer_sz - 1' characters from the file, because the
+ *                      zero-terminator is stored too.
+ *
+ *  \return A pointer to the `buffer` parameter on success, or `NULL` on
+ *          failure.
+ *
+ *  \note This function is very similar to `fgets()`, but it gobbles up the '\r'
+ *        character on the end of the line even if the file is opened in binary
+ *        mode. (This is relevant on Microsoft Window only.)
+ */
+char *pc_readasm(void *handle, char *buffer, int buffer_sz)
 {
-# if defined __MSDOS__ || defined PAWN_LIGHT
-    return fgets(string,maxchars,(FILE*)handle);
-# else
-    return mfgets((memfile_t*)handle,string,maxchars);
-# endif
+  #if defined __MSDOS__ || defined PAWN_LIGHT
+    return fgets(buffer,buffer_sz,(FILE*)handle);
+  #else
+    return mfgets((memfile_t*)handle,buffer,buffer_sz);
+  #endif
 }
 
-/* Should return a pointer, which is used as a "magic cookie" to all I/O
- * functions; return NULL for failure.
+/** pc_openbin()
+ *  Called to create the P-code for writing and reading.
+ *
+ *  \param filename     [in] The name of the "file" to create.
+ *
+ *  \return The function must return a pointer, which is used as a "magic
+ *          cookie" to all I/O functions. When failing to open the file for
+ *          reading, the function must return `NULL`.
  */
 void *pc_openbin(const char *filename)
 {
   return fopen(filename,"wb");
 }
 
-void pc_closebin(void *handle,int deletefile)
+/** pc_closebin()
+ *  Called to close the P-code file.
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_openbin()`.
+ *  \param deletefile   Whether to delete the file after closing it, or whether
+ *                      to keep it.
+ */
+void pc_closebin(void *handle,bool deletefile)
 {
   fclose((FILE*)handle);
   if (deletefile)
     remove(binfname);
 }
 
-/* pc_resetbin()
- * Can seek to any location in the file.
- * The offset is always from the start of the file.
+/** pc_resetbin() is an interface function to set the position in the P-code
+ *  file.
+ *
+ *  \param handle       The "handle" for the file, a value that must have been
+ *                      returned by an earlier call to `pc_openbin()`.
+ *  \param position     The offset from the start of the file.
  */
-void pc_resetbin(void *handle,long offset)
+bool pc_resetbin(void *handle,long long position)
 {
   fflush((FILE*)handle);
-  fseek((FILE*)handle,offset,SEEK_SET);
+  if (position<0)
+    return false;
+# if defined __GNUC__ || defined __clang___
+    return (fseeko((FILE *)handle,position,SEEK_SET)==0);
+# elif defined _MSC_VER && defined _WIN32
+    return (_fseeki64((FILE *)handle,position,SEEK_SET)==0);
+# else
+    return (fseek((FILE *)handle,position,SEEK_SET)==0);
+# endif
 }
 
-int pc_writebin(void *handle,const void *buffer,int size)
+bool pc_writebin(void *handle,const void *buffer,int size)
 {
   return (int)fwrite(buffer,1,size,(FILE*)handle) == size;
 }
 
-long pc_lengthbin(void *handle)
+long long pc_lengthbin(void *handle)
 {
-  return ftell((FILE*)handle);
+  assert(handle!=NULL);
+# if defined __GNUC__ || defined __clang___
+    _off_t curpos=ftello((FILE*)handle);
+    fseeko((FILE*)handle,0,SEEK_END);
+    _off_t tail=ftello((FILE*)handle);
+    fseeko((FILE*)handle,curpos,SEEK_SET);
+    return (long long)tail;
+# elif defined _MSC_VER && defined _WIN32
+    __int64 curpos=_ftelli64((FILE*)handle);
+    _fseeki64((FILE*)handle,0,SEEK_END);
+    __int64 tail=_ftelli64((FILE*)handle);
+    _fseeki64((FILE*)handle,curpos,SEEK_SET);
+    return (long long)tail;
+# else
+    long  curpos=ftell((FILE*)handle);
+    fseek((FILE*)handle,0,SEEK_END);
+    long tail=ftell((FILE*)handle);
+    fseek((FILE*)handle,curpos,SEEK_SET);
+    return (long long)tail;
+# endif
 }
 
-#endif  /* !defined NO_MAIN */
+#endif  /* !defined PAWN_NO_MAIN */
 
 
 #if !(defined __MSDOS__ || defined __WIN32__ || defined _Windows)
@@ -494,7 +655,6 @@ int pc_compile(int argc, char *argv[])
    */
   char * volatile tmpname;  /* temporary input file name */
   FILE * volatile binf;
-  void *inpfmark;
   int lcl_tabsize;
   char *ptr;
 
@@ -506,21 +666,16 @@ int pc_compile(int argc, char *argv[])
   errorset(sEXPRRELEASE,0);
   if (!lexinit(false))
     error(103);         /* insufficient memory */
-  pc_clearpossrc();
 
   /* make sure that we clean up on a fatal error; do this before the first
    * call to error(). */
   if ((jmpcode=setjmp(errbuf))!=0)
     goto cleanup;
 
-  /* allocate memory for fixed tables */
   inpfname=(char*)malloc(_MAX_PATH*sizeof(char));
   if (inpfname==NULL)
     error(103);         /* insufficient memory */
   *inpfname='\0';
-  litq=(cell*)malloc(litmax*sizeof(cell));
-  if (litq==NULL)
-    error(103);         /* insufficient memory */
   if (!phopt_init())
     error(103);         /* insufficient memory */
 
@@ -533,7 +688,7 @@ int pc_compile(int argc, char *argv[])
   else
     set_extension(binfname,".amx",false);
   /* set output names that depend on the input name */
-  if (sc_listing)
+  if (pc_listing)
     set_extension(outfname,".lst",true);
   else
     set_extension(outfname,".asm",true);
@@ -552,6 +707,7 @@ int pc_compile(int argc, char *argv[])
   assert(get_sourcefile(0)!=NULL);  /* there must be at least one source file */
   if (get_sourcefile(1)!=NULL) {
     /* there are at least two or more source files */
+    /* ??? it would be better to create the temporay file in memory */
     const char *sname;
     FILE *ftmp;
     int fidx;
@@ -612,7 +768,7 @@ int pc_compile(int argc, char *argv[])
   if (outf==NULL)
     error(101,outfname);
   /* immediately open the binary file, for other programs to check */
-  if (sc_asmfile || sc_listing) {
+  if (pc_asmfile || pc_listing) {
     binf=NULL;
   } else {
     binf=(FILE*)pc_openbin(binfname);
@@ -621,12 +777,12 @@ int pc_compile(int argc, char *argv[])
   } /* if */
   setconstants();               /* set predefined constants and tagnames */
   for (i=0; i<skipinput; i++)   /* skip lines in the input file */
-    if (pc_readsrc(inpf_org,srcline,sLINEMAX)!=NULL)
+    if (pc_readsrc(inpf_org,srcline,sLINEMAX))
       pc_curline++;             /* keep line number up to date */
   skipinput=pc_curline;
   sc_status=statBROWSE;
   /* write starting options (from the command line or the configuration file) */
-  if (sc_listing) {
+  if (pc_listing) {
     char string[150];
     if (pc_matchedtabsize>1 && pc_tabsize>1)
       snprintf(string,countof(string),"#pragma tabsize %d\n",pc_tabsize);
@@ -635,7 +791,7 @@ int pc_compile(int argc, char *argv[])
   } /* if */
   /* do the first pass through the file (or possibly two or more "first passes") */
   sc_parsenum=0;
-  inpfmark=pc_getpossrc(inpf_org,NULL);
+  long long inpfmark=pc_getpossrc(inpf_org);
   char inpfname_org[_MAX_PATH]; /* save name of the main input file so it can be restored after each pass */
   strlcpy(inpfname_org,inpfname,sizeof inpfname_org);
   do {
@@ -648,6 +804,7 @@ int pc_compile(int argc, char *argv[])
 #   endif
     delete_inputfiletable();
     delete_undefsymboltable();
+    litarray_deleteall();
     resetglobals();
     pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
     errorset(sRESET,0);
@@ -725,13 +882,13 @@ int pc_compile(int argc, char *argv[])
     } /* if */
 # endif
 
-  if (!sc_listing) {
+  if (!pc_listing) {
 #   if !defined NO_DEFINE
       delete_substtable();
 #   endif
     delete_inputfiletable();
     delete_undefsymboltable();
-    litarray_deleteall();       /* this list should already be empty */
+    litarray_deleteall();
     resetglobals();
     pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
     errorset(sRESET,0);
@@ -776,7 +933,7 @@ cleanup:
 # if !defined PAWN_LIGHT
     int hdrsize=0;
 # endif
-  if (!(sc_asmfile || sc_listing) && errnum==0 && jmpcode==0) {
+  if (!(pc_asmfile || pc_listing) && errorcount(NULL,NULL)<2 && jmpcode==0) {
     assert(binf!=NULL);
     pc_resetasm(outf);          /* flush and loop back, for reading */
 #   if !defined PAWN_LIGHT
@@ -785,17 +942,17 @@ cleanup:
     assemble(binf,outf);        /* assembler file is now input */
   } /* if */
   if (outf!=NULL) {
-    pc_closeasm(outf,!(sc_asmfile || sc_listing));
+    pc_closeasm(outf,!(pc_asmfile || pc_listing));
     outf=NULL;
   } /* if */
   if (binf!=NULL) {
-    pc_closebin(binf,errnum!=0);
+    pc_closebin(binf,(errorcount(NULL,NULL)==2));
     binf=NULL;
   } /* if */
 
 # if !defined PAWN_LIGHT
-    if (errnum==0 && strlen(errfname)==0) {
-      int recursion;
+    if (errorcount(NULL,NULL)<2 && strlen(errfname)==0) {
+      bool recursion;
       int flag_exceed=0;
       long stacksize=max_stacksize(&glbtab,&recursion);
       char *max_ovlname=NULL;
@@ -813,8 +970,8 @@ cleanup:
         flag_exceed=1;
       if (pc_amxram>0 && (glb_declared+pc_stksize)*pc_cellsize>=pc_amxram)
         flag_exceed=1;
-      if ((sc_debug & sSYMBOLIC)!=0 || verbosity>=2 || stacksize+32>=(long)pc_stksize || flag_exceed) {
-        if (errnum>0 || warnnum>0)
+      if (((sc_debug & sSYMBOLIC)!=0 && verbosity!=0) || verbosity>=2 || stacksize+32>=(long)pc_stksize || flag_exceed) {
+        if (errorcount(NULL,NULL)==1)
           pc_printf("\n");
         pc_printf("Header size:       %8lu bytes\n",(long)hdrsize);
         pc_printf("Code size:         %8lu bytes\n",(long)code_idx);
@@ -849,10 +1006,7 @@ cleanup:
     } /* if */
 # endif
 
-  if (litq!=NULL) {
-    free(litq);
-    litq=NULL;
-  }
+  litq_free();
   /* when aborting inside an include file, pop off and erase all names on the stack */
   while ((i=POPSTK_I())!=-1) {
     (void)POPSTK_I();   /* fcurrent */
@@ -915,6 +1069,8 @@ cleanup:
 # endif
   delete_autolisttable();
   delete_heaplisttable();
+  int errnum,warnnum;
+  errorcount(&errnum,&warnnum);
   if (errnum!=0) {
     if (strlen(errfname)==0)
       pc_printf("\n%d Error%s.\n",errnum,(errnum>1) ? "s" : "");
@@ -1007,38 +1163,35 @@ static void resetglobals(void)
   pc_curline=0;         /* the line number in the current file */
   fnumber=0;            /* the file number in the file table (debugging) */
   fcurrent=0;           /* current file being processed (debugging) */
-  pc_scopelevel=0;      /* level of active (nested) compound statements */
+  pc_blocklevel=0;      /* level of active (nested) compound statements */
   pc_sideeffect=false;  /* true if an expression causes a side-effect */
   pc_stmtindent=0;      /* current indent of the statement */
   indent_nowarn=false;  /* do not skip warning "217 loose indentation" */
   sc_allowtags=true;    /* allow/detect tagnames */
   sc_status=statIDLE;   /* browse/write/skip status */
   sc_allowproccall=false; /* allow/detect tagnames in lex() */
-  sc_alignnext=false;
+  pc_pendingflags=0;    /* operations to perform on next function/data declaration (bit set) */
   pc_docexpr=false;
   pc_deprecate=NULL;
   sc_curstates=0;
   pc_memflags=0;
   pc_enumsequence=0;
+  errorset(sEXPRRELEASE,0);
 }
 
 static void initglobals(void)
 {
-  int i;
-
   resetglobals();
+  errorset(sRESETERRCOUNT,0);
 
-  sc_asmfile=false;     /* do not create .ASM file */
-  sc_listing=false;     /* do not create .LST file */
+  pc_asmfile=false;     /* do not create .ASM file */
+  pc_listing=false;     /* do not create .LST file */
   skipinput=0;          /* number of lines to skip from the first input file */
-  litmax=sDEF_LITMAX;   /* current size of the literal table */
-  errnum=0;             /* number of errors */
-  warnnum=0;            /* number of warnings */
   verbosity=1;          /* verbosity level, 0=no copyright banner */
   sc_debug=sCHKBOUNDS;  /* by default: bounds checking+assertions */
   pc_optimize=sOPTIMIZE_CORE;
   pc_cellsize=4;        /* default cell size = 4 bytes, 32-bits */
-  sc_dataalign=pc_cellsize;
+  pc_dataalign=pc_cellsize;
   pc_stksize=sDEF_AMXSTACK;/* default stack size */
   pc_addlibtable=true;  /* by default, add a "library table" to the output file */
   pc_amxlimit=0;        /* no limit on size of the abstract machine */
@@ -1049,7 +1202,7 @@ static void initglobals(void)
   rational_digits=0;    /* number of fractional digits */
   undefined_vars=false; /* if true, undefined symbols were found */
   pc_overlays=0;        /* do not generate for overlays */
-  for (i=0; i<ovlFIRST; i++)
+  for (int i=0; i<ovlFIRST; i++)
     pc_ovl0size[i][0]=pc_ovl0size[i][1]=0;
   pc_cryptkey=0;
 
@@ -1058,7 +1211,6 @@ static void initglobals(void)
   inpf=NULL;            /* file read from */
   inpfname=NULL;        /* pointer to name of the file currently read from */
   outf=NULL;            /* file written to */
-  litq=NULL;            /* the literal queue */
   glbtab.next=NULL;     /* clear global variables/constants table */
   loctab.next=NULL;     /*   "   local      "    /    "       "   */
   tagname_tab.next=NULL;/* tagname table */
@@ -1165,30 +1317,32 @@ static void parserespf(char *filename,char *oname,char *ename,char *pname,
 static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pname,
                          char *rname, char *codepage)
 {
-  char str[_MAX_PATH];
-  const char *ptr,*optionptr;
-  int arg,i,isoption;
+  char name[_MAX_PATH];
+  const char *ptr;
 
-  for (arg=1; arg<argc; arg++) {
+  for (int arg=1; arg<argc; arg++) {
+    const char *optionptr;
+    bool isoption;
 #   if DIRSEP_CHAR=='/'
       isoption= argv[arg][0]=='-';
 #   else
       isoption= argv[arg][0]=='/' || argv[arg][0]=='-';
 #   endif
     if (isoption) {
+      int i;
       ptr=&argv[arg][1];
       switch (*ptr) {
       case 'A':
         i=atoi(option_value(ptr));
         if (i>0 && (i % pc_cellsize)==0)
-          sc_dataalign=i;
+          pc_dataalign=i;
         else
           about();
         break;
       case 'a':
         if (*(ptr+1)!='\0')
           about();
-        sc_asmfile=true;        /* skip last pass of making binary file */
+        pc_asmfile=true;        /* skip last pass of making binary file */
         if (verbosity>1)
           verbosity=1;
         break;
@@ -1199,8 +1353,8 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
         else
           about();
         /* change default data-align too */
-        if (sc_dataalign<pc_cellsize || sc_dataalign==4)
-          sc_dataalign=pc_cellsize;
+        if (pc_dataalign<pc_cellsize || pc_dataalign==4)
+          pc_dataalign=pc_cellsize;
         break;
       case 'c':
         strlcpy(codepage,option_value(ptr),MAXCODEPAGE);  /* set name of codepage */
@@ -1241,28 +1395,28 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
         ptr=option_value(ptr);
         if (*ptr=='~') {
           /* this path is relative to the standard include path */
-          strlcpy(str,get_path(0),sizeof str);
-          i=(int)strlen(str);
-          if (i>0 && str[i-1]!=DIRSEP_CHAR) {
-            str[i]=DIRSEP_CHAR;
-            str[i+1]='\0';
+          strlcpy(name,get_path(0),sizeof name);
+          i=(int)strlen(name);
+          if (i>0 && name[i-1]!=DIRSEP_CHAR) {
+            name[i]=DIRSEP_CHAR;
+            name[i+1]='\0';
           } /* if */
           /* skip '~' and an optional directory separator following the '~' */
           ptr++;
           if (*ptr=='/' || *ptr==DIRSEP_CHAR)
             ptr++;
-          strlcat(str,ptr,sizeof str);
+          strlcat(name,ptr,sizeof name);
         } else {
           /* absolute path (or relative to current directory) */
-          strlcpy(str,ptr,sizeof str);
+          strlcpy(name,ptr,sizeof name);
         }
-        i=(int)strlen(str);
+        i=(int)strlen(name);
         if (i>0) {
-          if (str[i-1]!=DIRSEP_CHAR) {
-            str[i]=DIRSEP_CHAR;
-            str[i+1]='\0';
+          if (name[i-1]!=DIRSEP_CHAR) {
+            name[i]=DIRSEP_CHAR;
+            name[i+1]='\0';
           } /* if */
-          insert_path(str);
+          insert_path(name);
         } /* if */
         break;
 #     if defined PAWN_KEELOQ
@@ -1286,13 +1440,13 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
       case 'l':
         if (*(ptr+1)!='\0')
           about();
-        sc_listing=true;        /* skip second pass & code generation */
+        pc_listing=true;        /* skip second pass & code generation */
         break;
       case 'N':
-        strlcpy(str,option_value(ptr),sizeof str);
-        if ((ptr=strchr(str,'='))!=NULL && (i=atoi(ptr+1))<0) {
+        strlcpy(name,option_value(ptr),sizeof name);
+        if ((ptr=strchr(name,'='))!=NULL && (i=atoi(ptr+1))<0) {
           *(char*)ptr='\0';
-          append_constval(&ntvindex_tab,str,i,0);
+          append_constval(&ntvindex_tab,name,i,0);
           pc_addlibtable=false; /* no library table, for hard-coded natives */
         } /* if */
         break;
@@ -1351,17 +1505,17 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
       case 'v':
         optionptr=option_value(ptr);
         verbosity= isdigit(*optionptr) ? atoi(optionptr) : 2;
-        if (sc_asmfile && verbosity>1)
+        if (pc_asmfile && verbosity>1)
           verbosity=1;
         break;
       case 'w':
         i=(int)strtol(option_value(ptr),(char **)&ptr,10);
         if (*ptr=='-')
-          pc_enablewarning(i,0);
+          pc_enablewarning(i,wDISABLE);
         else if (*ptr=='+')
-          pc_enablewarning(i,1);
+          pc_enablewarning(i,wENABLE);
         else if (*ptr=='\0')
-          pc_enablewarning(i,2);
+          pc_enablewarning(i,wTOGGLE);
         break;
       case 'X':
         if (*(ptr+1)=='D') {
@@ -1386,26 +1540,26 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
         parserespf(&argv[arg][1],oname,ename,pname,rname,codepage);
 #     endif
     } else if ((ptr=strchr(argv[arg],'='))!=NULL) {
-      i=(int)(ptr-argv[arg]);
+      int i=(int)(ptr-argv[arg]);
       if (i>sNAMEMAX) {
         i=sNAMEMAX;
         error(200,argv[arg],sNAMEMAX);  /* symbol too long, truncated to sNAMEMAX chars */
       } /* if */
-      strlcpy(str,argv[arg],i+1);       /* str holds symbol name */
+      strlcpy(name,argv[arg],i+1);       /* str holds symbol name */
       i=atoi(ptr+1);
-      add_constant(str,i,sGLOBAL,0);
+      add_constant(name,i,sGLOBAL,0);
     } else {
-      strlcpy(str,argv[arg],sizeof(str)-2); /* -2 because default extension is ".p" */
-      set_extension(str,".p",false);
-      insert_sourcefile(str);
+      strlcpy(name,argv[arg],sizeof(name)-2); /* -2 because default extension is ".p" */
+      set_extension(name,".p",false);
+      insert_sourcefile(name);
       /* The output name is the first input name with a different extension,
        * but it is stored in a different directory
        */
       if (strlen(oname)==0) {
-        if ((ptr=strrchr(str,DIRSEP_CHAR))!=NULL)
+        if ((ptr=strrchr(name,DIRSEP_CHAR))!=NULL)
           ptr++;          /* strip path */
         else
-          ptr=str;
+          ptr=name;
         assert(strlen(ptr)<_MAX_PATH);
         strcpy(oname,ptr);
       } /* if */
@@ -1453,6 +1607,8 @@ static void parserespf(char *filename,char *oname,char *ename,char *pname,
   /* load the complete file into memory */
   fseek(fp,0L,SEEK_END);
   size=ftell(fp);
+  if (size<0)
+    error(100,filename);        /* error reading input file */
   fseek(fp,0L,SEEK_SET);
   assert(size<INT_MAX);
   if ((string=(char *)malloc(((int)size+1)*sizeof(char)))==NULL)
@@ -2102,16 +2258,15 @@ static void parse(void)
  */
 static void dumplits(void)
 {
-  int k=0;
-
   if (sc_status==statSKIP)
     return;
+  size_t k=0;
   while (k<litidx){
     /* should be in the data segment */
     int j=32/pc_cellsize; /* 16 values per line for 2-byte cells, 8 for 4-byte cells, etc. */
     assert(curseg==2);
     defstorage();
-    while (j && k<litidx){
+    while (j>0 && k<litidx){
       outval(litq[k],true,false);
       stgwrite(" ");
       k++;
@@ -2249,7 +2404,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
 # endif
 
   assert(!fpublic || !fstatic);         /* may not both be set */
-  insert_docstring_separator();         /* see comment DOCSTRING_SEPARATOR in newfunc() */
+  insert_docstring_separator();         /* see comment #DOCSTRING_SEPARATOR in newfunc() */
   short filenum=fcurrent;               /* save file number at the start of the declaration */
   do {
 #   if !defined PAWN_LIGHT
@@ -2370,16 +2525,16 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
     } /* if */
     begdseg();          /* real (initialized) data in data segment */
     assert(litidx==0);  /* literal queue should be empty */
-    if (sc_alignnext) {
+    if (pc_pendingflags & flgALIGNDATA) {
       litidx=0;
-      aligndata(sc_dataalign);
+      aligndata(pc_dataalign);
       dumplits();       /* dump the literal queue */
-      sc_alignnext=false;
       litidx=0;         /* global initial data is dumped, so restart at zero */
     } /* if */
+    pc_pendingflags=0;
     assert(litidx==0);  /* literal queue should be empty (again) */
     initials(ident,usage,tag,&size,dim,numdim,dimnames);/* stores values in the literal queue */
-    if (size<litidx) {
+    if ((size_t)size<litidx) {
       int oldstatus=sc_status;
       if (sc_status==statSKIP)
         sc_status=statWRITE;
@@ -2492,7 +2647,7 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
     if (strlen(name)==0)
       continue;
     if (sym==NULL) {    /* define only if not yet defined */
-      sym=addvariable(name,address,ident,sGLOBAL,tag,dim,dimnames,numdim,usage);
+      sym=addvariable(name,address,ident,sGLOBAL,0,tag,dim,dimnames,numdim,usage);
       sc_attachdocumentation(sym,true);/* attach any documenation to the variable */
       if (sc_curstates>0)
         attachstatelist(sym,sc_curstates);
@@ -2538,53 +2693,50 @@ static void declglb(const char *firstname,int firsttag,int fpublic,int fstatic,i
  *  must be initialized with constant data. Standard locals are relative to the
  *  STACK; these variables can be initialized with an expression.
  *
- *  global references: declared   (modified)
- *                     funcstatus (read-only)
+ *  global references: lcl_declared (modified)
+ *                     undefined_vars (read-only)
  */
 static int declloc(int fstatic)
 {
-  int ident,tag,usage;
-  char name[sNAMEMAX+1];
-  symbol *sym;
-  cell size;
-  char *str;
-  value lval = {0};
-  int cur_lit=0;
+  int ident;
+  value lval={0};
+  size_t cur_lit=0;
   int dim[sDIMEN_MAX];
-  int numdim;
   constvalue *dimnames[sDIMEN_MAX];
-  int fconst;
   unsigned staging_start;
 
-  fconst=matchtoken(tCONST);
+  bool fconst= (matchtoken(tCONST)==1);
   do {
     ident=iVARIABLE;
-    size=1;
-    numdim=0;                           /* no dimensions */
-    tag=pc_addtag(NULL);
+    cell size=1;
+    int tag=pc_addtag(NULL);
     if (!needtoken(tSYMBOL)) {
       lexclr(true);                     /* drop the rest of the line... */
       litidx=0;                         /* ...clear literal pool... */
       return 0;                         /* ...and quit */
     } /* if */
+    char *str;
     tokeninfo(NULL,&str);
-    assert(strlen(str)<=sNAMEMAX);
-    strcpy(name,str);                   /* save symbol name */
+    char name[sNAMEMAX+1];
+    assert(strlen(str)<countof(name));
+    strlcpy(name,str,countof(name));    /* save symbol name */
     if (name[0]==PUBLIC_CHAR)
       error(56,name);                   /* local variables cannot be public */
+    symbol *sym=findloc(name);
     /* Note: block locals may be named identical to locals at higher
      * compound blocks (as with standard C); so we must check (and add)
      * the "nesting level" of local variables to verify the
      * multi-definition of symbols.
      */
-    if ((sym=findloc(name))!=NULL && sym->compound==pc_scopelevel)
+    if (sym!=NULL && sym->block==pc_blocklevel)
       error(21,name);                   /* symbol already defined */
     /* Although valid, a local variable whose name is equal to that
      * of a global variable or to that of a local variable at a lower
      * level might indicate a bug.
      */
-    if (((sym=findloc(name))!=NULL && sym->compound!=pc_scopelevel || findglb(name,sGLOBAL)!=NULL) && !undefined_vars)
+    if ((sym!=NULL && sym->block!=pc_blocklevel || findglb(name,sGLOBAL)!=NULL) && !undefined_vars)
       error(219,name);                  /* variable shadows another symbol (only give the warning when there are no errors) */
+    int numdim=0;
     while (matchtoken('[')) {
       ident=iARRAY;
       if (numdim == sDIMEN_MAX) {
@@ -2598,7 +2750,7 @@ static int declloc(int fstatic)
 #     endif
       dim[numdim++]=(int)size;
     } /* while */
-    usage=0;
+    int usage=0;
     if (matchtoken('{')) {              /* final dimension may also be specified with {} */
       ident=iARRAY;
       usage=uPACKED;
@@ -2620,14 +2772,15 @@ static int declloc(int fstatic)
     if (getstates(name))
       error(88,name);           /* local variables may not have states */
     if (ident==iARRAY || fstatic) {
-      if (sc_alignnext) {
-        aligndata(sc_dataalign);
-        sc_alignnext=false;
-      } /* if */
+      if (pc_pendingflags & flgALIGNDATA)
+        aligndata(pc_dataalign);
+      pc_pendingflags=0;
       cur_lit=litidx;           /* save current index in the literal table */
       initials(ident,usage,tag,&size,dim,numdim,dimnames);
-      if (size==0)
+      if (size==0) {
+        skiptotoken(tTERM,false);
         return ident;           /* error message already given */
+      }
       if (numdim==1)
         dim[0]=(int)size;
     } /* if */
@@ -2636,12 +2789,12 @@ static int declloc(int fstatic)
       /* write zeros for uninitialized fields */
       while (litidx<cur_lit+size)
         litadd(0);
-      sym=addvariable(name,(cur_lit+glb_declared)*pc_cellsize,ident,sSTATIC,
+      sym=addvariable(name,(cur_lit+glb_declared)*pc_cellsize,ident,sSTATIC,pc_blocklevel,
                       tag,dim,dimnames,numdim,usage);
     } else {
       lcl_declared+=(int)size;  /* variables are put on stack, adjust "declared" */
-      sym=addvariable(name,-lcl_declared*pc_cellsize,ident,sLOCAL,tag,
-                      dim,dimnames,numdim,usage);
+      sym=addvariable(name,-lcl_declared*pc_cellsize,ident,sLOCAL,pc_blocklevel,
+                      tag,dim,dimnames,numdim,usage);
       if (ident==iVARIABLE) {
         assert(!staging);
         stgset(true);           /* start stage-buffering */
@@ -2659,7 +2812,6 @@ static int declloc(int fstatic)
      * to initialize it
      */
     assert(sym!=NULL);          /* we declared it, it must be there */
-    sym->compound=pc_scopelevel;/* for multiple declaration/shadowing check */
     if (fconst)
       sym->usage|=uCONST;
     if (!fstatic) {             /* static variables already initialized */
@@ -2692,7 +2844,7 @@ static int declloc(int fstatic)
           sym->usage &= ~uWRITTEN;
       } else {
         /* an array */
-        assert(cur_lit>=0 && cur_lit<=litidx && litidx<=litmax);
+        assert(cur_lit<=litidx);
         assert(size>0 && size>=sym->dim.array.length);
         assert(numdim>1 || size==sym->dim.array.length);
         /* final literal values that are zero make no sense to put in the literal
@@ -2702,23 +2854,42 @@ static int declloc(int fstatic)
         while (litidx>cur_lit && litq[litidx-1]==0)
           litidx--;
         /* if the array is not completely filled, set all values to zero first */
-        if (litidx-cur_lit<size && (ucell)size<CELL_MAX)
+        if (litidx-cur_lit<(size_t)size && (ucell)size<CELL_MAX)
           fillarray(sym,size*pc_cellsize,0);
         if (cur_lit<litidx) {
-          /* check whether the complete array is set to a single value; if
-           * it is, more compact code can be generated */
+          /* check whether all elements in the array are set to the same value;
+           * if it is, more compact code can be generated
+           */
           cell first=litq[cur_lit];
-          int i;
+          size_t i;
           for (i=cur_lit; i<litidx && litq[i]==first; i++)
             /* nothing */;
           if (i==litidx) {
             /* all values are the same */
-            fillarray(sym,(litidx-cur_lit)*pc_cellsize,first);
-            litidx=cur_lit;     /* reset literal table */
+            if (litidx-cur_lit==1) {
+              /* make another exception if there is only a single cell to fill */
+              lval.sym=sym;
+              lval.ident=iVARIABLE;
+              ldconst(first,sPRI);
+              store(&lval);
+            } else {
+              fillarray(sym,(litidx-cur_lit)*pc_cellsize,first);
+            }
+            litidx=cur_lit;     /* reset literal queue */
           } else {
-            /* copy the literals to the array */
-            ldconst((cur_lit+glb_declared)*pc_cellsize,sPRI);  /* PRI = source */
-            address(sym,sALT);                                  /* ALT = dest */
+            /* copy the literals to the array, but first check whether the
+             * array literal can be merged with an earlier one
+             */
+            cell src_addr=litarray_find(cur_lit,litidx-cur_lit);
+            if (src_addr>=0) {
+              litidx=cur_lit;     /* reset literal queue */
+            } else {
+              src_addr=cur_lit+glb_declared;
+              /* save this literal array as a candidate for a future merge */
+              litarray_add(glb_declared,cur_lit,litidx-cur_lit);
+            } /* if */
+            ldconst(src_addr*pc_cellsize,sPRI); /* PRI = source */
+            address(sym,sALT);                  /* ALT = dest */
             sym->usage &= ~uREAD; /* clear this flag that address() implicitly sets */
             memcopy((litidx-cur_lit)*pc_cellsize);
           } /* if */
@@ -2726,8 +2897,8 @@ static int declloc(int fstatic)
         } /* if */
       } /* if */
     } /* if */
-  } while (matchtoken(',')); /* enddo */   /* more? */
-  needtoken(tTERM);    /* if not comma, must be semicolon */
+  } while (matchtoken(','));  /* more? */
+  needtoken(tTERM);           /* if not comma, must be semicolon */
   return ident;
 }
 
@@ -2768,7 +2939,7 @@ static int base;
 
   assert(cur>=0 && cur<numdim);
   assert(increment>=0);
-  assert(cur>0 && startlit==-1 || startlit>=0 && startlit<=litidx);
+  assert(cur>0 && startlit==-1 || startlit>=0 && (size_t)startlit<=litidx);
   if (cur==0)
     base=startlit;
   if (cur==numdim-1)
@@ -2870,7 +3041,7 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
       bool errorfound=false;
       int counteddim[sDIMEN_MAX];
       int idx;
-      constvalue lastdim={NULL,"",0,0,0};   /* sizes of the final dimension */
+      constvalue lastdim={0};   /* sizes of the final dimension */
       int skipdim=0;
 
       if (dim[numdim-1]!=0)
@@ -2903,7 +3074,7 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
           else if (match!=ld->value)
             break;
           count++;
-        }
+        } /* for */
         total=dim[numdim-2];
         for (d=numdim-3; d>=0; d--)
           total*=dim[d];
@@ -2941,7 +3112,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
   } /* if */
   totalsize=0;
   if (!needtoken('[')) {
-    if (numdim>1) {
+    if (numdim>1 && lexpeek()!='{') {
       errorset(sRESET,0);   /* force additional error, because this is the likely cause */
       error(52);            /* array is not fully initialized */
     }
@@ -3014,7 +3185,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
 {
   cell prev1=0,prev2=0;
   int ellips=false;
-  int curlit=litidx;
+  size_t curlit=litidx;
   int ctag;
   int match=0;
   int packcount=-1;
@@ -3036,7 +3207,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
     if (match=='}' && field!=NULL)
       error(51);        /* error (only unpacked arrays can use symbolic indices) */
     do {
-      int fieldlit=litidx;
+      size_t fieldlit=litidx;
       int matchbrace,fieldusage,ftag;
       if (matchtoken(match)) {  /* to allow for trailing ',' after the initialization */
         lexpush();
@@ -3076,12 +3247,11 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
       if (dimnames!=NULL && (field==NULL || field->name[0]=='\0'))
         error(227);             /* more initiallers than array fields */
       if (field!=NULL && field->name[0]!='\0') {
-        cell step,val,fsize;
-        int i;
+        cell step,val;
         assert(field->next!=NULL);
-        fsize=(field->next->value - field->value);
+        cell fsize=(field->next->value - field->value);
         assert(fieldlit<litidx || packcount>0);
-        if (litidx-fieldlit>fsize)
+        if (litidx-fieldlit>(size_t)fsize)
           error(228);           /* length of initialler exceeds size of the array field */
         if (ellips) {
           val=prev1;
@@ -3090,7 +3260,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
           step=0;
           val=0;                /* fill up with zeros */
         } /* if */
-        for (i=litidx-fieldlit; i<fsize; i++) {
+        for (int i=litidx-fieldlit; i<fsize; i++) {
           if (packcount>=0) {
             assert(packcount<pc_cellsize);
             do {
@@ -3134,9 +3304,9 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
     cell step=((litidx-curlit)>1 || packcount>1) ? prev1-prev2 : (cell)0;
     if (size==0 || (litidx-curlit)==0 && packcount<=0)
       error(41);                /* invalid ellipsis, array size unknown */
-    else if ((litidx-curlit)==(int)size)
+    else if ((litidx-curlit)==(size_t)size)
       error(18);                /* initialisation data exceeds declared size */
-    while ((litidx-curlit)<(int)size) {
+    while ((litidx-curlit)<(size_t)size) {
       if (packcount>=0) {
         assert(packcount<pc_cellsize);
         do {
@@ -3154,14 +3324,14 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
     } /* while */
   } /* if */
   if (fillzero && size>0) {
-    while ((litidx-curlit)<(int)size)
+    while ((litidx-curlit)<(size_t)size)
       litadd(0);
   } /* if */
   if (size==0) {
-    size=litidx-curlit;                 /* number of elements defined */
-  } else if (litidx-curlit>(int)size) { /* e.g. "myvar[3]=[1,2,3,4];" */
+    size=litidx-curlit;                     /* number of elements defined */
+  } else if (litidx-curlit>(size_t)size) {  /* e.g. "myvar[3]=[1,2,3,4];" */
     error(18);                  /* initialisation data exceeds declared size */
-    litidx=(int)size+curlit;    /* avoid overflow in memory moves */
+    litidx=size+curlit;         /* avoid overflow in memory moves */
   } /* if */
   return size;
 }
@@ -3335,7 +3505,7 @@ static void decl_const(int scope)
   int enumerate,first;
   symbol *sym;
 
-  insert_docstring_separator();         /* see comment DOCSTRING_SEPARATOR in newfunc() */
+  insert_docstring_separator();         /* see comment #DOCSTRING_SEPARATOR in newfunc() */
   do {
 #   if !defined PAWN_LIGHT
       pc_docstring_suspended=true;      /* suspend attaching documentation to global/recent blocks */
@@ -3528,7 +3698,7 @@ SC_FUNC symbol *fetchfunc(const char *name,int tag)
     } /* if */
   } else {
     /* don't set the "uDEFINE" flag; it may be a prototype */
-    sym=addsym(name,code_idx,iFUNCTN,sGLOBAL,tag,0);
+    sym=addsym(name,code_idx,iFUNCTN,sGLOBAL,0,tag,0);
     assert(sym!=NULL);          /* fatal error 103 must be given on error */
     /* assume no arguments */
     sym->dim.arglist=(arginfo*)calloc(1, sizeof(arginfo));
@@ -3640,19 +3810,19 @@ static int operatoradjust(int opertok,symbol *sym,char *opername,int resulttag)
   while (arg=&sym->dim.arglist[count], arg->ident!=0) {
     if (count<2) {
       if (arg->numtags>1)
-        error(65,count+1);  /* function argument may only have a single tag */
+        error(65,arg->name);  /* function parameter may only have a single tag */
       else if (arg->numtags==1)
         tags[count]=arg->tags[0];
     } /* if */
     if (opertok=='~' && count==0) {
       if (arg->ident!=iREFARRAY)
-        error(73,arg->name);/* must be an array argument */
+        error(73,arg->name);  /* parameter must be an array */
     } else {
       if (arg->ident!=iVARIABLE)
-        error(66,arg->name);/* must be non-reference argument */
+        error(66,arg->name);  /* parameter may not be a reference */
     } /* if */
     if (arg->hasdefault)
-      error(59,arg->name);  /* arguments of an operator may not have a default value */
+      error(59,arg->name);    /* parameters of an operator may not have a default value */
     count++;
   } /* while */
 
@@ -3932,7 +4102,7 @@ static void funcstub(int fnative)
   if ((sym->flags & flgENTRYPOINT)!=0)
     fpublic=false;
   if (fnative) {
-    sym->usage=(char)(uNATIVE | uRETVALUE | uDEFINE | (sym->usage & uPROTOTYPED));
+    sym->usage=uNATIVE | uRETVALUE | uDEFINE | (sym->usage & uPROTOTYPED);
     sym->x.lib=curlibrary;
   } else {
     if (fpublic)
@@ -4006,7 +4176,7 @@ static void funcstub(int fnative)
   /* attach the array to the function symbol */
   if (numdim>0) {
     assert(sym!=NULL);
-    sub=addvariable(symbolname,0,iREFARRAY,sGLOBAL,tag,dim,dimnames,numdim,usage);
+    sub=addvariable(symbolname,0,iREFARRAY,sGLOBAL,0,tag,dim,dimnames,numdim,usage);
     sub->parent=sym;
   } /* if */
 
@@ -4019,12 +4189,12 @@ static void funcstub(int fnative)
  *  This routine is called from "parse" and tries to make a function
  *  out of the following text
  *
- *  Global references: funcstatus,lastst,litidx
+ *  Global references: litidx   (modified)
+ *                     lastst   (modified)
  *                     rettype  (modified)
  *                     curfunc  (modified)
- *                     declared (modified)
  *                     glb_declared (modified)
- *                     sc_alignnext (modified)
+ *                     pc_pendingflags (modified)
  */
 static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,int stock)
 {
@@ -4132,7 +4302,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
       || strcmp(symbolname,_ENTRYFUNC)==0 || strcmp(symbolname,_EXITFUNC)==0)
   {
     if (argcnt>0)
-      error(5);         /* main(), @start(), entry() and exit() functions may not have any arguments */
+      error(5);         /* main(), @start(), entry() and exit() functions may not have any parameters */
     sym->usage|=uREAD;  /* these entry & exit points for programs or states are implicitly "used" */
   } /* if */
   int state_id=getstates(symbolname);
@@ -4188,10 +4358,11 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   startfunc(sym->name,ovl_index); /* creates stack frame */
   insert_dbgline(funcline);
   setline(false);
-  if (sc_alignnext) {
-    alignframe(sc_dataalign);
-    sc_alignnext=false;
-  } /* if */
+  if (pc_pendingflags & flgALIGNDATA)
+    alignframe(pc_dataalign);
+  if (pc_pendingflags & flgRECURSIVE)
+    sym->flags |= flgRECURSIVE;
+  pc_pendingflags=0;
   lcl_declared=0;       /* number of local cells */
   rettype=(sym->usage & uRETVALUE);      /* set "return type" variable */
   curfunc=sym;
@@ -4200,7 +4371,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     if (matchtoken('{')) {
       lexpush();
     } else {
-      /* DOCSTRING_SEPARATOR Insert a separator so that comments following the
+      /* #DOCSTRING_SEPARATOR Insert a separator so that comments following the
        * statement will not be attached to this function; they should be
        * attached to the next function. This is not a problem for functions
        * having a compound block, because the closing brace is an explicit
@@ -4283,7 +4454,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   testsymbols(&loctab,1,true,true);     /* test for unused arguments and labels */
   delete_symbols(&loctab,0,true,true);  /* clear local variables queue */
   assert(loctab.next==NULL);
-  curfunc=NULL;
+  curfunc=NULL;                 /* make sure to only clear this after all tests have run */
   if (sc_status==statSKIP) {
     sc_status=statWRITE;
     code_idx=cidx;
@@ -4292,27 +4463,26 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
   return true;
 }
 
-static int argcompare(arginfo *a1,arginfo *a2)
+static bool argcompare(arginfo *a1,arginfo *a2)
 {
-  int result,level,i;
-
-  result= strcmp(a1->name,a2->name)==0;     /* name */
+  bool result= strcmp(a1->name,a2->name)==0;    /* name */
   if (result)
-    result= a1->ident==a2->ident;           /* type/class */
+    result= a1->ident==a2->ident;               /* type/class */
+# define UMASK(u) ((u) & ~(uREAD|uWRITTEN))
   if (result)
-    result= a1->usage==a2->usage;           /* "const" flag */
+    result= UMASK(a1->usage)==UMASK(a2->usage); /* "const" and "packed" flags */
   if (result)
-    result= a1->numtags==a2->numtags;       /* tags (number and names) */
-  for (i=0; result && i<a1->numtags; i++)
+    result= a1->numtags==a2->numtags;           /* tags (number and names) */
+  for (int i=0; result && i<a1->numtags; i++)
     result= a1->tags[i]==a2->tags[i];
   if (result)
-    result= a1->numdim==a2->numdim;         /* array dimensions & index tags */
-  for (level=0; result && level<a1->numdim; level++)
+    result= a1->numdim==a2->numdim;             /* array dimensions & index tags */
+  for (int level=0; result && level<a1->numdim; level++)
     result= a1->dim[level]==a2->dim[level];
-  for (level=0; result && level<a1->numdim; level++)
+  for (int level=0; result && level<a1->numdim; level++)
     result=compare_consttable(a1->dimnames[level],a2->dimnames[level]);
   if (result)
-    result= a1->hasdefault==a2->hasdefault; /* availability of default value */
+    result= a1->hasdefault==a2->hasdefault;     /* availability of default value */
   if (a1->hasdefault) {
     if (a1->ident==iREFARRAY) {
       if (result)
@@ -4336,6 +4506,7 @@ static int argcompare(arginfo *a1,arginfo *a2)
       result= a1->defvalue_tag==a2->defvalue_tag;
   } /* if */
   return result;
+# undef UMASK
 }
 
 /** declargs() adds an entry in the local symbol table for each argument in the
@@ -4420,7 +4591,7 @@ static int declargs(symbol *sym,int chkshadow)
           error(45);                    /* too many function arguments */
         strcpy(name,ptr);               /* save symbol name */
         if (name[0]==PUBLIC_CHAR)
-          error(56,name);               /* function arguments cannot be public */
+          error(56,name);               /* function parameters cannot be public */
         if (numtags==0)
           tags[numtags++]=0;            /* default tag */
         /* Stack layout:
@@ -4432,7 +4603,7 @@ static int declargs(symbol *sym,int chkshadow)
          */
         doarg(name,ident,(argcnt+3)*pc_cellsize,tags,numtags,fpublic,fconst,chkshadow,&arg);
         if (fpublic && arg.hasdefault)
-          error(59,name);       /* arguments of a public function may not have a default value */
+          error(59,name);       /* parameters of a public function may not have a default value */
         if ((sym->usage & uPROTOTYPED)==0) {
           /* redimension the argument list, add the entry */
           sym->dim.arglist=(arginfo*)realloc(sym->dim.arglist,(argcnt+2)*sizeof(arginfo));
@@ -4573,7 +4744,6 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
 {
   symbol *argsym;
   cell size;
-  int usage,matchbrace;
 
   strcpy(arg->name,name);
   arg->hasdefault=false;        /* preset (most common case) */
@@ -4581,8 +4751,8 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
   arg->defvalue_tag=0;
   arg->numdim=0;
   arg->usage=0;
-  matchbrace=0;
-  usage=0;
+  int matchbrace=0;
+  short usage=0;
   if (matchtoken('['))
     matchbrace=']';
   else if (matchtoken('{'))
@@ -4631,7 +4801,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       assert(litidx==0);        /* at the start of a function, this is reset */
       assert(numtags>0);
       initials(ident,usage,tags[0],&size,arg->dim,arg->numdim,arg->dimnames);
-      assert(size>=litidx);
+      assert(size>=0 && (size_t)size>=litidx);
       /* allocate memory to hold the initial values */
       arg->defvalue.array.data=(cell *)malloc(litidx*sizeof(cell));
       if (arg->defvalue.array.data!=NULL) {
@@ -4660,7 +4830,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       if (size_tag_token!=0) {
         int paranthese;
         if (ident==iREFERENCE)
-          error(66,name);       /* argument may not be a reference */
+          error(66,name);       /* parameter may not be a reference */
         paranthese=0;
         while (matchtoken('('))
           paranthese++;
@@ -4690,8 +4860,8 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       } /* if */
     } /* if */
   } /* if */
-  arg->ident=(char)ident;
-  arg->usage=(char)(fconst ? uCONST : 0);
+  arg->ident=ident;
+  arg->usage=(fconst ? uCONST : 0);
   arg->usage|=usage;
   arg->numtags=numtags;
   arg->tags=(int*)malloc(numtags*sizeof tags[0]);
@@ -4706,15 +4876,24 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       error(219,name);          /* variable shadows another symbol (only give the warning when there are no errors) */
     /* add details of type and address */
     assert(numtags>0);
-    argsym=addvariable(name,offset,ident,sLOCAL,tags[0],
+    argsym=addvariable(name,offset,ident,sLOCAL,1,tags[0],
                        arg->dim,arg->dimnames,arg->numdim,usage);
-    argsym->compound=1;         /* arguments are at the same scope as locals in the top compound block */
-    if (ident==iREFERENCE)
-      argsym->usage|=uREAD;     /* because references are passed back */
-    if (fpublic)
-      argsym->usage|=uREAD;     /* arguments of public functions are always "used" */
-    if (fconst)
-      argsym->usage|=uCONST;
+    /* add usage flags; for an array, these must also be set on the child
+     * symbols of its sub-dimensions
+     */
+    for (symbol *sub=argsym; sub!=NULL; sub=finddepend(sub)) {
+      if (ident==iREFERENCE)
+        sub->usage|=uREAD;      /* because references are passed back */
+      if (fpublic)
+        sub->usage|=uREAD;      /* arguments of public functions are always "used" */
+      if (fconst)
+        sub->usage|=uCONST;
+      /* arguments are at the same scope as locals in the top compound block,
+       * but they are declared before that block opens, so flag this too
+       */
+      assert(sub->block==1);
+      sub->flags|=flgARGUMENT;
+    } /* for */
   } /* if */
 }
 
@@ -5331,7 +5510,7 @@ static void gen_ovlinfo(symbol *root)
 }
 
 #if !defined PAWN_LIGHT
-static long max_stacksize_recurse(symbol **sourcesym,symbol *sym,long basesize,int *pubfuncparams,int *recursion)
+static long max_stacksize_recurse(symbol **sourcesym,symbol *sym,long basesize,int *pubfuncparams,bool *recursion)
 {
   long size,maxsize;
   int i,stkpos;
@@ -5349,14 +5528,14 @@ static long max_stacksize_recurse(symbol **sourcesym,symbol *sym,long basesize,i
       assert((sym->refer[i]->usage & uNATIVE)==0); /* a native function cannot refer to a user-function */
       for (stkpos=0; sourcesym[stkpos]!=NULL; stkpos++) {
         if (sym->refer[i]==sourcesym[stkpos]) {   /* recursion detection */
-          if ((sc_debug & sSYMBOLIC)!=0 || verbosity>=2) {
-            char symname[2*sNAMEMAX+16];/* allow space for user defined operators */
+          if ((sym->flags & flgRECURSIVE)==0) {
+            char symname[2*sNAMEMAX+16];  /* allow space for user defined operators */
             funcdisplayname(symname,countof(symname),sym->name);
             errorset(sSETFILE,sym->fnumber);
             errorset(sSETLINE,sym->lnumber);
             error(237,symname);         /* recursive function */
           } /* if */
-          *recursion=1;
+          *recursion=true;
           goto break_recursion;         /* recursion was detected, quit loop */
         } /* if */
       } /* for */
@@ -5395,7 +5574,7 @@ static long max_stacksize_recurse(symbol **sourcesym,symbol *sym,long basesize,i
   return maxsize+basesize;
 }
 
-static long max_stacksize(symbol *root,int *recursion)
+static long max_stacksize(symbol *root,bool *recursion)
 {
   /* Loop over all non-native functions. For each function, loop
    * over all of its referrers, accumulating the stack requirements.
@@ -5418,7 +5597,7 @@ static long max_stacksize(symbol *root,int *recursion)
   numfunctions=0;
   for (sym=root->next; sym!=NULL; sym=sym->next) {
     if (sym->ident==iFUNCTN) {
-      assert(sym->compound==0);
+      assert(sym->block==0);
       if ((sym->usage & uNATIVE)==0)
         numfunctions++;
     } /* if */
@@ -5431,7 +5610,7 @@ static long max_stacksize(symbol *root,int *recursion)
 
   maxsize=0;
   maxparams=0;
-  *recursion=0;         /* assume no recursion */
+  *recursion=false;     /* assume no recursion */
   for (sym=root->next; sym!=NULL; sym=sym->next) {
     /* drop out if this is not a user-implemented function */
     if (sym->ident!=iFUNCTN || (sym->usage & uNATIVE)!=0)
@@ -5506,9 +5685,9 @@ static int checkundefined(symbol *root)
  *                      the global symbol list or the local variable list.
  *  \param level        The scope or nesting level for local symbols. It should
  *                      be 0 for the global symbol list.
- *  \param testlabs     Whether to test labels (goto targets). The rationale is
- *                      that labels are only tested at the end of a function
- *                      (but not at the end of the compound block).
+ *  \param testfunclvl  Whether to test function parameters and labels (goto
+ *                      targets). This parameter is only relevant for the local
+ *                      symbol table. See the notes below.
  *  \param testconst    Whether to test constants are tested. The rationale is
  *                      to silently ignore global constants (no code is
  *                      generated for these anyway).
@@ -5521,25 +5700,48 @@ static int checkundefined(symbol *root)
  *
  *  \note "Public" functions are excluded from the check, since these may be
  *        exported to other object modules.
+ *
+ *  \note The rationale for testing function parameters separately at the end of
+ *        a function, is that `testsymbols()` also inserts debugging info for
+ *        the symbols, and the lifetime of a function parameter spans up to the
+ *        epilogue. The rationale for testing goto labels at the end of a
+ *        function (but not at the end of the compound block), is that a goto
+ *        may jump into a label in a more nested block.
  */
-static bool testsymbols(const symbol *root,short level,bool testlabs,bool testconst)
+static bool testsymbols(const symbol *root,short level,bool testfunclvl,bool testconst)
 {
   bool entry=false;
 
   for (symbol *sym=root->next; sym!=NULL; sym=sym->next) {
-    assert(level==0 && sym->compound==0 || level>0 && sym->compound>0);
-    if (sym->compound<level)
+    assert(level==0 && sym->block==0 || level>0 && sym->block>0);
+    if (sym->block<level)
+      continue;
+    if ((sym->flags & flgARGUMENT)!=0 && !testfunclvl)
       continue;
     bool marked_unused=find_unusedvar(sym->name,level,true,NULL,NULL);
+    arginfo *argptr=NULL;
+    if ((sym->flags & flgARGUMENT)!=0) {
+      /* find the argument matching the symbol */
+      assert(sym->block==1);  /* arguments have block level 1 */
+      assert(curfunc!=NULL);  /* must be inside a function to have block>0 */
+      arginfo *arglist=curfunc->dim.arglist;
+      assert(arglist!=NULL);
+      for (int arg=0; arglist[arg].ident!=0 && argptr==NULL; arg++) {
+        if (strcmp(sym->name,arglist[arg].name)==0) {
+          assert(arglist[arg].ident==sym->ident);
+          argptr=&arglist[arg];
+        } /* if */
+      } /* for */
+    } /* if */
     switch (sym->ident) {
     case iLABEL:
-      if (testlabs) {
+      if (testfunclvl) {
         if ((sym->usage & uDEFINE)==0) {
           error_suggest(19,sym->name,iLABEL);  /* not a label: ... */
         } else if ((sym->usage & uREAD)==0 && !marked_unused) {
           errorset(sSETFILE,sym->fnumber);
           errorset(sSETLINE,sym->lnumber);
-          error(203,sym->name);     /* symbol isn't used: ... */
+          error(203,sym->name); /* symbol isn't used: ... */
         } /* if */
       } /* if */
       break;
@@ -5550,11 +5752,11 @@ static bool testsymbols(const symbol *root,short level,bool testlabs,bool testco
         if (strlen(symname)>0) {
           errorset(sSETFILE,sym->fnumber);
           errorset(sSETLINE,sym->lnumber);
-          error(203,symname);       /* symbol isn't used ... (and not public/native/stock) */
+          error(203,symname);   /* symbol isn't used ... (and not public/native/stock) */
         } /* if */
       } /* if */
       if (((sym->usage & uPUBLIC)!=0 || (sym->flags & flgENTRYPOINT)!=0) && (sym->usage & uDEFINE)!=0)
-        entry=true;                 /* there is an entry point */
+        entry=true;             /* there is an entry point */
       /* also mark the function to the debug information */
       if (((sym->usage & uREAD)!=0 || (sym->usage & uPUBLIC)!=0 && (sym->usage & uDEFINE)!=0)
           && (sym->usage & uNATIVE)==0)
@@ -5564,45 +5766,68 @@ static bool testsymbols(const symbol *root,short level,bool testlabs,bool testco
       if (testconst && (sym->usage & uREAD)==0 && !marked_unused) {
         errorset(sSETFILE,sym->fnumber);
         errorset(sSETLINE,sym->lnumber);
-        error(203,sym->name);       /* symbol isn't used: ... */
+        error(203,sym->name);   /* symbol isn't used: ... */
       } /* if */
       break;
     default:
       /* a variable */
       if (sym->parent!=NULL)
-        break;                      /* hierarchical data type */
+        break;                  /* ignore sub-symbols of a hierarchical data type */
       if (!marked_unused) {
-        if ((sym->usage&(uWRITTEN|uREAD|uSTOCK))==0) {
+        if ((sym->usage & (uWRITTEN|uREAD|uSTOCK))==0) {
           errorset(sSETFILE,sym->fnumber);
           errorset(sSETLINE,sym->lnumber);
           error(203,sym->name,sym->lnumber);  /* symbol isn't used (and not stock) */
-        } else if ((sym->usage & (uREAD | uSTOCK | uPUBLIC))==0 && (sym->ident==iVARIABLE || sym->ident==iARRAY)) {
+        } else if ((sym->usage & (uREAD|uSTOCK|uPUBLIC))==0 && (sym->ident==iVARIABLE || sym->ident==iARRAY)) {
           errorset(sSETFILE,sym->fnumber);
           errorset(sSETLINE,sym->x.lnumber_write);
-          error(204,sym->name);       /* value assigned to symbol is never used */
+          error(204,sym->name);   /* value assigned to symbol is never used */
+        } /* if */
+      } /* if */
+      if (argptr!=NULL && sym->ident==iREFARRAY && (sym->usage & (uWRITTEN|uPUBLIC|uCONST))==0) {
+        /* only function arguments can have iREFARRAY type, when the symbol is
+         * neither const nor written to, check for a default value (for a
+         * non-const array argument, the default parameter must be copied to
+         * the heap; when it is const, its address in the DATA section can be
+         * passed directly)
+         */
+        assert(curfunc!=NULL);  /* must be inside a function to have scope>0 */
+        assert((sym->flags & flgARGUMENT)!=0 && sym->block==1);
+        if (argptr->hasdefault!=0) {
+          errorset(sSETFILE,sym->fnumber);
+          errorset(sSETLINE,sym->lnumber);
+          error(214,sym->name);   /* make array argument "const" */
         } /* if */
       } /* if */
       /* also mark the variable (local or global) to the debug information */
-      if ((sym->usage & (uWRITTEN | uREAD))!=0)
+      if ((sym->usage & (uWRITTEN|uREAD))!=0)
         insert_dbgsymbol(sym);
     } /* if */
+    /* copy uREAD and uWRITTEN flags from the symbol to the argument info */
+    if (argptr!=NULL)
+      argptr->usage|=(sym->usage & (uREAD|uWRITTEN));
   } /* for */
 
   /* also check the list of symbol names for which a "#pragma unused" was set,
    * but for which a declaration is missing
-   */
-  const char *name;
-  short filenr,scope;
-  int linenr;
-  bool handled;
-  for (int idx=0; (name=get_unusedvar(idx,&filenr,&linenr,&scope,&handled)); idx++) {
-    if (!handled && scope>=level) {
-      errorset(sSETFILE,filenr);
-      errorset(sSETLINE,linenr);
-      error(17,name);   /* undefined symbol */
-    }
-  }
-  delete_unusedvartable(level);
+   * but... arguments and labels at the lowest block level (level 1) are tested
+   * at the end of the function, and so the "#pragma unused" entries of that
+   * level are resolved then, not when the top block closes.
+	 */
+  if (level!=1 || testfunclvl) {
+    const char *name;
+    short filenr,scope;
+    int linenr;
+    bool handled;
+    for (int idx=0; (name=get_unusedvar(idx,&filenr,&linenr,&scope,&handled)); idx++) {
+      if (!handled && scope>=level) {
+        errorset(sSETFILE,filenr);
+        errorset(sSETLINE,linenr);
+        error(17,name);   /* undefined symbol */
+      } /* if */
+    } /* for */
+    delete_unusedvartable(level);
+  } /* if */
 
   errorset(sEXPRRELEASE,0); /* clear error data */
   errorset(sRESET,0);
@@ -5679,7 +5904,7 @@ static void destructsymbols(symbol *root,int level)
   cell offset=0;
   int savepri=false;
   symbol *sym=root->next;
-  while (sym!=NULL && sym->compound>=level) {
+  while (sym!=NULL && sym->block>=level) {
     if (sym->ident==iVARIABLE || sym->ident==iARRAY) {
       /* check that the '~' operator is defined for this tag */
       char symbolname[sNAMEMAX+1];
@@ -5729,9 +5954,8 @@ static void destructsymbols(symbol *root,int level)
 static constvalue *insert_constval(constvalue *prev,constvalue *next,const char *name,cell val,
                                    int index)
 {
-  constvalue *cur;
-
-  if ((cur=(constvalue*)malloc(sizeof(constvalue)))==NULL)
+  constvalue *cur=(constvalue*)malloc(sizeof(constvalue));
+  if (cur==NULL)
     error(103);       /* insufficient memory (fatal error) */
   memset(cur,0,sizeof(constvalue));
   if (name!=NULL) {
@@ -5832,18 +6056,16 @@ SC_FUNC void delete_consttable(constvalue *table)
   memset(table,0,sizeof(constvalue));
 }
 
-SC_FUNC int compare_consttable(constvalue *table1,constvalue *table2)
+SC_FUNC bool compare_consttable(const constvalue *table1,const constvalue *table2)
 {
-  constvalue *cur1,*cur2;
-
   if (table1==NULL && table2==NULL)
     return true;
   else if (table1==NULL || table2==NULL)
     return false;
 
   assert(table1!=NULL && table2!=NULL);
-  cur1=table1->next;
-  cur2=table2->next;
+  constvalue *cur1=table1->next;
+  constvalue *cur2=table2->next;
   while (cur1!=NULL && cur2!=NULL) {
     if (cur1->index!=cur2->index || cur1->value!=cur2->value)
       return false;
@@ -5886,7 +6108,7 @@ SC_FUNC symbol *add_constant(const char *name,cell val,int scope,int tag)
   } /* if */
 
   /* constant doesn't exist yet */
-  sym=addsym(name,val,iCONSTEXPR,scope,tag,uDEFINE);
+  sym=addsym(name,val,iCONSTEXPR,scope,pc_blocklevel,tag,uDEFINE);
   assert(sym!=NULL);            /* fatal error 103 must be given on error */
   if (sc_status == statIDLE)
     sym->usage |= uPREDEF;
@@ -5909,17 +6131,15 @@ SC_FUNC symbol *add_constant(const char *name,cell val,int scope,int tag)
  */
 static void statement(int *lastindent,bool allow_decl)
 {
-  int tok,save;
-  cell val;
-  char *st;
-
   if (!freading) {
     error(36);                  /* empty statement */
     return;
   } /* if */
   errorset(sRESET,0);
 
-  tok=lex(&val,&st);
+  cell val;
+  char *st;
+  int tok=lex(&val,&st);
   if (tok!='{') {
     insert_dbgline(pc_curline);
     setline(true);
@@ -5954,14 +6174,16 @@ static void statement(int *lastindent,bool allow_decl)
       error(3);                 /* declaration only valid in a block */
     } /* if */
     break;
-  case '{':
-    save=pc_curline;
-    pc_scopelevel+=1;           /* increase compound statement level */
+  case '{': {
+    int orgline=pc_curline;
+    short orglevel=pc_blocklevel;
+    pc_blocklevel+=1;           /* increase compound statement level */
     if (!matchtoken('}'))       /* {} is the empty statement */
-      compound(save==pc_curline && freading);
+      compound(orgline==pc_curline && freading);
     /* lastst (for "last statement") does not change */
-    pc_scopelevel-=1;           /* restore compound statement level */
+    pc_blocklevel=orglevel;     /* restore compound statement level */
     break;
+  } /* case */
   case ';':
     error(36);                  /* empty statement */
     break;
@@ -6086,12 +6308,12 @@ static void compound(bool stmt_sameline)
     } /* if */
   } /* while */
   if (lastst!=tRETURN)
-    destructsymbols(&loctab,pc_scopelevel);
+    destructsymbols(&loctab,pc_blocklevel);
   if (lastst!=tRETURN && lastst!=tGOTO)
     modstk((int)(lcl_declared-save_decl)*pc_cellsize);  /* delete local variable space */
-  testsymbols(&loctab,pc_scopelevel,false,true);        /* look for unused block locals */
+  testsymbols(&loctab,pc_blocklevel,false,true);        /* look for unused block locals */
   lcl_declared=save_decl;
-  delete_symbols(&loctab,pc_scopelevel,false,true);     /* erase local symbols, except
+  delete_symbols(&loctab,pc_blocklevel,false,true);     /* erase local symbols, except
                                                          * the labels (in the function) */
 }
 
@@ -6141,19 +6363,26 @@ static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
   return ident;
 }
 
-/*  constexpression, parse an expression and verify that it is a constant.
+/** constexpression() parses an expression and verify that it is a constant.
+ *
+ *  \param val          [out] The value of the constant expression (0 or error).
+ *  \param tag          [out] The tag of the constant expresstion (0 or error).
+ *  \param symptr       [out] A pointer to the symbol in the case that the
+ *                      expression is a symbolic constant (set to `NULL`
+ *                      otherwise).
+ *
+ *  \return `true` on success, `false` on error or if the expression is not
+ *          constant.
  */
-SC_FUNC int constexpression(cell *val,int *tag,symbol **symptr)
+SC_FUNC bool constexpression(cell *val,int *tag,symbol **symptr)
 {
-  unsigned index;
-  int ident;
-  cell cidx;
-
   assert(!staging);
   stgset(true);         /* start stage-buffering */
+  unsigned index;
+  cell cidx;
   stgget(&index,&cidx); /* mark position in code generator */
   errorset(sEXPRMARK,0);
-  ident=expression(val,tag,symptr,NULL,false,false);
+  int ident=expression(val,tag,symptr,NULL,false,false);
   stgdel(index,cidx);   /* scratch generated code */
   stgset(false);        /* stop stage-buffering */
   if (ident!=iCONSTEXPR) {
@@ -6170,14 +6399,26 @@ SC_FUNC int constexpression(cell *val,int *tag,symbol **symptr)
   return (ident==iCONSTEXPR);
 }
 
-/*  test
+/** test() parses a test expression (and generates code for it).
  *
- *  In the case a "simple assignment" operator ("=") is used within a test,
- *  the warning "possibly unintended assignment" is flagged. In the case the
- *  assignment was intended, use parantheses around the expression to avoid the
- *  warning, and compare to zero.
+ *  \param label          Label number to branch to on a false branch.
+ *  \param invert         Whether the test must be inverted (which is the case
+ *                        for the "assert" statement).
+ *  \param test_true      Whether to allows a simple constant 'true' as the
+ *                        constant. This is for the special case of `while true`
+ *                        which is accepted without warning.
+ *  \param parenthesized  [out, optional] This parameter is set to `true` if the
+ *                        test expression appears between parentheses. This
+ *                        parameter may be set to `NULL`.
+ *
+ *  \return
+ *
+ *  \note In the case a "simple assignment" operator ("=") is used within a
+ *        test, the warning "possibly unintended assignment" is flagged. In the
+ *        case the assignment was intended, use parantheses around the
+ *        expression and compare to zero (to avoid the warning).
  */
-static int test(int label,int invert,int test_true,int *parenthesized)
+static int test(int label,bool invert,bool test_true,bool *parenthesized)
 {
   unsigned index;
   cell cidx;
@@ -6257,7 +6498,7 @@ static int doif(void)
 {
   int ifindent=pc_stmtindent;   /* save the indent of the "if" instruction */
   int flab1=getlabel();         /* get label number for false branch */
-  int parens;
+  bool parens;
   test(flab1,false,false,&parens); /* get expression, branch to flab1 if false */
   if (!parens && lexpeek()!='{')
     needtoken(tTERM);           /* if expression is not parenthesized and not followed by '{', must end with newline */
@@ -6291,7 +6532,6 @@ static int dowhile(void)
 {
   int wq[wqSIZE];               /* allocate local queue */
   int save_endlessloop,retcode;
-  int parens;
 
   save_endlessloop=endlessloop;
   addwhile(wq);                 /* add entry to queue for "break" */
@@ -6301,6 +6541,7 @@ static int dowhile(void)
    * tiniest loop, set it below the top of the loop
    */
   setline(true);
+  bool parens;
   endlessloop=test(wq[wqEXIT],false,true,&parens);/* branch to wq[wqEXIT] if false */
   if (!parens && lexpeek()!='{')
     needtoken(tTERM);           /* if expression is not parenthesized and not followed by '{', must end with newline */
@@ -6322,7 +6563,7 @@ static int dodo(void)
 {
   int wq[wqSIZE];
   int save_endlessloop;
-  int retcode,top,parens;
+  int retcode,top;
 
   save_endlessloop=endlessloop;
   addwhile(wq);           /* see "dowhile" for more info */
@@ -6332,12 +6573,12 @@ static int dodo(void)
   needtoken(tWHILE);
   setlabel(wq[wqLOOP]);   /* "continue" always jumps to WQLOOP. */
   setline(true);
-  parens=matchtoken('(');
+  int parens=matchtoken('(');
   endlessloop=test(wq[wqEXIT],false,false,NULL);
   jumplabel(top);
   setlabel(wq[wqEXIT]);
   delwhile();
-  if (parens)
+  if (parens==1)
     needtoken(')');
   needtoken(tTERM);
 
@@ -6355,7 +6596,7 @@ static int dofor(void)
   int *ptr;
 
   save_decl=lcl_declared;
-  save_nestlevel=pc_scopelevel;
+  save_nestlevel=pc_blocklevel;
   save_endlessloop=endlessloop;
 
   addwhile(wq);
@@ -6367,7 +6608,7 @@ static int dofor(void)
       /* The variable in expr1 of the for loop is at a
        * 'compound statement' level of it own.
        */
-      pc_scopelevel++;
+      pc_blocklevel++;
       declloc(false);           /* declare local variable */
     } else {
       doexpr(true,true,true,true,NULL,NULL,false,false);  /* expression 1 */
@@ -6425,17 +6666,17 @@ static int dofor(void)
   setlabel(wq[wqEXIT]);
   delwhile();
 
-  assert(pc_scopelevel>=save_nestlevel);
-  if (pc_scopelevel>save_nestlevel) {
+  assert(pc_blocklevel>=save_nestlevel);
+  if (pc_blocklevel>save_nestlevel) {
     /* Clean up the space and the symbol table for the local
      * variable in "expr1".
      */
-    destructsymbols(&loctab,pc_scopelevel);
+    destructsymbols(&loctab,pc_blocklevel);
     modstk((int)(lcl_declared-save_decl)*pc_cellsize);
-    testsymbols(&loctab,pc_scopelevel,false,true);  /* look for unused block locals */
+    testsymbols(&loctab,pc_blocklevel,false,true);  /* look for unused block locals */
     lcl_declared=save_decl;
-    delete_symbols(&loctab,pc_scopelevel,false,true);
-    pc_scopelevel=save_nestlevel;     /* reset 'compound statement' nesting level */
+    delete_symbols(&loctab,pc_blocklevel,false,true);
+    pc_blocklevel=save_nestlevel;     /* reset 'compound statement' nesting level */
   } /* if */
 
   result=endlessloop ? tENDLESS : tFOR;
@@ -6501,7 +6742,7 @@ static void doswitch(void)
              csp=cse, cse=cse->next)
           /* nothing */;
         if (cse!=NULL && cse->value==val)
-          error(40,val);                /* duplicate "case" label */
+          error(40,(long)val);          /* duplicate "case" label */
         /* Since the label is stored as a string in the "constvalue", the
          * size of an identifier must be at least 1/4th of a cell size in bits
          * (there are 8 hexadecimal digits in a 32-bit number).
@@ -6525,7 +6766,7 @@ static void doswitch(void)
                  csp=cse, cse=cse->next)
               /* nothing */;
             if (cse!=NULL && cse->value==val)
-              error(40,val);            /* duplicate "case" label */
+              error(40,(long)val);      /* duplicate "case" label */
             assert(csp!=NULL);
             assert(csp->next==cse);
             insert_constval(csp,cse,celltohex(lbl_case),val,0);
@@ -6613,30 +6854,30 @@ static void doassert(void)
 
 static void dogoto(void)
 {
-  char *st;
-  cell val;
-
   /* if we were inside an endless loop, assume that we jump out of it */
   endlessloop=0;
 
-  if (lex(&val,&st)==tSYMBOL) {
-    symbol *sym=fetchlab(st);
+  char *lexstr;
+  cell lexval;
+  if (lex(&lexval,&lexstr)==tSYMBOL) {
+    symbol *sym=fetchlab(lexstr);
     jumplabel((int)sym->addr);
-    sym->usage|=uREAD;          /* set "uREAD" bit */
-    /* for a backward goto, destruct the symbols; for a forward goto, the
-     * compound nesting level of a symbol is unknown and therefore it cannot
-     * be destructed; the trouble is: by the time we get to the label, the
-     * symbol may no longer be in the symbol table
+    /* for a backward goto, destruct the symbols at the deeper nested levels;
+     * for a forward goto, the block nesting level of the label is yet unknown
+     * and therefore the decision to destruct symbols cannot be made; the
+     * trouble is: by the time we get to the label, the symbol may no longer be
+     * in the symbol table
      */
     if ((sym->usage & uDEFINE)!=0) {
-      if (sym->compound<pc_scopelevel)
-        destructsymbols(&loctab,sym->compound+1);
+      if (sym->block<pc_blocklevel)
+        destructsymbols(&loctab,sym->block+1);
     } else {
-      //??? test for symbols with sym->compound==nestlevel, test whether these
-      // have a destruction operator on their tag, issue a warning if so
+      if ((sym->usage & uREAD)==0)
+        sym->x.declared=(int)lcl_declared;  /* save how many locals are declared (on first goto) */
     } /* if */
+    sym->usage|=uREAD;          /* set "uREAD" bit (label is jumped to) */
   } else {
-    error_suggest(20,st,iLABEL);/* illegal symbol name */
+    error_suggest(20,lexstr,iLABEL);/* illegal symbol name */
   } /* if */
   needtoken(tTERM);
 }
@@ -6644,12 +6885,10 @@ static void dogoto(void)
 static void dolabel(void)
 {
   char *name;
-  symbol *sym;
-
   tokeninfo(NULL,&name);  /* retrieve label name again */
   if (find_constval(&tagname_tab,name,-1)!=NULL)
     error(221,name);      /* label name shadows tagname */
-  sym=fetchlab(name);
+  symbol *sym=fetchlab(name);
   assert(sym!=NULL);
   if ((sym->usage & uDEFINE)!=0)
     error(21,name);       /* symbol already defined */
@@ -6658,6 +6897,13 @@ static void dolabel(void)
    * blocks, the stack must be manually adjusted
    */
   setstk(-lcl_declared*pc_cellsize);
+  /* if the label was jumped to before it was defined, and local variables are
+   * declared in-between the goto and the label, those variables are not
+   * initialized (even though the stack was adjusted to make space for these
+   * variables)
+   */
+  if ((sym->usage & (uDEFINE|uREAD))==uREAD && sym->x.declared<(int)lcl_declared)
+    error(220);         /* 'goto' jumps around local variable declarations */
   sym->usage|=uDEFINE;  /* label is now defined */
 }
 
@@ -6678,10 +6924,9 @@ static symbol *fetchlab(const char *name)
     if (sym->ident!=iLABEL)
       error_suggest(19,sym->name,iLABEL);  /* not a label: ... */
   } else {
-    sym=addsym(name,getlabel(),iLABEL,sLOCAL,0,0);
+    sym=addsym(name,getlabel(),iLABEL,sLOCAL,pc_blocklevel,0,0);
     assert(sym!=NULL);          /* fatal error 103 must be given on error */
-    sym->x.declared=(int)lcl_declared;
-    sym->compound=pc_scopelevel;
+    sym->block=pc_blocklevel;
   } /* if */
   return sym;
 }
@@ -6794,7 +7039,7 @@ static void doreturn(void)
         for (argcount=0; curfunc->dim.arglist[argcount].ident!=0; argcount++)
           /* nothing */;
         sub=addvariable(curfunc->name,(argcount+3)*pc_cellsize,iREFARRAY,
-                        sGLOBAL,curfunc->tag,dim,dimnames,numdim,usage);
+                        sGLOBAL,0,curfunc->tag,dim,dimnames,numdim,usage);
         sub->parent=curfunc;
         /* Function that returns array can be used before it is defined, so at
          * the call point (if it is before definition) we may not know if this
@@ -6843,7 +7088,7 @@ static void dobreak(void)
   needtoken(tTERM);
   if (ptr==NULL)
     return;
-  destructsymbols(&loctab,pc_scopelevel);
+  destructsymbols(&loctab,pc_blocklevel);
   modstk(((int)lcl_declared-ptr[wqBRK])*pc_cellsize);
   jumplabel(ptr[wqEXIT]);
 }
@@ -6856,7 +7101,7 @@ static void docont(void)
   needtoken(tTERM);
   if (ptr==NULL)
     return;
-  destructsymbols(&loctab,pc_scopelevel);
+  destructsymbols(&loctab,pc_blocklevel);
   modstk(((int)lcl_declared-ptr[wqCONT])*pc_cellsize);
   jumplabel(ptr[wqLOOP]);
 }
@@ -7095,7 +7340,8 @@ static void dostate(void)
 
 # if !defined PAWN_LIGHT
     /* mark for documentation */
-    if (sc_status==statBROWSE) {
+    assert(state!=NULL && state->name!=NULL);
+    if (sc_status==statBROWSE && strlen(state->name)>0) {
       const char *str;
       /* get the last list-id attached to the function, this contains the source
          states for the active function */
@@ -7112,7 +7358,7 @@ static void dostate(void)
       /* get the automaton id. for the current function, to check whether to
          include the automaton name */
       curautomaton=(listid>0) ? state_getfsa(listid) : -1;
-      assert(state!=NULL && state->name!=NULL && strlen(state->name)>0 && strlen(state->name)<=sNAMEMAX);
+      assert(state!=NULL && state->name!=NULL && strlen(state->name)>0);
       assert(automaton!=NULL && automaton->name!=NULL);
       length=strlen(statename)+strlen(automaton->name)+70; /* +70 for the fixed part "<transition ... />\n" */
       /* see if there are any condition strings to attach */

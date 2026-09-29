@@ -7,6 +7,7 @@
     move 1, 3, 2, disks
     }
 
+#pragma recursive
 move(from, to, spare, numdisks)
     {
     if numdisks > 1

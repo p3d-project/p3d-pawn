@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc3.c 7693 2026-09-12 19:11:35Z thiadmer $
+ *  Version: $Id: sc3.c 7701 2026-09-29 11:09:02Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -1051,7 +1051,7 @@ static cell array_levelsize(symbol *sym,int level)
 static int hier14(value *lval1)
 {
   int lvalue;
-  value lval2={0},lval3={0};
+  value lval2={0},lval1copy={0};
   void (*oper)(void);
   int tok,i;
   cell val;
@@ -1150,7 +1150,7 @@ static int hier14(value *lval1)
     return error(22);           /* assignment to const argument */
   } /* if */
 
-  lval3=*lval1;         /* save symbol to enable storage of expresion result */
+  lval1copy=*lval1;             /* save symbol to enable storage of expresion result */
   lval1->arrayidx=org_arrayidx; /* restore array index pointer */
   if (lval1->ident==iARRAYCELL || lval1->ident==iARRAYCHAR
       || lval1->ident==iARRAY || lval1->ident==iREFARRAY)
@@ -1166,15 +1166,15 @@ static int hier14(value *lval1)
       lval2.arrayidx=NULL;
     if (oper)
       popreg(sALT);
-    if (!oper && lval3.arrayidx!=NULL && lval2.arrayidx!=NULL
-        && lval3.ident==lval2.ident && lval3.sym==lval2.sym)
+    if (!oper && lval1copy.arrayidx!=NULL && lval2.arrayidx!=NULL
+        && lval1copy.ident==lval2.ident && lval1copy.sym==lval2.sym)
     {
       int same=true;
       assert(lval2.arrayidx==arrayidx2);
       for (i=0; i<sDIMEN_MAX; i++)
-        same=same && (lval3.arrayidx[i]==lval2.arrayidx[i]);
+        same=same && (lval1copy.arrayidx[i]==lval2.arrayidx[i]);
       if (same)
-        error(226,lval3.sym->name);   /* self-assignment */
+        error(226,lval1copy.sym->name);   /* self-assignment */
     } /* if */
   } else {
     if (oper){
@@ -1189,9 +1189,9 @@ static int hier14(value *lval1)
         lval2.ident=iEXPRESSION;/* mark as "rvalue" if it is not an "lvalue" */
       checkfunction(&lval2);
       /* check whether lval2 and lval3 (old lval1) refer to the same variable */
-      if (lval2.ident==iVARIABLE && lval3.ident==lval2.ident && lval3.sym==lval2.sym) {
-        assert(lval3.sym!=NULL);
-        error(226,lval3.sym->name);     /* self-assignment */
+      if (lval2.ident==iVARIABLE && lval1copy.ident==lval2.ident && lval1copy.sym==lval2.sym) {
+        assert(lval1copy.sym!=NULL);
+        error(226,lval1copy.sym->name);     /* self-assignment */
       } /* if */
     } /* if */
   } /* if */
@@ -1200,8 +1200,8 @@ static int hier14(value *lval1)
    * If the expression on the right side of the assignment is a cell,
    * or if an operation is in effect, this does not apply.
    */
-  leftarray= IS_ARRAY(lval3)
-             || (IS_PSEUDO_ARRAY(lval3) && !oper && (lval2.ident==iARRAY || lval2.ident==iREFARRAY));
+  leftarray= IS_ARRAY(lval1copy)
+             || (IS_PSEUDO_ARRAY(lval1copy) && !oper && (lval2.ident==iARRAY || lval2.ident==iREFARRAY));
   if (leftarray) {
     /* Left operand is an array, right operand should be an array variable
      * of the same size and the same dimension, an array literal (of the
@@ -1210,7 +1210,7 @@ static int hier14(value *lval1)
      * larger one (without warning). This is to make it easier to work with
      * strings. Function checkarrays() verifies all this.
      */
-    val=checkarrays(&lval3,&lval2);
+    val=checkarrays(&lval1copy,&lval2);
   } else {
     /* left operand is not an array, right operand should then not be either */
     if (lval2.ident==iARRAY || lval2.ident==iREFARRAY)
@@ -1225,27 +1225,61 @@ static int hier14(value *lval1)
      * vectors in "a": we cannot copy the indirection vector of "b", because
      * the corresponding one of "a" is at a different offset.
      */
-    assert(lval3.sym!=NULL);
-    if (lval3.sym->dim.array.level==0
-        || (lval2.sym!=NULL && lval3.sym->parent==NULL && lval2.sym->parent==NULL))
+    assert(lval1copy.sym!=NULL);
+    if (lval1copy.sym->dim.array.level==0
+        || (lval2.sym!=NULL && lval1copy.sym->parent==NULL && lval2.sym->parent==NULL))
     {
-      memcopy(val*pc_cellsize);
+      /* if lval2 points to a literal array (single dimension), check for a
+       * duplicate (to merge literal strings)
+       */
+      bool skip_memcopy=false;
+      if (lval2.sym==NULL) {
+        cell array_sz=lval2.constval;
+        assert(array_sz!=0);/* literal array must have a size */
+        if (array_sz<0)
+          array_sz=-array_sz;
+        if (array_sz==1) {
+          /* the size of the literal array is only a single cell, so simply
+           * set that cell and reset the literal queue
+           */
+          lval1copy.ident=iARRAYCELL; /* translate 'str = ""' to 'str[0] = 0' */
+          skip_memcopy=true;
+          cell v=litq[--litidx];
+          ldconst(v,sPRI);
+          store(&lval1copy);
+        } else {
+          cell addr=-1;
+          if (litidx>=array_sz && (addr=litarray_find(litidx-array_sz,array_sz))>=0) {
+            /* overrule the earlier address load, see comment #MERGE_LITERAL in
+             * callfunction()
+             */
+            ldconst(addr*pc_cellsize,sPRI);
+            litidx-=array_sz; /* reset literal queue */
+          } else {
+            /* save this literal array as a candidate for a future merge */
+            litarray_add(glb_declared,litidx-array_sz,array_sz);
+          } /* if */
+        } /* if */
+      } /* if */
+      /* destination address already in ALT, source address already in PRI */
+      if (!skip_memcopy)
+        memcopy(val*pc_cellsize);
     } else {
-      const symbol *subsym=finddepend(lval3.sym);
+      const symbol *subsym=finddepend(lval1copy.sym);
       assert(subsym!=NULL);
-      copyarray2d((int)lval3.sym->dim.array.length,(int)subsym->dim.array.length);
+      copyarray2d((int)lval1copy.sym->dim.array.length,(int)subsym->dim.array.length);
 #     if sDIMEN_MAX > 3
 #       error Copying partial arrays with more than 2 dimensions is not yet implemented
 #     endif
     } /* if */
   } else {
-    check_userop(NULL,lval2.tag,lval3.tag,2,&lval3,&lval2.tag);
-    store(&lval3);      /* now, store the expression result */
+    check_userop(NULL,lval2.tag,lval1copy.tag,2,&lval1copy,&lval2.tag);
+    store(&lval1copy);  /* now, store the expression result */
   } /* if */
-  if (!oper && !matchtag(lval3.tag,lval2.tag,true))
+  if (!oper && !matchtag(lval1copy.tag,lval2.tag,true))
     error(213);         /* tagname mismatch (if "oper", warning already given in plunge2()) */
-  if (lval3.sym)
-    markusage(lval3.sym,uWRITTEN);
+  if (lval1copy.sym)
+    markusage(lval1copy.sym,uWRITTEN);
   pc_sideeffect=true;
   bitwise_opercount=bwcount;
   lval1->ident=iEXPRESSION;
@@ -2246,22 +2280,30 @@ static void clear_value(value *lval)
   /* do not clear lval->arrayidx, it is preset in hier14() */
 }
 
-static void setdefarray(const cell *string,cell size,cell array_sz,cell *dataaddr,int fconst)
+static void setdefarray(const cell *defdata,cell size,cell array_sz,cell *dataaddr,bool fconst)
 {
   /* The routine must copy the default array data onto the heap, as to avoid
    * that a function can change the default value. An optimization is that
    * the default array data is "dumped" into the data segment only once (on the
    * first use).
    */
-  assert(string!=NULL);
+  assert(defdata!=NULL);
   assert(size>0);
+  /* 'array_sz' is the size of the argument (the value between the brackets
+   * in the declaration), 'size' is the size of the default array data; both
+   * these are in cells.
+   */
+  assert(array_sz>=size);
+
   /* check whether to dump the default array */
   assert(dataaddr!=NULL);
   if (sc_status==statWRITE && *dataaddr<0) {
-    int i;
     *dataaddr=(litidx+glb_declared)*pc_cellsize;
-    for (i=0; i<size; i++)
-      litadd(*string++);
+    for (int i=0; i<size; i++)
+      litadd(*defdata++);
+    if (fconst)
+      for (int i=size; i<array_sz; i++)
+        litadd(0);
   } /* if */
 
   /* if the function is known not to modify the array (meaning that it also
@@ -2272,21 +2314,21 @@ static void setdefarray(const cell *string,cell size,cell array_sz,cell *dataadd
     ldconst(*dataaddr,sPRI);
   } else {
     /* Generate the code:
-     *  CONST.pri dataaddr                ;address of the default array data
      *  HEAP      array_sz*pc_cellsize    ;heap address in ALT
+     *  CONST.pri 0                       ;only if array_sz>size
+     *  FILL      array_sz*pc_cellsize    ;only if array_sz>size
+     *  CONST.pri *dataaddr               ;address of the default array data
      *  MOVS      size*pc_cellsize        ;copy data from PRI to ALT
-     *  MOVE.PRI                          ;PRI = address on the heap
+     *  XCHG                              ;PRI = address on the heap
      */
-    ldconst(*dataaddr,sPRI);
-    /* "array_sz" is the size of the argument (the value between the brackets
-     * in the declaration), "size" is the size of the default array data.
-     */
-    assert(array_sz>=size);
     modheap((int)array_sz*pc_cellsize);
     /* the amount of data stored on the heap is kept in a local variable in
      * callfunction(); it is therefore not necessary to adjust decl_heap
      */
-    /* ??? should perhaps fill with zeros first */
+    /* if array is bigger than initialization data, first zero-initialize */
+    if (array_sz>size)
+      fillarray(NULL,array_sz*pc_cellsize,0);
+    ldconst(*dataaddr,sPRI);
     memcopy(size*pc_cellsize);
     swapregs();
   } /* if */
@@ -2348,7 +2390,6 @@ static int nesting=0;
   int heapalloc=0;
   int namedparams=false;
   value lval = {0};
-  arginfo *arg;
   char arglist[sMAXARGS];
   char closestname[sNAMEMAX+1];
   constvalue arrayszlst = {NULL,"",0,0,0};  /* array size list starts empty */
@@ -2402,7 +2443,7 @@ static int nesting=0;
   } /* if */
 
   /* run through the arguments */
-  arg=sym->dim.arglist;
+  arginfo *arg=sym->dim.arglist;
   assert(arg!=NULL);
   stgmark(sSTARTREORDER);
   memset(arglist,ARG_UNHANDLED,sizeof arglist);
@@ -2448,7 +2489,7 @@ static int nesting=0;
         argidx=argpos;
       } else {
         if (namedparams)
-          error(44);   /* positional parameters must precede named parameters */
+          error(44);              /* positional arguments must precede named arguments */
         argpos=nargs;
       } /* if */
       /* the number of arguments this was already checked at the declaration
@@ -2456,17 +2497,16 @@ static int nesting=0;
        * argument list
        */
       if (argpos>=sMAXARGS)
-        error(45);                /* too many function arguments */
-      stgmark((char)(sEXPRSTART+argpos));/* mark beginning of new expression in stage */
+        error(45);                            /* too many function arguments */
+      stgmark((char)(sEXPRSTART+argpos));     /* mark beginning of new expression in stage */
       if (argpos<sMAXARGS && arglist[argpos]!=ARG_UNHANDLED)
-        error(58);                /* argument already set */
+        error(58,argpos+1,arg[argpos].name);  /* argument already set */
       if (matchtoken('_')) {
-        arglist[argpos]=ARG_IGNORED;  /* flag argument as "present, but ignored" */
-        if (arg[argidx].ident==0 || arg[argidx].ident==iVARARGS) {
-          error(202);             /* argument count mismatch */
-        } else if (!arg[argidx].hasdefault) {
-          error(34,nargs+1);      /* argument has no default value */
-        } /* if */
+        arglist[argpos]=ARG_IGNORED;          /* flag argument as "present, but ignored" */
+        if (arg[argidx].ident==0 || arg[argidx].ident==iVARARGS)
+          error(202);                         /* argument count mismatch */
+        else if (!arg[argidx].hasdefault)
+          error(34,nargs+1,arg[argidx].name); /* parameter has no default value */
         if (arg[argidx].ident!=0 && arg[argidx].ident!=iVARARGS)
           argidx++;
         /* The rest of the code to handle default values is at the bottom
@@ -2533,7 +2573,7 @@ static int nesting=0;
         case iVARIABLE:
           if (lval.ident==iLABEL || lval.ident==iFUNCTN
               || lval.ident==iARRAY || lval.ident==iREFARRAY)
-            error(35,argidx+1);   /* argument type mismatch */
+            error(35,argidx+1,arg[argidx].name,sym->name);  /* argument type mismatch */
           if (lvalue)
             rvalue(&lval);        /* get value (direct or indirect) */
           /* otherwise, the expression result is already in PRI */
@@ -2549,9 +2589,9 @@ static int nesting=0;
           if ((sym->usage & uNATIVE)!=0)
             reloc=true;
           if (!lvalue || lval.ident==iARRAYCHAR)
-            error(35,argidx+1);   /* argument type mismatch */
+            error(35,argidx+1,arg[argidx].name,sym->name);  /* argument type mismatch */
           if (lval.sym!=NULL && (lval.sym->usage & uCONST)!=0 && (arg[argidx].usage & uCONST)==0)
-            error(35,argidx+1);   /* argument type mismatch */
+            error(35,argidx+1,arg[argidx].name,sym->name);  /* argument type mismatch */
           if (lval.ident==iVARIABLE || lval.ident==iREFERENCE) {
             if (lvalue) {
               assert(lval.sym!=NULL);
@@ -2577,11 +2617,11 @@ static int nesting=0;
           if (lval.ident!=iARRAY && lval.ident!=iREFARRAY
               && lval.ident!=iARRAYCELL)
           {
-            error(35,argidx+1);   /* argument type mismatch */
+            error(35,argidx+1,arg[argidx].name,sym->name);  /* argument type mismatch */
             break;
           } /* if */
           if (lval.sym!=NULL && (lval.sym->usage & uCONST)!=0 && (arg[argidx].usage & uCONST)==0)
-            error(35,argidx+1); /* argument type mismatch */
+            error(35,argidx+1,arg[argidx].name,sym->name);  /* argument type mismatch */
           /* Verify that the dimensions and the sizes match with those in arg[argidx].
            * A literal array always has a single dimension.
            * An iARRAYCELL parameter is also assumed to have a single dimension,
@@ -2628,9 +2668,9 @@ static int nesting=0;
             while (rsym->dim.array.level>0) {
               assert(level<sDIMEN_MAX);
               if (arg[argidx].dim[level]!=0 && rsym->dim.array.length!=arg[argidx].dim[level])
-                error(47);        /* array sizes must match */
+                error(47);      /* array sizes must match */
               if (!compare_consttable(arg[argidx].dimnames[level],rsym->dim.array.names))
-                error(47);        /* array definitions must match */
+                error(47);      /* array definitions must match */
               append_constval(&arrayszlst,arg[argidx].name,rsym->dim.array.length,level);
               rsym=finddepend(rsym);
               assert(rsym!=NULL);
@@ -2640,27 +2680,66 @@ static int nesting=0;
             assert(level<sDIMEN_MAX);
             assert(rsym!=NULL);
             if (arg[argidx].dim[level]!=0 && rsym->dim.array.length!=arg[argidx].dim[level])
-              error(47);          /* array sizes must match */
+              error(47);        /* array sizes must match */
             if (!compare_consttable(arg[argidx].dimnames[level],rsym->dim.array.names))
               error(47);        /* array definitions must match */
             append_constval(&arrayszlst,arg[argidx].name,rsym->dim.array.length,level);
+          } /* if */
+          /* if the argument is a literal single-dimensional array, check whether
+           * a duplicate literal string was seen earlier, and and whether these
+           * can be merged
+           */
+          if (arg[argidx].numdim==1 && lval.ident==iARRAY && lval.sym==NULL) {
+            /* only attempt to merge string parameters that are passed to
+             * functions if the respective function argument is declared 'const'
+             */
+            if ((arg[argidx].usage & uCONST)!=0) {
+              cell array_sz=lval.constval;
+              assert(array_sz!=0);/* literal array must have a size */
+              if (array_sz<0)
+                array_sz=-array_sz;
+              cell addr=-1;
+              if (litidx>=array_sz && (addr=litarray_find(litidx-array_sz,array_sz))>=0) {
+                /* #MERGE_LITERAL: the address of the earlier literal array is
+                 * now loaded (and the literal queue is reset); the address
+                 * overrules the value already loaded as a side effect of
+                 * hier14(), we rely on the peephole optimizer to remove the
+                 * first load
+                 */
+                ldconst(addr*pc_cellsize,sPRI);
+                litidx-=array_sz; /* reset literal queue */
+              } else {
+                /* this literal array was not seen before, or there is another
+                 * reason that it cannot be merged; but it may be a candidate for
+                 * future merge
+                 */
+                litarray_add(glb_declared,litidx-array_sz,array_sz);
+              } /* if */
+            } else if ((arg[argidx].usage & uWRITTEN)==0) {
+              /* this literal array is passed to a function argument that is
+               * non-const, but that is also not written to -> hint that better
+               * code can be generated by marking the argument 'const'.
+               */
+              error(214,arg[argidx].name);
+            }
           } /* if */
           /* address already in PRI */
           if (!checktag(arg[argidx].tags,arg[argidx].numtags,lval.tag))
             error(213);
           if (lval.tag!=0)
             append_constval(&taglst,arg[argidx].name,lval.tag,0);
-          // ??? set uWRITTEN?
-          argidx++;               /* argument done */
+          if (lval.sym!=NULL && (arg[argidx].usage & uCONST)==0)
+            markusage(lval.sym,uWRITTEN); /* assume array is 'written' unless it is const */
+          argidx++;             /* argument done */
           break;
         default:
           assert(0);
         } /* switch */
         if (reloc)
-          pushreloc();            /* store argument on the stack, mark for run-time relocation */
+          pushreloc();          /* store argument on the stack, mark for run-time relocation */
         else
-          pushreg(sPRI);          /* store the argument on the stack */
-        markexpr(sPARM,NULL,0);   /* mark the end of a sub-expression */
+          pushreg(sPRI);        /* store the argument on the stack */
+        markexpr(sPARM,NULL,0); /* mark the end of a sub-expression */
         nest_stkusage++;
       } /* if */
       assert(arglist[argpos]!=ARG_UNHANDLED);
@@ -2963,12 +3042,12 @@ static bool constant(value *lval)
     } while (matchtoken(','));
     if (packcount!=0 && match=='}')
       litadd(packitem);         /* store final collected values */
-    if (!needtoken(match))
-      skiptotoken(match,false); /* skip all until ']'/'}' or end of expression */
     ldconst((val+glb_declared)*pc_cellsize,sPRI);
     lval->ident=iARRAY;         /* pretend this is a global array */
     lval->constval=litidx-val;  /* constval == the size of the literal array */
     lval->ispacked= (match=='}'); /* flag packed array */
+    if (!needtoken(match))
+      skiptotoken(match,false); /* skip all until ']'/'}' or end of expression */
     lastsymbol[0]='\0';
   } else {
     return false;               /* no, it cannot be interpreted as a constant */

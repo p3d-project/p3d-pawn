@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7693 2026-09-12 19:11:35Z thiadmer $
+ *  Version: $Id: sc4.c 7701 2026-09-29 11:09:02Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -121,31 +121,31 @@ SC_FUNC void writeleader(symbol *root,int *lbl_nostate,int *lbl_ignorestate)
  */
 SC_FUNC void writetrailer(void)
 {
-  assert(sc_dataalign % opcodes(1) == 0);   /* alignment must be a multiple of
+  assert(pc_dataalign % opcodes(1) == 0);   /* alignment must be a multiple of
                                              * the opcode size */
-  assert(sc_dataalign!=0);
+  assert(pc_dataalign!=0);
 
   /* pad code to align data segment */
-  if ((code_idx % sc_dataalign)!=0) {
+  if ((code_idx % pc_dataalign)!=0) {
     begcseg();
-    while ((code_idx % sc_dataalign)!=0)
+    while ((code_idx % pc_dataalign)!=0)
       nooperation();
   } /* if */
 
   /* pad data segment to align the stack and the heap */
   assert(litidx==0);            /* literal queue should have been emptied */
-  assert(sc_dataalign % pc_cellsize == 0);
-  if (((glb_declared*pc_cellsize) % sc_dataalign)!=0) {
+  assert(pc_dataalign % pc_cellsize == 0);
+  if (((glb_declared*pc_cellsize) % pc_dataalign)!=0) {
     begdseg();
     defstorage();
-    while (((glb_declared*pc_cellsize) % sc_dataalign)!=0) {
+    while (((glb_declared*pc_cellsize) % pc_dataalign)!=0) {
       stgwrite("0 ");
       glb_declared++;
     } /* while */
   } /* if */
 
   stgwrite("\nSTKSIZE ");       /* write stack size (align stack top) */
-  outval(pc_stksize - (pc_stksize % sc_dataalign),true,true);
+  outval(pc_stksize - (pc_stksize % pc_dataalign),true,true);
 }
 
 /* writestatetables
@@ -342,7 +342,7 @@ SC_FUNC void begdseg(void)
 
 SC_FUNC void setline(int chkbounds)
 {
-  if (sc_asmfile) {
+  if (pc_asmfile) {
     stgwrite("\t; line ");
     outval(pc_curline,true,true);
   } /* if */
@@ -359,7 +359,7 @@ SC_FUNC void setline(int chkbounds)
 
 SC_FUNC void setfiledirect(const char *name)
 {
-  if (sc_status==statBROWSE && sc_listing) {
+  if (sc_status==statBROWSE && pc_listing) {
     assert(name!=NULL);
     pc_writeasm(outf,"#file ");
     pc_writeasm(outf,name);
@@ -369,7 +369,7 @@ SC_FUNC void setfiledirect(const char *name)
 
 SC_FUNC void setlinedirect(int line)
 {
-  if (sc_status==statBROWSE && sc_listing) {
+  if (sc_status==statBROWSE && pc_listing) {
     char string[40];
     sprintf(string,"#line %d\n",line);
     pc_writeasm(outf,string);
@@ -429,7 +429,7 @@ SC_FUNC void markexpr(optmark type,const char *name,cell offset)
 SC_FUNC void startfunc(const char *fname,int index)
 {
   stgwrite("\tproc");
-  if (sc_asmfile) {
+  if (pc_asmfile) {
     char symname[2*sNAMEMAX+16];
     funcdisplayname(symname,countof(symname),fname);
     stgwrite("\t; ");
@@ -571,9 +571,8 @@ SC_FUNC void address(symbol *sym,regid reg)
  */
 SC_FUNC void store(value *lval)
 {
-  symbol *sym;
-
-  sym=lval->sym;
+  assert(lval!=NULL);
+  symbol *sym=lval->sym;
   if (lval->ident==iARRAYCELL) {
     /* store at address in ALT */
     stgwrite("\tstor.i\n");
@@ -636,14 +635,14 @@ SC_FUNC void storeconst(cell address,cell value)
       stgwrite(" ");
       outval(value,true,true);
       code_idx+=opcodes(1)+opargs(1);
-    }
+    } /* if */
   } else {
     stgwrite("\tconst.pri ");
     outval(value,true,true);
     stgwrite("\tstor ");
     outval(address,true,true);
     code_idx+=opcodes(2)+opargs(2);
-  }
+  } /* if */
 }
 
 /* Source must be in PRI, destination address in ALT. The "size"
@@ -733,32 +732,39 @@ SC_FUNC void copyarray2d(int majordim,int minordim)
   code_idx+=opcodes(3)+opargs(1);
 }
 
+/* Loads the value in PRI and (optionally) the symbol address in ALT, then fills
+ * 'size' bytes with the value. Although the size value is in bytes, it should
+ * be a multiple of the cell size.
+ * Setting the address in ALT is skipped if the 'sym' parameter is NULL; in
+ * which case it must have been explicitly set earlier.
+ */
 SC_FUNC void fillarray(const symbol *sym,cell size,cell value)
 {
   ldconst(value,sPRI);  /* load value in PRI */
 
-  assert(sym!=NULL);
-  /* the symbol can be a local array, a global array, or an array
-   * that is passed by reference.
-   */
-  if (sym->ident==iREFARRAY) {
-    /* reference to an array; currently this is always a local variable */
-    assert(sym->scope==sLOCAL);        /* symbol must be stack relative */
-    stgwrite("\tload.s.alt ");
-  } else {
-    /* a local or global array */
-    if (sym->scope==sLOCAL)
-      stgwrite("\taddr.alt ");
-    else
-      stgwrite("\tconst.alt ");
+  if (sym!=NULL) {
+    /* the symbol can be a local array, a global array, or an array
+     * that is passed by reference.
+     */
+    if (sym->ident==iREFARRAY) {
+      /* reference to an array; currently this is always a local variable */
+      assert(sym->scope==sLOCAL);        /* symbol must be stack relative */
+      stgwrite("\tload.s.alt ");
+    } else {
+      /* a local or global array */
+      if (sym->scope==sLOCAL)
+        stgwrite("\taddr.alt ");
+      else
+        stgwrite("\tconst.alt ");
+    } /* if */
+    outval(sym->addr,true,true);
+    code_idx+=opcodes(1)+opargs(1);
   } /* if */
-  outval(sym->addr,true,true);
 
   assert(size>0);
   stgwrite("\tfill ");
   outval(size,true,true);
-
-  code_idx+=opcodes(2)+opargs(2);
+  code_idx+=opcodes(1)+opargs(1);
 }
 
 /* Instruction to get an immediate value into the primary or the alternate
@@ -913,7 +919,7 @@ SC_FUNC void ffcall(symbol *sym,const char *label,int numargs)
 
   assert(sym!=NULL);
   assert(sym->ident==iFUNCTN);
-  if (sc_asmfile)
+  if (pc_asmfile)
     funcdisplayname(symname,countof(symname),sym->name);
   if ((sym->usage & uNATIVE)!=0) {
     /* reserve a SYSREQ id if called for the first time */
@@ -922,7 +928,7 @@ SC_FUNC void ffcall(symbol *sym,const char *label,int numargs)
       sym->index=ntv_funcid++;
     stgwrite("\tsysreq ");
     outval(sym->index,true,false);
-    if (sc_asmfile) {
+    if (pc_asmfile) {
       stgwrite("\t; ");
       stgwrite(symname);
     } /* if */
@@ -948,7 +954,7 @@ SC_FUNC void ffcall(symbol *sym,const char *label,int numargs)
         stgwrite(sym->name);
       } /* if */
     } /* if */
-    if (sc_asmfile
+    if (pc_asmfile
         && (label!=NULL || pc_overlays>0
             || !isalpha(sym->name[0]) && sym->name[0]!='_'  && sym->name[0]!=ESCAPE_CHAR))
     {

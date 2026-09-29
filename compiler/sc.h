@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7693 2026-09-12 19:11:35Z thiadmer $
+ *  Version: $Id: sc.h 7701 2026-09-29 11:09:02Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -56,7 +56,7 @@
 #define sDIMEN_MAX    3     /* maximum number of array dimensions */
 #define sLINEMAX      1023  /* input line length (in characters) */
 #define sCOMP_STACK   32    /* maximum nesting of #if .. #endif sections */
-#define sDEF_LITMAX   500   /* initial size of the literal pool, in "cells" */
+#define sDEF_LITMAX   32    /* initial size of the literal pool, in "cells" */
 #define sDEF_AMXSTACK 4096  /* default stack size for AMX files */
 #define PREPROC_TERM  '\x7f'/* termination character for preprocessor expressions (the "DEL" code) */
 #define sDEF_PREFIX   "default.inc" /* default prefix filename */
@@ -77,8 +77,8 @@ typedef struct s_constvalue {
 
 typedef struct s_arginfo {  /* function argument info */
   char name[sNAMEMAX+1];
-  char ident;           /* iVARIABLE, iREFERENCE, iREFARRAY or iVARARGS */
-  char usage;           /* uCONST, uPACKED */
+  short ident;          /* iVARIABLE, iREFERENCE, iREFARRAY or iVARARGS; 0 as sentinel */
+  short usage;          /* uCONST, uPACKED */
   /* tags */
   int *tags;            /* argument tag id. list */
   int numtags;          /* number of tags in the tag list */
@@ -139,11 +139,11 @@ typedef struct s_symbol {
   short usage;          /* see below for possible values */
   short flags;          /* see below for possible values */
   short scope;          /* sLOCAL, sGLOBAL or sSTATIC */
-  short compound;       /* compound level (braces nesting level) */
+  short block;          /* block nesting level (braces nesting level) */
   int tag;              /* tagname id */
 
   union {
-    int declared;       /* label: how many local variables are declared */
+    int declared;       /* label: how many local variables are declared at the point of the goto */
     constvalue *lib;    /* native function: library it is part of */
     long stacksize;     /* normal/public function: stack requirements */
     int enumlist;       /* enumerated constants: unique sequence number */
@@ -160,9 +160,9 @@ typedef struct s_symbol {
   } dim;                /* for 'dimension', both functions and arrays */
 
   statelist *states;    /* list of state function/state variable ids + addresses */
-  int fvisible;         /* static global variables: file number of the declaration (for visibility test) */
-  int fnumber;          /* file number for the declaration */
-  int lnumber;          /* line number (in source file "fnumber") for the declaration */
+  int fvisible;         /* file number of the declaration for static global variables, or NOT_SET for true globals */
+  int fnumber;          /* file number of the declaration */
+  int lnumber;          /* line number of the declaration */
 
   struct s_symbol **refer;  /* referrer list, functions that "use" this symbol */
   int numrefers;        /* number of entries in the referrer list */
@@ -199,56 +199,60 @@ typedef struct s_symbol {
  *        1     (uREAD) the variable is "read" (accessed) in the source file
  *        2     (uWRITTEN) the variable is "set" (assigned a value)
  *        3     (uCONST) the variable is constant (may not be assigned to)
- *        4     (uPUBLIC) the variable is public
- *        5     (uPACKED) the array variable is defined as packed (only for the last dimension of an array)
- *        6     (uSTOCK) the variable is discardable (without warning)
+ *        4     (uPACKED) the array variable is defined as packed (only for the last dimension of an array)
+ *        5     (uPUBLIC) the variable is public
+ *        7     (uSTOCK) the variable is discardable (without warning)
  *
  *  FUNCTION
  *  bits: 0     (uDEFINE) the function is defined ("implemented") in the source file
- *        1     (uREAD) the function is invoked in the source file
- *        2     (uRETVALUE) the function returns a value (or should return a value)
- *        3     (uPROTOTYPED) the function was prototyped (implicitly via a definition or explicitly)
- *        4     (uPUBLIC) the function is public
- *        5     (uNATIVE) the function is native
- *        6     (uSTOCK) the function is discardable (without warning)
- *        7     (uMISSING) the function is not implemented in this source file
- *        8     (uFORWARD) the function is explicitly forwardly declared
+ *        1     (uREAD) the function is invoked (called) in the source file
+ *        5     (uPUBLIC) the function is public
+ *        6     (uNATIVE) the function is native
+ *        7     (uSTOCK) the function is discardable (without warning)
+ *        8     (uMISSING) the function is not implemented in this source file
+ *        9     (uPROTOTYPED) the function was prototyped (implicitly via a definition or explicitly)
+ *       10     (uFORWARD) the function is explicitly forwardly declared
+ *       11     (uRETVALUE) the function returns a value (or should return a value)
  *
  *  CONSTANT
- *  bits: 0     (uDEFINE) the symbol is defined in the source file
+ *  bits: 0     (uDEFINE) the constant is defined in the source file
  *        1     (uREAD) the constant is "read" (accessed) in the source file
  *        2     (uWRITTEN) redundant, but may be set for constants passed by reference
- *        3     (uPREDEF) the constant is pre-defined and should be kept between passes
  *        5     (uPACKED) the constant refers to a packed pseudo-array
+ *       12     (uPREDEF) the constant is pre-defined and should be kept between passes
  */
-#define uDEFINE   0x001
-#define uREAD     0x002
-#define uWRITTEN  0x004
-#define uRETVALUE 0x004 /* function returns (or should return) a value */
-#define uCONST    0x008
-#define uPROTOTYPED 0x008
-#define uPREDEF   0x008 /* constant is pre-defined */
-#define uPUBLIC   0x010
-#define uNATIVE   0x020
-#define uPACKED   0x020
-#define uSTOCK    0x040
-#define uMISSING  0x080
-#define uFORWARD  0x100
-#define uVISITED  0x200 /* temporary flag, to mark fields as "visited" in recursive loops */
+#define uDEFINE     0x0001 /**< the symbol is defined/implemented (and not just declared) */
+#define uREAD       0x0002 /**< the symbol is read/called */
+#define uWRITTEN    0x0004 /**< the symbol is modified (variables only) */
+#define uCONST      0x0008 /**< the symbol is marked constant (variables only) */
+#define uPACKED     0x0010 /**< the symbol is (or refers to) a packed array */
+#define uPUBLIC     0x0020 /**< the symbol is public */
+#define uNATIVE     0x0040 /**< the symbol is native (functions only) */
+#define uSTOCK      0x0080 /**< the symbol is 'stock' */
+#define uMISSING    0x0100 /**< the symbol is missing (functions) */
+#define uPROTOTYPED 0x0200 /**< the symbol is declared (implicitly or explicitly) */
+#define uFORWARD    0x0400 /**< the symbol is explicitly forwardly declared */
+#define uRETVALUE   0x0800 /**< function returns (or should return) a value */
+#define uPREDEF     0x1000 /**< constant is pre-defined */
+#define uVISITED    0x2000 /**< temporary flag, to mark fields as "visited" in recursive loops */
 /* uRETNONE is not stored in the "usage" field of a symbol. It is
  * used during parsing a function, to detect a mix of "return;" and
  * "return value;" in a few special cases.
  */
-#define uRETNONE  0x10
+#define uRETNONE    0x4000
 
-/*  Possible values for "flags"
+/*  Possible values for "flags" in a symbol, also used in the 'pc_pendingflags'
+ *  global variable
  *  This is a bit set
  */
-#define flgDEPRECATED 0x01  /* symbol is deprecated (avoid use) */
-#define flgENTRYPOINT 0x02  /* symbol is an entry point for a program */
+#define flgDEPRECATED 0x01 /**< symbol is deprecated (avoid use) */
+#define flgENTRYPOINT 0x02 /**< symbol is an entry point for a program */
+#define flgARGUMENT   0x04 /**< symbol is a function argument */
+#define flgRECURSIVE  0x08 /**< a recursive function (no warning on self-call) */
+#define flgALIGNDATA  0x10 /**< align next declaration */
 
-#define uTAGOF    0x40  /* set in the "hasdefault" field of the arginfo struct */
-#define uSIZEOF   0x80  /* set in the "hasdefault" field of the arginfo struct */
+#define uTAGOF        0x40 /**< set in the "hasdefault" field of the arginfo struct */
+#define uSIZEOF       0x80 /**< set in the "hasdefault" field of the arginfo struct */
 
 #define _MAINFUNC  "main"
 #define _STARTFUNC "@start"	/* alias for main */
@@ -349,35 +353,35 @@ typedef struct s_arraymerge {
 /*  Tokens recognized by lex()
  *  Some of these constants are assigned as well to the variable "lastst" (see SC1.C)
  */
-#define tFIRST      256 /* value of first multi-character operator */
-#define tMIDDLE     280 /* value of last multi-character operator */
-#define tLAST       325 /* value of last multi-character match-able token */
+#define tFIRST      256         /**< value of first multi-character operator */
+#define tMIDDLE     280         /**< value of last multi-character operator */
+#define tLAST       325         /**< value of last multi-character match-able token */
 /* multi-character operators */
-#define taMULT      256 /* *= */
-#define taDIV       257 /* /= */
-#define taMOD       258 /* %= */
-#define taADD       259 /* += */
-#define taSUB       260 /* -= */
-#define taSHL       261 /* <<= */
-#define taSHRU      262 /* >>>= */
-#define taSHR       263 /* >>= */
-#define taAND       264 /* &= */
-#define taXOR       265 /* ^= */
-#define taOR        266 /* |= */
-#define tlOR        267 /* || */
-#define tlAND       268 /* && */
-#define tlEQ        269 /* == */
-#define tlNE        270 /* != */
-#define tlLE        271 /* <= */
-#define tlGE        272 /* >= */
-#define tSHL        273 /* << */
-#define tSHRU       274 /* >>> */
-#define tSHR        275 /* >> */
-#define tINC        276 /* ++ */
-#define tDEC        277 /* -- */
-#define tELLIPS     278 /* ... */
-#define tDBLDOT     279 /* .. */
-#define tDBLCOLON   280 /* :: */
+#define taMULT      256         /**< *= */
+#define taDIV       257         /**< /= */
+#define taMOD       258         /**< %= */
+#define taADD       259         /**< += */
+#define taSUB       260         /**< -= */
+#define taSHL       261         /**< <<= */
+#define taSHRU      262         /**< >>>= */
+#define taSHR       263         /**< >>= */
+#define taAND       264         /**< &= */
+#define taXOR       265         /**< ^= */
+#define taOR        266         /**< |= */
+#define tlOR        267         /**< || */
+#define tlAND       268         /**< && */
+#define tlEQ        269         /**< == */
+#define tlNE        270         /**< != */
+#define tlLE        271         /**< <= */
+#define tlGE        272         /**< >= */
+#define tSHL        273         /**< << */
+#define tSHRU       274         /**< >>> */
+#define tSHR        275         /**< >> */
+#define tINC        276         /**< ++ */
+#define tDEC        277         /**< -- */
+#define tELLIPS     278         /**< ... */
+#define tDBLDOT     279         /**< .. */
+#define tDBLCOLON   280         /**< :: */
 /* reserved words (statements) */
 #define tASSERT     281
 #define tBREAK      282
@@ -408,15 +412,15 @@ typedef struct s_arraymerge {
 #define tVAR        307
 #define tWHILE      308
 /* compiler directives */
-#define tpASSERT    309 /* #assert */
+#define tpASSERT    309         /**< #assert */
 #define tpDEFINE    310
-#define tpELSE      311 /* #else */
-#define tpELSEIF    312 /* #elseif */
+#define tpELSE      311         /**< #else */
+#define tpELSEIF    312         /**< #elseif */
 #define tpENDIF     313
 #define tpENDINPUT  314
 #define tpERROR     315
 #define tpFILE      316
-#define tpIF        317 /* #if */
+#define tpIF        317         /**< #if */
 #define tpIFDEF     318
 #define tpIFNDEF    319
 #define tpINCLUDE   320
@@ -426,74 +430,75 @@ typedef struct s_arraymerge {
 #define tpUNDEF     324
 #define tpWARNING   325
 /* semicolon and comma are special cases, because they can be optional */
-#define tTERM       326 /* semicolon or newline */
-#define tSEPARATOR  327 /* comma or newline */
-#define tENDEXPR    328 /* forced end of expression */
+#define tTERM       326         /**< semicolon or newline */
+#define tSEPARATOR  327         /**< comma or newline */
+#define tENDEXPR    328         /**< forced end of expression */
 /* other recognized tokens */
-#define tNUMBER     329 /* integer number */
-#define tRATIONAL   330 /* rational number */
+#define tNUMBER     329         /**< integer number */
+#define tRATIONAL   330         /**< rational number */
 #define tSYMBOL     331
 #define tLABEL      332
-#define tSYMLABEL   333 /* ".name" syntax for named parameters and symbolic array indices */
+#define tSYMLABEL   333         /**< ".name" syntax for named parameters and symbolic array indices */
 #define tSTRING     334
 #define tPACKSTRING 335
-#define tEXPR       336 /* for assigment to "lastst" only (see SC1.C) */
-#define tENDLESS    337 /* endless loop, for assigment to "lastst" only */
+#define tEXPR       336         /**< for assigment to "lastst" only (see SC1.C) */
+#define tENDLESS    337         /**< endless loop, for assigment to "lastst" only */
 
 /* (reversed) evaluation of staging buffer */
 #define sSTARTREORDER 0x01
 #define sENDREORDER   0x02
-#define sEXPRSTART    0x80      /* top bit set, rest is free */
-#define sMAXARGS      127       /* relates to the bit pattern of sEXPRSTART */
+#define sEXPRSTART    0x80      /**< top bit set, rest is free */
+#define sMAXARGS      127       /**< relates to the bit pattern of sEXPRSTART */
 
-#define sDOCSEP       0x01      /* to separate documentation comments between functions */
+#define sDOCSEP       0x01      /**< to separate documentation comments between functions */
 
 /* codes for ffabort() */
-#define xEXIT           1       /* exit code in PRI */
-#define xASSERTION      2       /* abort caused by failing assertion */
-#define xSTACKERROR     3       /* stack/heap overflow */
-#define xBOUNDSERROR    4       /* array index out of bounds */
-#define xMEMACCESS      5       /* data access error */
-#define xINVINSTR       6       /* invalid instruction */
-#define xSTACKUNDERFLOW 7       /* stack underflow */
-#define xHEAPUNDERFLOW  8       /* heap underflow */
-#define xCALLBACKERR    9       /* no, or invalid, callback */
-#define xSLEEP         12       /* sleep, exit code in PRI, tag in ALT */
+#define xEXIT           1       /**< exit code in PRI */
+#define xASSERTION      2       /**< abort caused by failing assertion */
+#define xSTACKERROR     3       /**< stack/heap overflow */
+#define xBOUNDSERROR    4       /**< array index out of bounds */
+#define xMEMACCESS      5       /**< data access error */
+#define xINVINSTR       6       /**< invalid instruction */
+#define xSTACKUNDERFLOW 7       /**< stack underflow */
+#define xHEAPUNDERFLOW  8       /**< heap underflow */
+#define xCALLBACKERR    9       /**< no, or invalid, callback */
+#define xSLEEP         12       /**< sleep, exit code in PRI, tag in ALT */
 
 /* Miscellaneous  */
-#define NOT_SET         (-1)    /* special "boolean" value: no value set yet */
-#define sIN_CSEG        1       /* if parsing CODE */
-#define sIN_DSEG        2       /* if parsing DATA */
-#define sCHKBOUNDS      1       /* bit position in "debug" variable: check bounds */
-#define sSYMBOLIC       2       /* bit position in "debug" variable: symbolic info */
-#define sRESET          0       /* reset error flag */
-#define sFORCESET       1       /* force error flag on */
-#define sEXPRMARK       2       /* mark start of expression */
-#define sEXPRRELEASE    3       /* mark end of expression */
-#define sSETLINE        4       /* set line number for the error */
-#define sSETFILE        5       /* set file number for the error */
+#define NOT_SET         (-1)    /**< special "boolean" value: no value set yet */
+#define sIN_CSEG        1       /**< if parsing CODE */
+#define sIN_DSEG        2       /**< if parsing DATA */
+#define sCHKBOUNDS      1       /**< bit position in "debug" variable: check bounds */
+#define sSYMBOLIC       2       /**< bit position in "debug" variable: symbolic info */
+#define sRESET          0       /**< reset error flag */
+#define sFORCESET       1       /**< force error flag on */
+#define sEXPRMARK       2       /**< mark start of expression */
+#define sEXPRRELEASE    3       /**< mark end of expression */
+#define sSETLINE        4       /**< set line number for the error */
+#define sSETFILE        5       /**< set file number for the error */
+#define sRESETERRCOUNT  6       /**< clear error and warning counts */
 
 enum {
-  sOPTIMIZE_NONE,               /* no optimization */
-  sOPTIMIZE_CORE,               /* optimize using core instruction set only */
-  sOPTIMIZE_MACRO,              /* core + supplemental instruction sets */
-  sOPTIMIZE_FULL,               /* full optimization, packed instructions */
+  sOPTIMIZE_NONE,               /**< no optimization */
+  sOPTIMIZE_CORE,               /**< optimize using core instruction set only */
+  sOPTIMIZE_MACRO,              /**< core + supplemental instruction sets */
+  sOPTIMIZE_FULL,               /**< full optimization, packed instructions */
   /* ----- */
   sOPTIMIZE_NUMBER
 };
 
 typedef enum s_regid {
-  sPRI,                         /* indicates the primary register */
-  sALT,                         /* indicates the secundary register */
+  sPRI,                         /**< indicates the primary register */
+  sALT,                         /**< indicates the secundary register */
 } regid;
 
 typedef enum s_optmark {
-  sEXPR,                        /* end of expression (for expressions that form a statement) */
-  sPARM,                        /* end of parameter (in a function parameter list) */
-  sLDECL,                       /* start of local declaration (variable) */
+  sEXPR,                        /**< end of expression (for expressions that form a statement) */
+  sPARM,                        /**< end of parameter (in a function parameter list) */
+  sLDECL,                       /**< start of local declaration (variable) */
 } optmark;
 
-#define suSLEEP_INSTR 0x01      /* the "sleep" instruction was used */
+#define suSLEEP_INSTR 0x01      /**< the "sleep" instruction was used */
 
 #if INT_MAX<0x8000u
 # define PUBLICTAG    0x8000u
@@ -520,10 +525,18 @@ typedef enum s_optmark {
 DLLEXPORT int pc_compile(int argc, char **argv);
 DLLEXPORT int pc_addconstant(const char *name,cell value,int tag);
 DLLEXPORT int pc_addtag(const char *name);
+
+enum {
+  wDISABLE=0,
+  wENABLE,
+  wTOGGLE,
+  wDISABLE_ONCE,
+};
 DLLEXPORT int pc_enablewarning(unsigned number,int enable);
 
 /*
- * Functions called from the compiler (to be implemented by you)
+ * Functions called from the compiler (to be implemented by you if you embed
+ * the compiler).
  */
 
 /* general console output */
@@ -536,26 +549,25 @@ int pc_error(int number,const char *message,const char *filename,int firstline,i
 void *pc_opensrc(const char *filename); /* reading only */
 void *pc_createsrc(const char *filename);
 void pc_closesrc(void *handle);   /* never delete */
-char *pc_readsrc(void *handle,unsigned char *target,int maxchars);
-int pc_writesrc(void *handle,const unsigned char *source);
-void pc_clearpossrc(void);                        /* clear file position marks */
-void *pc_getpossrc(void *handle,void *position);  /* mark the current position */
-void pc_resetsrc(void *handle,void *position);    /* reset to a position marked earlier */
-int  pc_eofsrc(void *handle);
+bool pc_readsrc(void *handle,unsigned char *vuffer,size_t buffer_sz);
+bool pc_writesrc(void *handle,const unsigned char *buffer);
+long long pc_getpossrc(void *handle);              /* mark the current position */
+bool pc_resetsrc(void *handle,long long position); /* reset to a position marked earlier */
+bool pc_eofsrc(void *handle);
 
 /* output to intermediate (.ASM) file */
 void *pc_openasm(const char *filename); /* read/write */
-void pc_closeasm(void *handle,int deletefile);
+void pc_closeasm(void *handle,bool deletefile);
 void pc_resetasm(void *handle);
-int  pc_writeasm(void *handle,const char *string);
-char *pc_readasm(void *handle,char *string,int maxchars);
+bool pc_writeasm(void *handle,const char *buffer);
+char *pc_readasm(void *handle,char *buffer,int buffer_sz);
 
 /* output to binary (.AMX) file */
 void *pc_openbin(const char *filename);
-void pc_closebin(void *handle,int deletefile);
-void pc_resetbin(void *handle,long offset);
-int  pc_writebin(void *handle,const void *buffer,int size);
-long pc_lengthbin(void *handle); /* return the length of the file */
+void pc_closebin(void *handle,bool deletefile);
+bool pc_resetbin(void *handle,long long position);
+bool pc_writebin(void *handle,const void *buffer,int size);
+long long pc_lengthbin(void *handle); /* return the length of the file */
 
 #if defined __cplusplus
   }
@@ -580,11 +592,11 @@ SC_FUNC void set_extension(char *filename,const char *extension,int force);
 SC_FUNC symbol *fetchfunc(const char *name,int tag);
 SC_FUNC char *operator_symname(char *symname,size_t symnamesz,const char *opername,int tag1,int tag2,int numtags,int resulttag);
 SC_FUNC char *funcdisplayname(char *dest,size_t destsz,const char *funcname);
-SC_FUNC int constexpression(cell *val,int *tag,symbol **symptr);
+SC_FUNC bool constexpression(cell *val,int *tag,symbol **symptr);
 SC_FUNC constvalue *append_constval(constvalue *table,const char *name,cell val,int index);
 SC_FUNC constvalue *find_constval(constvalue *table,const char *name,int index);
 SC_FUNC void delete_consttable(constvalue *table);
-SC_FUNC int compare_consttable(constvalue *table1, constvalue *table2);
+SC_FUNC bool compare_consttable(const constvalue *table1,const constvalue *table2);
 SC_FUNC symbol *add_constant(const char *name,cell val,int scope,int tag);
 SC_FUNC void exporttag(int tag);
 SC_FUNC void sc_attachdocumentation(symbol *sym,int onlylastblock);
@@ -614,25 +626,26 @@ SC_FUNC int matchtoken(int token);
 SC_FUNC int tokeninfo(cell *val,char **str);
 SC_FUNC int needtoken(int token);
 SC_FUNC bool skiptotoken(int token,bool pushback);
+SC_FUNC void litq_free(void);
 SC_FUNC void litadd(cell value);
-SC_FUNC void litinsert(cell value,int pos);
-SC_FUNC void litremove(int pos);
+SC_FUNC void litinsert(cell value,unsigned pos);
+SC_FUNC void litremove(unsigned pos);
 SC_FUNC int alphanum(unsigned char c);
 SC_FUNC int ishex(char c);
 SC_FUNC int number(cell *val,const unsigned char *curptr);
 SC_FUNC void delete_symbol(symbol *root,symbol *sym);
 SC_FUNC void delete_symbols(symbol *root,int level,bool delete_labels,bool delete_functions);
 SC_FUNC int refer_symbol(symbol *entry,symbol *bywhom);
-SC_FUNC void markusage(symbol *sym,int usage);
+SC_FUNC void markusage(symbol *sym,short usage);
 SC_FUNC uint32_t namehash(const char *name);
 SC_FUNC symbol *findglb(const char *name,int filter);
 SC_FUNC symbol *findloc(const char *name);
 SC_FUNC symbol *findconst(const char *name);
 SC_FUNC symbol *finddepend(const symbol *parent);
-SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int tag,
-                       int usage);
-SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int tag,
-                            const int dim[],constvalue *dimnames[],int numdim,int usage);
+SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int block,
+                       int tag,int usage);
+SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int block,
+                            int tag,const int dim[],constvalue *dimnames[],int numdim,int usage);
 SC_FUNC int getlabel(void);
 SC_FUNC char *celltohex(ucell val);
 
@@ -741,6 +754,7 @@ SC_FUNC int error(unsigned long number,...);
 SC_FUNC int error_symbolname(unsigned number,const char *name);
 SC_FUNC int error_suggest(unsigned number,const char *name,int ident);
 SC_FUNC int error_suggest_list(unsigned number,const char *name,constvalue *list);
+SC_FUNC int errorcount(int *errors,int *warnings);
 SC_FUNC void errorset(int code,int line);
 SC_FUNC void pushwarnings(void);
 SC_FUNC void popwarnings(void);
@@ -789,10 +803,10 @@ SC_FUNC void delete_inputfiletable(void);
 SC_FUNC bool insert_undefsymbol(const char *string,short filenr,int linenr);
 SC_FUNC const char *get_undefsymbol(int index,short *filenr,int *linenr);
 SC_FUNC void delete_undefsymboltable(void);
-SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short scope);
-SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *scope,bool *handled);
-SC_FUNC bool find_unusedvar(const char *name,short scope,bool sethandled,short *filenr,int *linenr);
-SC_FUNC void delete_unusedvartable(short scope);
+SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short block);
+SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *block,bool *handled);
+SC_FUNC bool find_unusedvar(const char *name,short block,bool sethandled,short *filenr,int *linenr);
+SC_FUNC void delete_unusedvartable(short block);
 SC_FUNC stringlist *insert_docstring(const char *string,int append);
 SC_FUNC const char *get_docstring(int index);
 SC_FUNC void delete_docstring(int index);
@@ -857,34 +871,31 @@ SC_FUNC void delete_statelisttable(statelist *root);
 SC_VDECL symbol loctab;         /**< local symbol table */
 SC_VDECL symbol glbtab;         /**< global symbol table */
 SC_VDECL cell *litq;            /**< the literal queue */
+SC_VDECL size_t litidx;         /**< index to literal table */
 SC_VDECL unsigned char *srcline;/**< the line read from the input file */
 SC_VDECL const unsigned char *lexptr;/**< points to the current position in "srcline" */
 SC_VDECL constvalue tagname_tab;/**< tagname table */
 SC_VDECL constvalue libname_tab;/**< library table (#pragma library "..." syntax) */
 SC_VDECL constvalue *curlibrary;/**< current library */
-SC_VDECL int pc_addlibtable;    /**< is the library table added to the AMX file? */
+SC_VDECL bool pc_addlibtable;   /**< is the library table added to the AMX file? */
 SC_VDECL constvalue ntvindex_tab;/**< native function index table */
 SC_VDECL symbol *curfunc;       /**< pointer to current function */
 SC_VDECL char *inpfname;        /**< name of the file currently read from */
 SC_VDECL char outfname[];       /**< intermediate (assembler) file name */
 SC_VDECL char binfname[];       /**< binary file name */
 SC_VDECL char errfname[];       /**< error file name */
-SC_VDECL int litidx;            /**< index to literal table */
-SC_VDECL int litmax;            /**< current size of the literal table */
-SC_VDECL unsigned stgidx;       /**< index to the staging buffer */
 SC_VDECL int sc_labnum;         /**< number of (internal) labels */
+SC_VDECL unsigned stgidx;       /**< index to the staging buffer */
 SC_VDECL bool staging;          /**< true if staging output */
 SC_VDECL cell lcl_declared;     /**< number of local cells declared */
 SC_VDECL cell glb_declared;     /**< number of global cells declared */
 SC_VDECL cell code_idx;         /**< number of bytes with generated code */
 SC_VDECL int ntv_funcid;        /**< incremental number of native function */
-SC_VDECL int errnum;            /**< number of errors */
-SC_VDECL int warnnum;           /**< number of warnings */
 SC_VDECL int sc_debug;          /**< debug/optimization options (bit field) */
-SC_VDECL int sc_asmfile;        /**< create .ASM file? */
-SC_VDECL int sc_listing;        /**< create .LST file? */
-SC_VDECL int sc_dataalign;      /**< data alignment value */
-SC_VDECL int sc_alignnext;      /**< must frame of the next function be aligned? */
+SC_VDECL bool pc_asmfile;       /**< create .ASM file? */
+SC_VDECL bool pc_listing;       /**< create .LST file? */
+SC_VDECL int pc_dataalign;      /**< data alignment value */
+SC_VDECL short pc_pendingflags; /**< operations to perform on next function/data declaration (bit set) */
 SC_VDECL int pc_docexpr;        /**< must expression be attached to documentation comment? */
 SC_VDECL int curseg;            /**< 1 if currently parsing CODE, 2 if parsing DATA */
 SC_VDECL cell pc_stksize;       /**< stack size */
@@ -894,7 +905,7 @@ SC_VDECL bool freading;         /**< is there an input file ready for reading? *
 SC_VDECL int pc_curline;        /**< the line number in the current file */
 SC_VDECL short fnumber;         /**< number of files in the input file table */
 SC_VDECL short fcurrent;        /**< current file being processed */
-SC_VDECL short pc_scopelevel;   /**< level of active (nested) compound statements (0 = global) */
+SC_VDECL short pc_blocklevel;   /**< level of active (nested) compound statements (0 = global) */
 SC_VDECL bool pc_sideeffect;    /**< true if an expression causes a side-effect */
 SC_VDECL int pc_stmtindent;     /**< current indent of the statement */
 SC_VDECL int indent_nowarn;     /**< skip warning "217 loose indentation" */

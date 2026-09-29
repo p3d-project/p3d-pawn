@@ -84,3 +84,9 @@ main()
     }
 #endif
 
+#if defined STATE_INCOMPLETE
+var key
+main()
+    {
+    state (key
+#endif

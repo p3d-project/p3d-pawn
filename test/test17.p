@@ -33,4 +33,25 @@ main() {
 
 #endif
 
+#if defined PRAGMA_UNUSED_4
+/* #pragma at a deeper block level than the variable */
+main()
+    {
+    new y;
+    if (y == 0)
+        {
+        #pragma unused y
+        }
+    }
+#endif
+
+#if defined PRAGMA_UNUSED_5
+/* unused global, but #pragma is local */
+new g;
+
+main()
+    {
+    #pragma unused g
+    }
+#endif
 

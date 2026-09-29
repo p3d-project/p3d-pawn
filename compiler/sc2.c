@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7693 2026-09-12 19:11:35Z thiadmer $
+ *  Version: $Id: sc2.c 7701 2026-09-29 11:09:02Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -42,8 +42,8 @@ static cell litchar(const unsigned char **lptr,int flags);
 static symbol *find_symbol(const symbol *root,const char *name,int fnumber,int stateid);
 
 static void substallpatterns(unsigned char *line,int buffersize);
-static int match(char *st,int end);
-static int alpha(unsigned char c);
+static bool match(const char *keyword,bool need_nonalpha);
+static bool alpha(unsigned char c);
 
 #define SKIPMODE      1 /* bit field in "#if" stack */
 #define PARSEMODE     2 /* bit field in "#if" stack */
@@ -368,7 +368,7 @@ static void readline(unsigned char *line,int append)
       listline=-1;              /* force a #line directive when changing the file */
     } /* if */
 
-    if (pc_readsrc(inpf,line,(int)num)==NULL) {
+    if (!pc_readsrc(inpf,line,num)) {
       *line='\0';     /* delete line */
       cont=false;
     } else {
@@ -906,26 +906,39 @@ static void chrcat(char *str,char chr)
   *str='\0';
 }
 
-static int preproc_expr(cell *val,int *tag)
+/** preproc_expr() parses a constant expression, and clears any code or
+ *  literal constants that the parser created in the process. Pre-processing
+ *  directives should not leave traces in the generated code.
+ *
+ *  \param val          [out] The value of the constant expression (on success,
+ *                      set to 0 on error).
+ *  \param tag          [out] The tag of the constant expression (set to 0 on
+ *                      error).
+ *  \param clear_lex    Whether any pushed tokens must be cleared before the
+ *                      return of this function. This should be `true` when only
+ *                      a single expression is expected on the directive, but
+ *                      may be set to `false` when a list of expressions may be
+ *                      present (in which case the caller must clear the lex
+ *                      state after finishing with the last expression).
+ *
+ *  \return `true` on success, `false` on failure.
+ */
+static bool preproc_expr(cell *val,int *tag,bool clear_lex)
 {
-  int result;
-  unsigned index;
-  cell code_index;
-  int cur_lit;
-  char *term;
-
   /* Disable staging; it should be disabled already because
    * expressions may not be cut off half-way between conditional
    * compilations. Reset the staging index, but keep the code
    * index.
    */
+  unsigned index;
+  cell code_index;
   if (stgget(&index,&code_index)) {
     error(57);                          /* unfinished expression */
     stgdel(0,code_index);
     stgset(false);
   } /* if */
   /* save the position in the literal queue too */
-  cur_lit=litidx;
+  int cur_lit=litidx;
   assert(lexptr>=srcline && (lexptr-srcline)<(int)strlen((char*)srcline));   /* lexptr must point inside the string */
 # if !defined NO_DEFINE
     /* preprocess the string */
@@ -937,13 +950,14 @@ static int preproc_expr(cell *val,int *tag)
    * an end-of-line
    */
   assert(strlen((char*)srcline)<sLINEMAX);
-  term=strchr((char*)srcline,'\0');
+  unsigned char *term=srcline+strlen((char*)srcline);
   assert(term!=NULL);
-  chrcat((char*)srcline,PREPROC_TERM);  /* the "DEL" code (see SC.H) */
-  result=constexpression(val,tag,NULL); /* get value (or 0 on error) */
-  *term='\0';                           /* erase the token (if still present) */
-  lexclr(false);                        /* clear any "pushed" tokens */
-  litidx=cur_lit;                       /* reset literal pool */
+  chrcat((char*)srcline,PREPROC_TERM);      /* the "DEL" code (see sc.h) */
+  bool result=constexpression(val,tag,NULL);/* get value (or 0 on error) */
+  *term='\0';                               /* erase the token (if still present) */
+  if (clear_lex)
+    lexclr(false);                          /* clear any "pushed" tokens */
+  litidx=cur_lit;                           /* reset literal pool */
   return result;
 }
 
@@ -997,6 +1011,17 @@ static const unsigned char *pp_getstring(unsigned char *dest,size_t max,const un
     dest[len]='\0';
   } /* if */
   return line;
+}
+
+static void pragma_warning_loop(unsigned char flag)
+{
+  do {
+    cell val;
+    if (!preproc_expr(&val,NULL,false))
+      break;
+    pc_enablewarning((int)val,flag);
+  } while (matchtoken(','));
+  lexclr(false);                    /* clear any "pushed" tokens */
 }
 
 enum {
@@ -1068,7 +1093,7 @@ static int command(void)
       break;                    /* break out of switch */
     skiplevel=iflevel;
     if (tok==tpIF) {
-      preproc_expr(&val,NULL);  /* get value (or 0 on error) */
+      preproc_expr(&val,NULL,true);     /* get value (or 0 on error) */
       ifstack[iflevel-1]=(char)(val ? PARSEMODE : SKIPMODE);
     } else {
       int symtok=lex(&val,&str);
@@ -1122,7 +1147,7 @@ static int command(void)
            */
           if (tok==tpELSEIF) {
             if (skiplevel==iflevel)
-              preproc_expr(&val,NULL);  /* get, but ignore the expression */
+              preproc_expr(&val,NULL,true);  /* get, but ignore the expression */
             else
               lexptr=(const unsigned char*)strchr((const char*)lexptr,'\0');
           } /* if */
@@ -1133,7 +1158,7 @@ static int command(void)
              * undefined symbols; otherwise check the expression to catch errors
              */
             if (skiplevel==iflevel) {
-              preproc_expr(&val,NULL);  /* get value (or 0 on error) */
+              preproc_expr(&val,NULL,true);  /* get value (or 0 on error) */
             } else {
               lexptr=(const unsigned char*)strchr((const char *)lexptr,'\0');
               val=0;
@@ -1151,7 +1176,7 @@ static int command(void)
   case tpENDIF:
     ret=CMD_IF;
     if (iflevel==0){
-      error(26);        /* no matching "#if" */
+      error(26);                    /* no matching "#if" */
       errorset(sRESET,0);
     } else {
       iflevel--;
@@ -1160,7 +1185,7 @@ static int command(void)
     } /* if */
     check_empty(lexptr);
     break;
-  case tpINCLUDE:               /* #include directive */
+  case tpINCLUDE:                   /* #include directive */
   case tpTRYINCLUDE:
     ret=CMD_INCLUDE;
     if (!SKIPPING)
@@ -1174,7 +1199,7 @@ static int command(void)
         free(inpfname);
         inpfname=duplicatestring(pathname);
         if (inpfname==NULL)
-          error(103);           /* insufficient memory */
+          error(103);               /* insufficient memory */
         /* adjust fcurrent too, after storing the filename in the file table (if needed) */
         fcurrent=find_inputfile(pathname);
         if (fcurrent<0) {
@@ -1192,7 +1217,7 @@ static int command(void)
   case tpLINE:
     if (!SKIPPING) {
       if (lex(&val,&str)!=tNUMBER)
-        error(8);               /* invalid/non-constant expression */
+        error(8);                   /* invalid/non-constant expression */
       pc_curline=(int)val;
     } /* if */
     check_empty(lexptr);
@@ -1200,10 +1225,10 @@ static int command(void)
   case tpASSERT:
     if (!SKIPPING && (sc_debug & sCHKBOUNDS)!=0) {
       for (str=(char*)lexptr; *str<=' ' && *str!='\0'; str++)
-        /* nothing */;          /* save start of expression */
-      preproc_expr(&val,NULL);  /* get constant expression (or 0 on error) */
+        /* nothing */;              /* save start of expression */
+      preproc_expr(&val,NULL,true); /* get constant expression (or 0 on error) */
       if (!val)
-        error(110,str);         /* assertion failed */
+        error(110,str);             /* assertion failed */
       check_empty(lexptr);
     } /* if */
     break;
@@ -1211,10 +1236,12 @@ static int command(void)
     if (!SKIPPING) {
       int ok= (lex(&val,&str)==tSYMBOL);
       if (ok) {
-        if (strcmp(str,"amxlimit")==0) {
-          preproc_expr(&pc_amxlimit,NULL);
+        if (strcmp(str,"align")==0) {
+          pc_pendingflags|=flgALIGNDATA;
+        } else if (strcmp(str,"amxlimit")==0) {
+          preproc_expr(&pc_amxlimit,NULL,true);
         } else if (strcmp(str,"amxram")==0) {
-          preproc_expr(&pc_amxram,NULL);
+          preproc_expr(&pc_amxram,NULL,true);
 #if !defined PAWN_NO_CODEPAGE
         } else if (strcmp(str,"codepage")==0) {
           char name[sNAMEMAX+1];
@@ -1239,7 +1266,7 @@ static int command(void)
             strcpy(pc_deprecate,(char*)lexptr);
           lexptr=(unsigned char*)strchr((char*)lexptr,'\0'); /* skip to end (ignore "extra characters on line") */
         } else if (strcmp(str,"dynamic")==0) {
-          preproc_expr(&pc_stksize,NULL);
+          preproc_expr(&pc_stksize,NULL,true);
         } else if (strcmp(str,"library")==0) {
           char name[sNAMEMAX+1];
           while (*lexptr<=' ' && *lexptr!='\0')
@@ -1263,13 +1290,13 @@ static int command(void)
           } /* if */
         } else if (strcmp(str,"opcodeset")==0) {
           cell val;
-          preproc_expr(&val,NULL);
+          preproc_expr(&val,NULL,true);
           if (val>0 && val<pc_optimize)
             pc_optimize=(int)val;
         } else if (strcmp(str, "overlaysize") == 0) {
           symbol *sym;
           cell val;
-          preproc_expr(&val,NULL);
+          preproc_expr(&val,NULL,true);
           pc_overlays=(int)val; /* switch overlay code generation on/off,
                                  * also set the size of the overlay buffer */
           sym=findconst("overlaysize");
@@ -1289,7 +1316,7 @@ static int command(void)
           while (*lexptr<=' ' && *lexptr!='\0')
             lexptr++;
           if (*lexptr=='(') {
-            preproc_expr(&digits,NULL);
+            preproc_expr(&digits,NULL,true);
             if (digits<=0 || digits>9) {
               error(68);        /* invalid rational number precision */
               digits=0;
@@ -1310,13 +1337,16 @@ static int command(void)
           } else {
             error(69);          /* rational number format already set, can only be set once */
           } /* if */
+        } else if (strcmp(str,"recursive")==0) {
+          if (curfunc!=NULL)
+            curfunc->flags|=flgRECURSIVE;
+          else
+            pc_pendingflags|=flgRECURSIVE;
         } else if (strcmp(str,"tabsize")==0) {
           cell val;
-          preproc_expr(&val,NULL);
+          preproc_expr(&val,NULL,true);
           if (2<=val && val<=8)
             pc_tabsize=pc_matchedtabsize=(int)val;
-        } else if (strcmp(str,"align")==0) {
-          sc_alignnext=true;
         } else if (strcmp(str,"unused")==0) {
           char name[sNAMEMAX+1];
           int i,comma;
@@ -1328,7 +1358,7 @@ static int command(void)
             for (i=0; i<(int)countof(name) && alphanum(*lexptr); i++,lexptr++)
               name[i]=*lexptr;
             name[i]='\0';
-            add_unusedvar(name,fcurrent,pc_curline,pc_scopelevel);
+            add_unusedvar(name,fcurrent,pc_curline,pc_blocklevel);
             /* see if a comma follows the name */
             while (*lexptr<=' ' && *lexptr!='\0')
               lexptr++;
@@ -1339,17 +1369,17 @@ static int command(void)
         } else if (strcmp(str,"warning")==0) {
           ok= (lex(&val,&str)==tSYMBOL);
           if (ok) {
-            if (strcmp(str,"push")==0) {
+            if (strcmp(str,"push")==0)
               pushwarnings();
-            } else if (strcmp(str,"pop")==0) {
+            else if (strcmp(str,"pop")==0)
               popwarnings();
-            } else if (strcmp(str,"enable")==0) {
-              preproc_expr(&val,NULL);  /* get value (or 0 on error) */
-              pc_enablewarning((int)val,1);
-            } else if (strcmp(str,"disable")==0) {
-              preproc_expr(&val,NULL);  /* get value (or 0 on error) */
-              pc_enablewarning((int)val,0);
-            } else {
+            else if (strcmp(str,"enable")==0)
+              pragma_warning_loop(wENABLE);
+            else if (strcmp(str,"disable")==0)
+              pragma_warning_loop(wDISABLE);
+            else if (strcmp(str,"disable-once")==0)
+              pragma_warning_loop(wDISABLE_ONCE);
+            else {
               ok=false;
             }
           }
@@ -1845,23 +1875,26 @@ static void substallpatterns(unsigned char *line,int buffersize)
 }
 #endif
 
-/*  scanellipsis
- *  Look for ... in the string and (if not there) in the remainder of the file,
- *  but restore (or keep intact):
+/** scanellipsis() looks for '...' in the string and (if not there) in the
+ *  remainder of the file.
+ *
+ *  \param lptr         [in] A pointer to the string to look for the ellipsis.
+ *                      This pointer is supposed to point into the source line
+ *                      buffer, and at the location where the next token is
+ *                      read.
+ *
+ *  \return `true` if an ellipsis was found and `false` if not
+ *
+ *  \note On exit, it has restored (or kept intact):
  *  - the current position in the file
  *  - the comment parsing state
  *  - the line buffer used by the lexical analyser
  *  - the active line number and the active file
- *
- *  The function returns 1 if an ellipsis was found and 0 if not
  */
-static int scanellipsis(const unsigned char *lptr)
+static bool scanellipsis(const unsigned char *lptr)
 {
-  static void *inpfmark=NULL;
-  unsigned char *localbuf;
-  short localcomment,found;
-
   /* first look for the ellipsis in the remainder of the string */
+  assert(lptr!=NULL && lptr>=srcline);
   while (*lptr<=' ' && *lptr!='\0')
     lptr++;
   if (lptr[0]=='.' && lptr[1]=='.' && lptr[2]=='.')
@@ -1874,21 +1907,22 @@ static int scanellipsis(const unsigned char *lptr)
    */
   if (inpf==NULL || pc_eofsrc(inpf))
     return 0;           /* quick exit: cannot read after EOF */
-  if ((localbuf=(unsigned char*)malloc((sLINEMAX+1)*sizeof(unsigned char)))==NULL)
+  unsigned char *localbuf=(unsigned char*)malloc((sLINEMAX+1)*sizeof(unsigned char));
+  if (localbuf==NULL)
     return 0;
-  inpfmark=pc_getpossrc(inpf,inpfmark);
-  localcomment=icomment;
+  long long inpfmark=pc_getpossrc(inpf);
+  short localcomment=icomment;
 
-  found=0;
+  bool found=false;
   /* read from the file, skip preprocessing, but strip off comments */
-  while (!found && pc_readsrc(inpf,localbuf,sLINEMAX)!=NULL) {
+  while (!found && pc_readsrc(inpf,localbuf,sLINEMAX)) {
     stripcom(localbuf);
     lptr=localbuf;
     /* skip white space */
     while (*lptr<=' ' && *lptr!='\0')
       lptr++;
     if (lptr[0]=='.' && lptr[1]=='.' && lptr[2]=='.')
-      found=1;
+      found=true;
     else if (*lptr!='\0')
       break;                       /* stumbled on something that is not an ellipsis and not white-space */
   } /* while */
@@ -1932,7 +1966,7 @@ SC_FUNC void preprocess(void)
         lexptr=srcline;   /* reset "line pointer" to start of the parsing buffer */
       } /* if */
 #   endif
-    if (sc_status==statBROWSE && sc_listing && freading
+    if (sc_status==statBROWSE && pc_listing && freading
         && (iscommand==CMD_NONE || iscommand==CMD_EMPTYLINE || iscommand==CMD_DIRECTIVE))
     {
       listline++;
@@ -2130,7 +2164,7 @@ SC_FUNC int lexinit(int releaseall)
   return 1;
 }
 
-char *sc_tokens[] = {
+static const char *sc_tokens[] = {
          "*=", "/=", "%=", "+=", "-=", "<<=", ">>>=", ">>=", "&=", "^=", "|=",
          "||", "&&", "==", "!=", "<=", ">=", "<<", ">>>", ">>", "++", "--",
          "...", "..", "::",
@@ -2141,14 +2175,14 @@ char *sc_tokens[] = {
          "#assert", "#define", "#else", "#elseif", "#endif", "#endinput",
          "#error", "#file", "#if", "#ifdef", "#ifndef", "#include", "#line",
          "#pragma", "#tryinclude", "#undef", "#warning",
-         ";", ",", ";", "[integer value]", "[rational value]", "[identifier]",
-         "[label]", "[field/parameter reference]", "[string]", "[string]"
+         "[semicolon/newline]", "[comma/newline]", "[semicolon/newline]",
+         "[integer value]", "[rational value]", "[identifier]", "[label]",
+         "[field/parameter reference]", "[string]", "[string]"
        };
 
 SC_FUNC int lex(cell *lexvalue,char **lexstr)
 {
-  int i,toolong,newline;
-  char **tokptr;
+  int toolong,newline;
   const unsigned char *starttoken;
 
   assert(lexvalue!=NULL);
@@ -2187,8 +2221,8 @@ SC_FUNC int lex(cell *lexvalue,char **lexstr)
   if (newline)
     lex_fetchindent(srcline,lexptr);
 
-  i=tFIRST;
-  tokptr=sc_tokens;
+  int i=tFIRST;
+  const char **tokptr=sc_tokens;
   while (i<=tMIDDLE) {  /* match multi-character operators */
     if (*lexptr==**tokptr && match(*tokptr,false)) {
       cached_tok=i;
@@ -2422,9 +2456,10 @@ SC_FUNC void lexpush(void)
 }
 
 /** lexclr() clears the "cached" flag for the token to make sure lex() will read
- *  in a new symbol (a not continue with some old one). This is required to
- *  avoid preprocessor expressions to spill over into code, and in a few cases
- *  after detecting an syntax error.
+ *  in a new symbol (a not continue with some old one), and it also skips
+ *  anything remaining on the current source line. This is required to avoid
+ *  preprocessor expressions to spill over into code, and in a few cases after
+ *  detecting an syntax error.
  */
 SC_FUNC void lexclr(int clreol)
 {
@@ -2576,54 +2611,67 @@ SC_FUNC bool skiptotoken(int token,bool pushback)
       return true;
     } /* if */
   } while (tok!=';' && tok!=tENDEXPR && !_lexnewline && freading);
-  if (_lexnewline)
+  if (_lexnewline || (tok==';' && token!=tTERM))
     lexpush();
   return false;
 }
 
-/*  match
+/** match() compares a series of characters from the input file with the
+ *  characters in 'keyword' (that contains a token). If the token on the input
+ *  file matches 'keyword', the input file pointer 'lexptr' is adjusted to point
+ *  to the next token, otherwise 'lexptr' remains unaltered.
  *
- *  Compares a series of characters from the input file with the characters
- *  in "st" (that contains a token). If the token on the input file matches
- *  "st", the input file pointer "lexptr" is adjusted to point to the next
- *  token, otherwise "lexptr" remains unaltered.
- *
- *  If the parameter "end: is true, match() requires that the first character
- *  behind the recognized token is non-alphanumeric.
+ *  If the parameter 'need_nonalpha' is true, match() requires that the first
+ *  character behind the recognized token is non-alphanumeric.
  *
  *  Global references: lexptr (modified)
  */
-static int match(char *st,int end)
+static bool match(const char *keyword,bool need_nonalpha)
 {
-  int k;
-  const unsigned char *ptr;
-
-  k=0;
-  ptr=lexptr;
-  while (st[k]) {
-    if ((unsigned char)st[k]!=*ptr)
-      return 0;
-    k+=1;
-    ptr+=1;
-  } /* while */
-  if (end) {        /* symbol must terminate with non-alphanumeric char */
-    if (alphanum(*ptr))
-      return 0;
+  const unsigned char *ptr=lexptr;
+  if (*keyword=='#' && *ptr=='#') {
+    /* allow whitespace between the '#' and the keyword */
+    keyword++;
+    ptr++;
+    while (*ptr<=' ' && *ptr!='\0')
+      ptr++;
   } /* if */
-  lexptr=ptr;       /* match found, skip symbol */
-  return 1;
+  while (*keyword) {
+    if ((unsigned char)*keyword!=*ptr)
+      return false;
+    keyword++;
+    ptr++;
+  } /* while */
+  if (need_nonalpha && alphanum(*ptr))  /* symbol must terminate with non-alphanumeric char */
+    return false;
+  lexptr=ptr;           /* match found, skip symbol */
+  return true;
+}
+
+static size_t litq_sz=0;  /**< current size of the literal table */
+
+SC_FUNC void litq_free(void)
+{
+  if (litq!=NULL)
+    free(litq);
+  litq=NULL;
+  litq_sz=0;
 }
 
 static void chk_grow_litq(void)
 {
-  if (litidx>=litmax) {
-    cell *p;
-
-    litmax+=sDEF_LITMAX;
-    p=(cell *)realloc(litq,litmax*sizeof(cell));
+  assert(litidx<=litq_sz);
+  if (litidx>=litq_sz) {
+    size_t newsize= (litq_sz==0) ? sDEF_LITMAX : 2*litq_sz;
+    cell *p=(cell *)malloc(newsize*sizeof(cell));
     if (p==NULL)
       error(102,"literal table");   /* literal table overflow (fatal error) */
+    if (litq!=NULL) {
+      memcpy(p,litq,litq_sz*sizeof(cell));
+      free(litq);
+    } /* if */
     litq=p;
+    litq_sz=newsize;
   } /* if */
 }
 
@@ -2638,7 +2686,7 @@ static void chk_grow_litq(void)
 SC_FUNC void litadd(cell value)
 {
   chk_grow_litq();
-  assert(litidx<litmax);
+  assert(litidx<litq_sz);
   litq[litidx++]=value;
 }
 
@@ -2650,11 +2698,11 @@ SC_FUNC void litadd(cell value)
  *  Global references: litidx  (modified)
  *                     litq    (modified)
  */
-SC_FUNC void litinsert(cell value,int pos)
+SC_FUNC void litinsert(cell value,unsigned pos)
 {
   chk_grow_litq();
-  assert(litidx<litmax);
-  assert(pos>=0 && pos<=litidx);
+  assert(litidx<litq_sz);
+  assert(pos<=litidx);
   memmove(litq+(pos+1),litq+pos,(litidx-pos)*sizeof(cell));
   litidx++;
   litq[pos]=value;
@@ -2664,10 +2712,10 @@ SC_FUNC void litinsert(cell value,int pos)
  *
  *  Removes an entry in the literal queue (to undo an earlier addition.
  */
-SC_FUNC void litremove(int pos)
+SC_FUNC void litremove(unsigned pos)
 {
-  assert(litidx>0 && litidx<litmax);
-  assert(pos>=0 && pos<litidx);
+  assert(litidx>0 && litidx<litq_sz);
+  assert(pos<litidx);
   memmove(litq+pos,litq+(pos+1),(litidx-pos-1)*sizeof(cell));
   litidx--;
 }
@@ -2784,7 +2832,7 @@ static cell litchar(const unsigned char **lptr,int flags)
  *  Test if character "c" is alphabetic ("a".."z"), an underscore ("_")
  *  or an "at" sign ("@"). The "@" is an extension to standard C.
  */
-static int alpha(unsigned char c)
+static bool alpha(unsigned char c)
 {
   return (isalpha(c) || c=='_' || c==PUBLIC_CHAR);
 }
@@ -2921,10 +2969,14 @@ SC_FUNC void delete_symbols(symbol *root,int level,bool delete_labels,bool delet
   base=root;
   while (base->next!=NULL) {
     sym=base->next;
-    if (sym->compound<level)
+    if (sym->block<level)
       break;
     if ((sym->usage & uVISITED)!=0) {
       base=sym;                 /* skip the symbol */
+      continue;
+    } /* if */
+    if ((sym->flags & flgARGUMENT)!=0 && !delete_labels) {
+      base=sym;                 /* arguments, like labels, go with the function */
       continue;
     } /* if */
     switch (sym->ident) {
@@ -3124,10 +3176,10 @@ SC_FUNC int refer_symbol(symbol *entry,symbol *bywhom)
   return true;
 }
 
-SC_FUNC void markusage(symbol *sym,int usage)
+SC_FUNC void markusage(symbol *sym,short usage)
 {
   assert(sym!=NULL);
-  sym->usage |= (char)usage;
+  sym->usage |= usage;
   if ((usage & uWRITTEN)!=0 && (sym->ident==iVARIABLE || sym->ident==iARRAY))
     sym->x.lnumber_write=pc_curline;
   /* check if (global) reference must be added to the symbol */
@@ -3201,7 +3253,7 @@ SC_FUNC symbol *finddepend(const symbol *parent)
  *  Adds a symbol to the symbol table (either global or local variables,
  *  or global and local constants).
  */
-SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int tag,int usage)
+SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int block,int tag,int usage)
 {
   symbol entry;
   symbol **refer;
@@ -3224,10 +3276,11 @@ SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int tag,in
   entry.hash=namehash(name);
   entry.addr=addr;
   entry.codeaddr=code_idx;
-  entry.scope=(char)scope;
-  entry.ident=(char)ident;
+  entry.scope=(short)scope;
+  entry.block=(short)block;
+  entry.ident=(short)ident;
   entry.tag=tag;
-  entry.usage=(char)usage;
+  entry.usage=(short)usage;
   entry.fvisible=NOT_SET; /* assume global visibility (ignored for local symbols) */
   entry.fnumber=fcurrent;
   entry.lnumber=pc_curline;
@@ -3241,8 +3294,8 @@ SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int tag,in
     return add_symbol(&loctab,&entry,false);
 }
 
-SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int tag,
-                            const int dim[],constvalue *dimnames[],int numdim,int usage)
+SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int block,
+                            int tag,const int dim[],constvalue *dimnames[],int numdim,int usage)
 {
   symbol *sym;
 
@@ -3265,7 +3318,7 @@ SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int t
     int level;
     sym=NULL;                   /* to avoid a compiler warning */
     for (level=0; level<numdim; level++) {
-      top=addsym(name,addr,ident,scope,tag,uDEFINE);
+      top=addsym(name,addr,ident,scope,block,tag,uDEFINE);
       top->dim.array.length=dim[level];
       top->dim.array.level=(short)(numdim-level-1);
       top->dim.array.names=dimnames[level];
@@ -3277,7 +3330,7 @@ SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int t
         sym=top;
     } /* for */
   } else {
-    sym=addsym(name,addr,ident,scope,tag,uDEFINE);
+    sym=addsym(name,addr,ident,scope,block,tag,uDEFINE);
   } /* if */
   return sym;
 }

@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc6.c 7694 2026-09-15 19:57:37Z thiadmer $
+ *  Version: $Id: sc6.c 7700 2026-09-28 15:46:30Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -747,9 +747,9 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
    * => since the code segment is padded to a sc_dataalign boundary, the data segment is aligned
    * => and thereby the stack top is aligned too
    */
-  assert(sc_dataalign!=0);
-  padding= (int)(sc_dataalign - (sizeof hdr + nametablesize) % sc_dataalign);
-  if (padding==sc_dataalign)
+  assert(pc_dataalign!=0);
+  padding= (int)(pc_dataalign - (sizeof hdr + nametablesize) % pc_dataalign);
+  if (padding==pc_dataalign)
     padding=0;
 
   /* write the abstract machine header */
@@ -1071,12 +1071,13 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
 #   endif
   } /* if */
 
-  assert(hdr.size==pc_lengthbin(fout));
+  if (hdr.size<pc_lengthbin(fout))
+    error(114,"file exceeds 2GB limit");  /* capacity exceeded */
   if (!writeerror && (sc_debug & sSYMBOLIC)!=0)
     append_dbginfo(fout);       /* optionally append debug file */
 
   if (writeerror)
-    error(101,"disk full");
+    error(114,"disk full");     /* capacity exceeded */
 
   /* adjust the header (for Big Endian architectures) */
   size=(int)hdr.cod;    /* save, the value in the header may need to be swapped */
@@ -1200,7 +1201,7 @@ static void append_dbginfo(FILE *fout)
   for (constptr=sc_automaton_tab.next; constptr!=NULL; constptr=constptr->next) {
     assert(constptr->index==0 && strlen(constptr->name)==0 || strlen(constptr->name)>0);
     dbghdr.automatons++;
-    dbghdr.size+=(int32_t)(sizeof(AMX_DBG_MACHINE)+strlen(constptr->name));
+    dbghdr.size+=(int32_t)(sizeof(AMX_DBG_AUTOMATON)+strlen(constptr->name));
   } /* for */
 
   /* state table */

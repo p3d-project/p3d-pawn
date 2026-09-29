@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scvars.c 7693 2026-09-12 19:11:35Z thiadmer $
+ *  Version: $Id: scvars.c 7701 2026-09-29 11:09:02Z thiadmer $
  */
 #include <stdio.h>
 #include <stdlib.h>     /* for _MAX_PATH */
@@ -30,35 +30,32 @@
 SC_VDEFINE symbol loctab;                   /**< local symbol table */
 SC_VDEFINE symbol glbtab;                   /**< global symbol table */
 SC_VDEFINE cell *litq;                      /**< the literal queue */
+SC_VDEFINE size_t litidx=0;                 /**< index to literal table */
 SC_VDEFINE unsigned char *srcline=NULL;     /**< the line read from the input file */
 SC_VDEFINE const unsigned char *lexptr;     /**< points to the current position in "srcline" */
 SC_VDEFINE constvalue tagname_tab={NULL,"",0,0,0};  /**< tagname table */
 SC_VDEFINE constvalue libname_tab={NULL,"",0,0,0};  /**< library table (#pragma library "..." syntax) */
 SC_VDEFINE constvalue *curlibrary=NULL;     /**< current library */
-SC_VDEFINE int pc_addlibtable=true;         /**< is the library table added to the AMX file? */
+SC_VDEFINE bool pc_addlibtable=true;        /**< is the library table added to the AMX file? */
 SC_VDEFINE constvalue ntvindex_tab={NULL,"",0,0,0}; /**< native function index table */
 SC_VDEFINE symbol *curfunc;                 /**< pointer to current function */
 SC_VDEFINE char *inpfname;                  /**< pointer to name of the file currently read from */
 SC_VDEFINE char outfname[_MAX_PATH];        /**< intermediate (assembler) file name */
 SC_VDEFINE char binfname[_MAX_PATH];        /**< binary file name */
 SC_VDEFINE char errfname[_MAX_PATH];        /**< error file name */
-SC_VDEFINE int litidx=0;                    /**< index to literal table */
-SC_VDEFINE int litmax=sDEF_LITMAX;          /**< current size of the literal table */
-SC_VDEFINE unsigned stgidx=0;               /**< index to the staging buffer */
 SC_VDEFINE int sc_labnum=0;                 /**< number of (internal) labels */
+SC_VDEFINE unsigned stgidx=0;               /**< index to the staging buffer */
 SC_VDEFINE bool staging=false;              /**< true if staging output */
 SC_VDEFINE cell lcl_declared=0;             /**< number of local cells declared */
 SC_VDEFINE cell glb_declared=0;             /**< number of global cells declared */
 SC_VDEFINE cell code_idx=0;                 /**< number of bytes with generated code */
 SC_VDEFINE int ntv_funcid=0;                /**< incremental number of native function */
-SC_VDEFINE int errnum=0;                    /**< number of errors */
-SC_VDEFINE int warnnum=0;                   /**< number of warnings */
 SC_VDEFINE int sc_debug=sCHKBOUNDS;         /**< by default: bounds checking+assertions */
-SC_VDEFINE int sc_asmfile=false;            /**< create .ASM file? */
-SC_VDEFINE int sc_listing=false;            /**< create .LST file? */
+SC_VDEFINE bool pc_asmfile=false;           /**< create .ASM file? */
+SC_VDEFINE bool pc_listing=false;           /**< create .LST file? */
 SC_VDEFINE int pc_cellsize=4;               /**< size (in bytes) of a cell */
-SC_VDEFINE int sc_dataalign=4;              /**< data alignment value (same as a cell) */
-SC_VDEFINE int sc_alignnext=false;          /**< must frame of the next function be aligned? */
+SC_VDEFINE int pc_dataalign=4;              /**< data alignment value (same as a cell) */
+SC_VDEFINE short pc_pendingflags=0;         /**< operations to perform on next function/data declaration (bit set) */
 SC_VDEFINE int pc_docexpr=false;            /**< must expression be attached to documentation comment? */
 SC_VDEFINE int curseg=0;                    /**< 1 if currently parsing CODE, 2 if parsing DATA */
 SC_VDEFINE cell pc_stksize=sDEF_AMXSTACK;   /**< default stack size */
@@ -68,7 +65,7 @@ SC_VDEFINE bool freading=false;             /**< Is there an input file ready fo
 SC_VDEFINE int pc_curline=0;                /**< the line number in the current file */
 SC_VDEFINE short fnumber=0;                 /**< the file number in the file table (debugging) */
 SC_VDEFINE short fcurrent=0;                /**< current file being processed (debugging) */
-SC_VDEFINE short pc_scopelevel=0;           /**< level of active (nested) compound statements (0 = global) */
+SC_VDEFINE short pc_blocklevel=0;           /**< level of active (nested) compound statements (0 = global) */
 SC_VDEFINE bool pc_sideeffect=false;        /**< true if an expression causes a side-effect */
 SC_VDEFINE int pc_stmtindent=0;             /**< current indent of the statement */
 SC_VDEFINE int indent_nowarn=false;         /**< skip warning "217 loose indentation" */

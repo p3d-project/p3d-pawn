@@ -21,7 +21,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sclist.c 7693 2026-09-12 19:11:35Z thiadmer $
+ *  Version: $Id: sclist.c 7696 2026-09-20 14:46:13Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -386,18 +386,18 @@ SC_FUNC void delete_inputfiletable(void)
 typedef struct s_symbolref {
   struct s_symbolref *next;
   char name[sNAMEMAX+1];
-  short scope;          /* local nesting level */
+  short block;          /* local nesting level */
   short filenr;         /* reference to the location of the definition */
   int linenr;
   bool handled;
 } symbolref;
 
-static symbolref *symbolref_find(const symbolref *root,const char *name,short scope)
+static symbolref *symbolref_find(const symbolref *root,const char *name,short block)
 {
   assert(root!=NULL);
   assert(name!=NULL);
   symbolref *item=root->next;
-  while (item && !(strcmp(item->name,name)==0 && item->scope==scope))
+  while (item && !(strcmp(item->name,name)==0 && item->block==block))
     item=item->next;
   return item;
 }
@@ -414,10 +414,10 @@ static symbolref *symbolref_get(const symbolref *root,int index)
   return item;
 }
 
-static symbolref *symbolref_add(symbolref *root,const char *name,short filenr,int linenr,short scope)
+static symbolref *symbolref_add(symbolref *root,const char *name,short filenr,int linenr,short block)
 {
   assert(root!=NULL);
-  symbolref *item=symbolref_find(root,name,scope);
+  symbolref *item=symbolref_find(root,name,block);
   if (!item) {
     item=malloc(sizeof(symbolref));
     if (item) {
@@ -426,7 +426,7 @@ static symbolref *symbolref_add(symbolref *root,const char *name,short filenr,in
       strlcpy(item->name,name,countof(item->name));
       item->filenr=filenr;
       item->linenr=linenr;
-      item->scope=scope;
+      item->block=block;
       item->handled=false;
       item->next=root->next;
       root->next=item;
@@ -435,12 +435,12 @@ static symbolref *symbolref_add(symbolref *root,const char *name,short filenr,in
   return item;
 }
 
-static void symbolref_delete(symbolref *root,short scope)
+static void symbolref_delete(symbolref *root,short block)
 {
   assert(root!=NULL);
   while (root->next) {
     symbolref *item=root->next;
-    if (item->scope>=scope) {
+    if (item->block>=block) {
       root->next=item->next;  /* unlink */
       free(item);
     } else {
@@ -479,9 +479,9 @@ SC_FUNC void delete_undefsymboltable(void)
 /* ----- deferred symbol checks information ---------------------- */
 static symbolref unusedvar_root={0};
 
-SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short scope)
+SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short block)
 {
-  return (symbolref_add(&unusedvar_root,name,filenr,linenr,scope)!=NULL);
+  return (symbolref_add(&unusedvar_root,name,filenr,linenr,block)!=NULL);
 }
 
 /** get_unusedvar() returns the name and location of declaration of a symbol
@@ -493,14 +493,15 @@ SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short scop
  *                      `NULL`.
  *  \param linenr       [out, optional] The line number for the `#pragma`.
  *                      This parameter may be `NULL`.
- *  \param scope        [out, optional] The nesting scope for the `#pragma`.
+ *  \param block        [out, optional] The nesting block level for the
+ *                      `#pragma`.
  *  \param handled      [out, optional] The flag whether this unused variable is
  *                      marked "handled".
  *
- *  \return The name of the variable, or `NULL` if no valid variable (with valid
- *          scope) at that index.
+ *  \return The name of the variable, or `NULL` if no valid variable at that
+ *          index.
  */
-SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *scope,bool *handled)
+SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *block,bool *handled)
 {
   symbolref *item=symbolref_get(&unusedvar_root,index);
   if (!item)
@@ -509,19 +510,20 @@ SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *sco
     *filenr=item->filenr;
   if (linenr!=NULL)
     *linenr=item->linenr;
-  if (scope!=NULL)
-    *scope=item->scope;
+  if (block!=NULL)
+    *block=item->block;
   if (handled!=NULL)
     *handled=item->handled;
   return item->name;
 }
 
-/** find_unusedvar() returns whether a symbol with a specific name and scope is
- *  in the list for unused variables, and returns the location of its
+/** find_unusedvar() returns whether a symbol with a specific name and block
+ *  level is in the list for unused variables, and returns the location of its
  *  declaration if so.
  *
  *  \param name         [in] The name of the symbol.
- *  \param scope        The nesting scope that is filtered on (see notes below).
+ *  \param block        The nesting block level that is filtered on (see notes
+ *                      below).
  *  \param sethandled   Whether the "unused" symbol must be marked as "handled"
  *                      after it is found.
  *  \param filenr       [out, optional] The file number in which the `#pragma`
@@ -532,46 +534,46 @@ SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *sco
  *
  *  \return `true` if the symbol is found, `false` otherwise.
  *
- *  \note If `scope` is 0, only variables with scope 0 are returned. If `scope`
- *        is non-zero, all variables with the same or lower scope are returned,
- *        (but with the exception of global variables, at scope 0). The
- *        rationale is that this is also the search order for local variables,
- *        so this maps the `#pragma unused` declarations in the same way as
- *        local variables.
+ *  \note If `block` is 0, only unused variables with block level 0 are
+ *        returned. If `block` is non-zero, all unused variables with the same
+ *        or higher block are returned. The rationale is that this allows the
+ *        `#pragma unused` declaration to be in a deeper block nesting scope
+ *        than the variable declaration (and which is necessary for variables
+ *        declared in the first expression of a "for" loop, for example).
  */
-SC_FUNC bool find_unusedvar(const char *name,short scope,bool sethandled,short *filenr,int *linenr)
+SC_FUNC bool find_unusedvar(const char *name,short block,bool sethandled,short *filenr,int *linenr)
 {
   symbolref *match=NULL;
   symbolref *item;
   for (int idx=0; (item=symbolref_get(&unusedvar_root,idx))!=NULL; idx++) {
     if (strcmp(item->name,name)==0) {
-      /* name matches, check scope */
-      if (item->scope==scope) {
+      /* name matches, check block level */
+      if (item->block==block) {
         match=item;     /* exact match found */
         break;          /* no need to search further */
       } /* if */
-      if (item->scope<scope && item->scope>0 && (match==NULL || item->scope>match->scope))
+      if (item->block>block && (match==NULL || item->block>match->block))
         match=item;     /* non-exact, but better match */
     } /* if */
   } /* for */
   if (match==NULL)
     return false;       /* no match found */
   if (filenr!=NULL)
-    *filenr=item->filenr;
+    *filenr=match->filenr;
   if (linenr!=NULL)
-    *linenr=item->linenr;
+    *linenr=match->linenr;
   if (sethandled)
-    item->handled=true;
+    match->handled=true;
   return true;
 }
 
-/** delete_unusedvartable() removes all items from the list that have a scope
- *  that is equal or higher than the `scope` parameter.
+/** delete_unusedvartable() removes all items from the list that have a block
+ *  level that is equal or higher than the `block` parameter.
  */
-SC_FUNC void delete_unusedvartable(short scope)
+SC_FUNC void delete_unusedvartable(short block)
 {
-  symbolref_delete(&unusedvar_root,scope);
-  assert(scope>0 || unusedvar_root.next==NULL);
+  symbolref_delete(&unusedvar_root,block);
+  assert(block>0 || unusedvar_root.next==NULL);
 }
 
 

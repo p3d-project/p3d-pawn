@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7693 2026-09-12 19:11:35Z thiadmer $
+ *  Version: $Id: sc7.c 7699 2026-09-25 21:36:04Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -73,7 +73,7 @@
 #endif
 
 static int stgstring(char *start,char *end);
-static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *str));
+static void stgopt(char *start,char *end,int packed_opc,bool (*outputfunc)(char *str));
 
 
 #define sSTG_GROW   512
@@ -155,7 +155,7 @@ SC_FUNC void stgmark(char mark)
   } /* if */
 }
 
-static int rebuffer(char *str)
+static bool rebuffer(char *str)
 {
   if (sc_status==statWRITE) {
     assert(pipeidx==0 || stgpipe!=NULL);
@@ -171,7 +171,7 @@ static int rebuffer(char *str)
   return true;
 }
 
-static int filewrite(char *str)
+static bool filewrite(char *str)
 {
   if (sc_status==statWRITE)
     return pc_writeasm(outf,str);
@@ -807,7 +807,7 @@ static void strreplace(char *dest,const char *replace,int sub_length,int repl_le
  *  implementation simply uses the order in the list.
  */
 
-static void stgopt(char *start,char *end,int packed_opc,int (*outputfunc)(char *str))
+static void stgopt(char *start,char *end,int packed_opc,bool (*outputfunc)(char *str))
 {
   assert(sequences!=NULL);
   assert(start!=NULL && end!=NULL && end>=start);

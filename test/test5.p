@@ -2,6 +2,7 @@
 
 move(from, to, spare, numdisks)
 {
+#   pragma recursive
     if (numdisks > 1)
         move(from, spare, to, numdisks-1);
     printf("Move disk from pillar %d to pillar %d\n", from, to);

@@ -25,7 +25,7 @@
  *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxFile.so amxfile.c amx.c
  *     gcc -Wall -Wextra -Wno-parentheses -DAMX_NOSTRFMT -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxString.so amxstring.c amx.c
  *   Create PAWNRUN with:
- *     gcc -Wall -Wextra -Wno-parentheses -DAMXDBG -DAMX_DYNALOAD -DFLOATPOINT -DFIXEDPOINT -DPAWN_CELL_SIZE=32 -I../linux -o../bin/pawnrun pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c ../linux/getch.c
+ *     gcc -Wall -Wextra -Wno-parentheses -DENABLE_BINRELOC -DAMXDBG -DAMX_DYNALOAD -DFLOATPOINT -DFIXEDPOINT -DPAWN_CELL_SIZE=32 -I../linux -o../bin/pawnrun pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c ../linux/getch.c ../linux/binreloc.c
  */
 
 say 'This REXX file does several tests on the compiler and the abstract machine.'
@@ -2578,7 +2578,7 @@ test183:
   return
 
 test184:
-  say '184. The following tests should issue warning 237 and show verbose output.'
+  say '184. The following tests should compile successfully and show verbose output.'
   say '     On disassembly, the debug information must show at the bottom:'
   say ''
   say '    Symbols Address         Scope                   Name'
@@ -2590,11 +2590,100 @@ test184:
   say '    Scope (code range) of function arguments must cover the entire function.'
   say '-----'
   pawncc '-d2 fibr' commandsuffix
-  pawndisasm '-d -o- fibr.amx' commandsuffix
-  call matchoutput 'warning 237', '1 Warning.', ';Flags:*debug-info', 'DEBUG INFORMATION','FRM(0000000c)*00000008:000000ac*n'
+  pawndisasm '-d -o- -r4:0 fibr.amx' commandsuffix
+  call matchoutput 'Completed successfully', 'DEBUG INFORMATION','FRM(0000000c)*00000008:000000ac*n'
   /* Sympton of detected bug: code range of function argument was reduced to the
      compound block of the function (in the debug information only). That is,
      the scope of function argument 'n' must be the same as function 'fibonacci'.
    */
   return
+
+test185:
+  say '185. The following tests should issue warning 220.'
+  say ''
+  say '    Local variable declared between ''goto'' and its label.'
+  say '-----'
+  pawncc '-v0 -p GOTO_SKIPS_DECL= test1' commandsuffix
+  call matchoutput 'warning 239', '1 Warning.'
+  return
+
+test186:
+  say '186. The following tests should issue warning 214 TWICE. The disassembly should'
+  say '     show:'
+  say ''
+  say '    000000d8        proc            ; main'
+  say '    000000dc        break           ; line 16'
+  say '    000000e0        break           ; line 18'
+  say '    000000e4        push.c 00000020'
+  say '    000000ec        push.c 00000004'
+  say '    000000f4        call 00000008   ; func1'
+  say '    000000fc        break           ; line 19'
+  say '    00000100        push.c 00000024'
+  say '    00000108        push.c 00000004'
+  say '    00000110        call 00000070   ; func2'
+  say '    00000118        zero.pri'
+  say '    0000011c        retn'
+  say ''
+  say '    Passing identical literal strings to functions whose parameters are'
+  say '    non-const. The compiler warns that ''const'' allows to create better code,'
+  say '    but the literal strings are not merged.'
+  say '-----'
+  pawncc '-v0 -O2 -d2 SUGGEST_CONST= test18' commandsuffix
+  pawndisasm '-o- -r00d8:011c test18.amx' commandsuffix
+  call matchoutput 'warning 214', 'warning 214', '2 Warnings.', 'push.c 00000020', 'call 00000008', 'push.c 00000024', 'call 00000070'
+  return
+
+test187:
+  say '187. The following tests should compile successfully. The disassembly should'
+  say '     show:'
+  say ''
+  say '    000000d8        proc            ; main'
+  say '    000000dc        break           ; line 16'
+  say '    000000e0        break           ; line 18'
+  say '    000000e4        push.c 00000020'
+  say '    000000ec        push.c 00000004'
+  say '    000000f4        call 00000008   ; func1'
+  say '    000000fc        break           ; line 19'
+  say '    00000100        push.c 00000024'
+  say '    00000108        push.c 00000004'
+  say '    00000110        call 00000070   ; func2'
+  say '    00000118        zero.pri'
+  say '    0000011c        retn'
+  say ''
+  say '    Passing identical literal strings to functions whose parameters are const'
+  say '    causes the literal strings to be merged,'
+  say '-----'
+  pawncc '-O2 -d2 LITERAL_MERGE_ARG= test18' commandsuffix
+  pawndisasm '-o- -r00d8:011c test18.amx' commandsuffix
+  call matchoutput 'Completed successfully', 'push.c 00000020', 'call 00000008', 'push.c 00000020', 'call 00000070'
+  return
+
+test188:
+  say '188. The following tests should compile successfully. The disassembly should'
+  say '     show:'
+  say ''
+  say '    00000008        proc            ; main'
+  say '    0000000c        break           ; line 41'
+  say '    00000010        break           ; line 43'
+  say '    00000014        stack fffffff8'
+  say '    0000001c        zero.pri'
+  say '    00000020        addr.alt fffffff8'
+  say '    00000028        movs 00000008'
+  say '    00000030        break           ; line 44'
+  say '    00000034        addr.alt fffffff8'
+  say '    0000003c        zero.pri'
+  say '    00000040        movs 00000008'
+  say '    00000048        stack 00000008'
+  say '    00000050        zero.pri'
+  say '    00000054        retn'
+  say ''
+  say '    Assigning identical literal strings to arrays; these strings should be'
+  say '    merged.'
+  say '-----'
+  pawncc '-O2 -d2 LITERAL_MERGE_ASSIGN= test18' commandsuffix
+  pawndisasm '-o- -r0008:0054 test18.amx' commandsuffix
+  call matchoutput 'Completed successfully', 'zero.pri', 'addr.alt fffffff8', 'movs 00000008', ,
+                   'addr.alt fffffff8', 'zero.pri', 'movs 00000008'
+  return
+
 

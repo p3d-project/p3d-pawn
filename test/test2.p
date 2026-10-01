@@ -10,7 +10,7 @@
 /* NOTE: make sure the function heading of ispacked stays at line 10, see
  *       test 3 in test.rexx (and ASSERT_LINENO below)
  */
-bool: ispacked(string[])        /* line 10 */
+bool: ispacked(const string[])        /* line 10 */
     return bool: (string[0] > charmax);
 #endif
 

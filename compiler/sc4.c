@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7701 2026-09-29 11:09:02Z thiadmer $
+ *  Version: $Id: sc4.c 7702 2026-10-01 15:09:39Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -1284,8 +1284,8 @@ SC_FUNC void ou_sar(void)
   code_idx+=opcodes(2);
 }
 
-/*
- *  inclusive "or" of primary and alternate registers (result in primary)
+/** ob_or() bitwise (inclusive) "or" of primary and alternate registers (result
+ *  in primary).
  */
 SC_FUNC void ob_or(void)
 {
@@ -1293,8 +1293,8 @@ SC_FUNC void ob_or(void)
   code_idx+=opcodes(1);
 }
 
-/*
- *  "exclusive or" of primary and alternate registers (result in primary)
+/** ob_xor() bitwise "exclusive or" of primary and alternate registers (result
+ *  in primary).
  */
 SC_FUNC void ob_xor(void)
 {
@@ -1302,13 +1302,23 @@ SC_FUNC void ob_xor(void)
   code_idx+=opcodes(1);
 }
 
-/*
- *  "and" of primary and secundairy registers (result in primary)
+/** ob_and() bitwise "and" of primary and secundairy registers (result in
+ *  primary).
  */
 SC_FUNC void ob_and(void)
 {
   stgwrite("\tand\n");
   code_idx+=opcodes(1);
+}
+
+/** ob_andnot() bitwise "and" of the "inverted" primary and secundairy registers
+ *  (result in primary).
+ */
+SC_FUNC void ob_andnot(void)
+{
+  stgwrite("\tinvert\n");
+  stgwrite("\tand\n");
+  code_idx+=opcodes(2);
 }
 
 /** ob_eq() test ALT==PRI; result in primary register (1 or 0).
@@ -1445,8 +1455,7 @@ SC_FUNC void lneg(void)
   code_idx+=opcodes(1);
 }
 
-/*
- *  two's complement primary register
+/** neg() two's complement primary register (toggle sign of value)
  */
 SC_FUNC void neg(void)
 {
@@ -1454,8 +1463,7 @@ SC_FUNC void neg(void)
   code_idx+=opcodes(1);
 }
 
-/*
- *  one's complement of primary register
+/** invert() one's complement of primary register (bitwise not)
  */
 SC_FUNC void invert(void)
 {

@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7701 2026-09-29 11:09:02Z thiadmer $
+ *  Version: $Id: sc5.c 7702 2026-10-01 15:09:39Z thiadmer $
  */
 #include <assert.h>
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -50,15 +50,21 @@
 # pragma warning(pop)
 #endif
 
-#define NUM_WARNINGS    (sizeof warnmsg / sizeof warnmsg[0])
+#define WARN_BASE       200     /**< first warning number */
+#define WARN_COUNT      (sizeof warnmsg / sizeof warnmsg[0])
 typedef struct s_warnstack {
   struct s_warnstack *next;
-  unsigned char flag[NUM_WARNINGS];
+  unsigned char flag[(WARN_COUNT+7)/8];	/* 8 flags in a char */
 } warnstack;
 /* the root entry holds the active flags, any other allocated entries contain
  * "pushed" flags
  */
 static warnstack warndisable;
+#define WARN_IDX(n)         (((n)-WARN_BASE)/8)
+#define WARN_MASK(n)        (unsigned char)(1 << (((n)-WARN_BASE)%8))
+#define WARN_ISDISABLED(n)  ( ((n)>=WARN_BASE && (n)<WARN_BASE+WARN_COUNT) \
+                              ? (warndisable.flag[WARN_IDX(n)] & WARN_MASK(n)) != 0 \
+                              : false )
 
 static bool errflag=false;
 static int errfile;     /**< forced file number for the error message */
@@ -107,15 +113,10 @@ static short lastfile;
     return 0;
 
   /* also check for disabled warnings */
-  if (number>=200) {
-    assert(number<200+NUM_WARNINGS);
-    if (warndisable.flag[number-200]!=0) {
-      errline=-1;
-      errfile=-1;
-      if (warndisable.flag[number-200]==wDISABLE_ONCE)
-        warndisable.flag[number-200]=0;
-      return 0;
-    } /* if */
+  if (WARN_ISDISABLED(number)) {
+    errline=-1;
+    errfile=-1;
+    return 0;
   } /* if */
 
   if (number<100){
@@ -321,10 +322,9 @@ SC_FUNC void errorset(int code,int line)
  *
  *  \param number       The warning number.
  *  \param enable       One of the following:
- *                      *  0 for disable
- *                      *  1 for enable
- *                      *  2 for toggle
- *                      *  3 for disable-once
+ *                      *  0 for disable (wDISABLE)
+ *                      *  1 for enable (wENABLE)
+ *                      *  2 for toggle (wTOGGLE)
  *
  *  \return `true` on success, `false` on a parameter error.
  *
@@ -338,24 +338,15 @@ SC_FUNC void errorset(int code,int line)
 DLLEXPORT
 int pc_enablewarning(unsigned number,int enable)
 {
-  if (number<200 || number>=200+NUM_WARNINGS)
+  if (number<WARN_BASE || number>=200+WARN_COUNT)
     return false;       /* errors and fatal errors cannot be disabled */
-  number -= 200;
 
-  switch (enable) {
-  case wDISABLE:
-    warndisable.flag[number]=1;
-    break;
-  case wENABLE:
-    warndisable.flag[number]=0;
-    break;
-  case wTOGGLE:
-    warndisable.flag[number]= (warndisable.flag[number]==0);  /* zero -> 1, non-zero -> 0 */
-    break;
-  case wDISABLE_ONCE:
-    warndisable.flag[number]=wDISABLE_ONCE;
-    break;
-  } /* switch */
+  if (enable==wTOGGLE)
+    enable= WARN_ISDISABLED(number) ? wENABLE : wDISABLE;
+  if (enable==wDISABLE)
+    warndisable.flag[WARN_IDX(number)] |= WARN_MASK(number);
+  else
+    warndisable.flag[WARN_IDX(number)] &= ~WARN_MASK(number);
 
   return true;
 }

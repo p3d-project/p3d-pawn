@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7701 2026-09-29 11:09:02Z thiadmer $
+ *  Version: $Id: sc1.c 7702 2026-10-01 15:09:39Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -1177,7 +1177,7 @@ static void resetglobals(void)
   pc_memflags=0;
   pc_enumsequence=0;
   errorset(sEXPRRELEASE,0);
-  curlibrary=NULL;      /* selected by #pragma library, set by the first pass */
+  curlibrary=NULL;      /* current library name, selected by '#pragma library' */
 }
 
 static void initglobals(void)
@@ -1219,7 +1219,6 @@ static void initglobals(void)
   ntvindex_tab.next=NULL;
 
   lexptr=NULL;          /* points to the current position in "srcline" */
-  curlibrary=NULL;      /* current library */
   inpf_org=NULL;        /* main source file */
 
   wq_ptr=wq_glb;        /* initialize while queue pointer */
@@ -6902,7 +6901,7 @@ static void dolabel(void)
    * variables)
    */
   if ((sym->usage & (uDEFINE|uREAD))==uREAD && sym->x.declared<(int)lcl_declared)
-    error(220);         /* 'goto' jumps around local variable declarations */
+    error(239);         /* 'goto' jumps around local variable declarations */
   sym->usage|=uDEFINE;  /* label is now defined */
 }
 

@@ -1,6 +1,7 @@
 /* Calculation of Fibonacci numbers by recursion */
 #include <console>
 
+#pragma recursive
 fibonacci(n)
     {
     if (n <= 2)

@@ -682,6 +682,13 @@ main()
     #if defined NON_CONST_ARRAY_W_DEFAULT
         transform
     #endif
+
+    #if defined GOTO_SKIPS_DECL
+        goto skip
+        var abc = 5
+      skip:
+        abc -= 1
+    #endif
     }
 
 #if defined LOCAL_SHADOWS

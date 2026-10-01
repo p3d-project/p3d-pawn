@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7701 2026-09-29 11:09:02Z thiadmer $
+ *  Version: $Id: sc.h 7702 2026-10-01 15:09:39Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -354,8 +354,8 @@ typedef struct s_arraymerge {
  *  Some of these constants are assigned as well to the variable "lastst" (see SC1.C)
  */
 #define tFIRST      256         /**< value of first multi-character operator */
-#define tMIDDLE     280         /**< value of last multi-character operator */
-#define tLAST       325         /**< value of last multi-character match-able token */
+#define tMIDDLE     282         /**< value of last multi-character operator */
+#define tLAST       327         /**< value of last multi-character match-able token */
 /* multi-character operators */
 #define taMULT      256         /**< *= */
 #define taDIV       257         /**< /= */
@@ -366,83 +366,85 @@ typedef struct s_arraymerge {
 #define taSHRU      262         /**< >>>= */
 #define taSHR       263         /**< >>= */
 #define taAND       264         /**< &= */
-#define taXOR       265         /**< ^= */
-#define taOR        266         /**< |= */
-#define tlOR        267         /**< || */
-#define tlAND       268         /**< && */
-#define tlEQ        269         /**< == */
-#define tlNE        270         /**< != */
-#define tlLE        271         /**< <= */
-#define tlGE        272         /**< >= */
-#define tSHL        273         /**< << */
-#define tSHRU       274         /**< >>> */
-#define tSHR        275         /**< >> */
-#define tINC        276         /**< ++ */
-#define tDEC        277         /**< -- */
-#define tELLIPS     278         /**< ... */
-#define tDBLDOT     279         /**< .. */
-#define tDBLCOLON   280         /**< :: */
+#define taANDNOT    265         /**< &^= */
+#define taXOR       266         /**< ^= */
+#define taOR        267         /**< |= */
+#define tlOR        268         /**< || */
+#define tlAND       269         /**< && */
+#define tlEQ        270         /**< == */
+#define tlNE        271         /**< != */
+#define tlLE        272         /**< <= */
+#define tlGE        273         /**< >= */
+#define tSHL        274         /**< << */
+#define tSHRU       275         /**< >>> */
+#define tSHR        276         /**< >> */
+#define tINC        277         /**< ++ */
+#define tDEC        278         /**< -- */
+#define tANDNOT     279         /**< &^ */
+#define tELLIPS     280         /**< ... */
+#define tDBLDOT     281         /**< .. */
+#define tDBLCOLON   282         /**< :: */
 /* reserved words (statements) */
-#define tASSERT     281
-#define tBREAK      282
-#define tCASE       283
-#define tCONST      284
-#define tCONTINUE   285
-#define tDEFAULT    286
-#define tDEFINED    287
-#define tDO         288
-#define tELSE       289
-#define tEXIT       290
-#define tFOR        291
-#define tFORWARD    292
-#define tGOTO       293
-#define tIF         294
-#define tNATIVE     295
-#define tNEW        296
-#define tOPERATOR   297
-#define tPUBLIC     298
-#define tRETURN     299
-#define tSIZEOF     300
-#define tSLEEP      301
-#define tSTATE      302
-#define tSTATIC     303
-#define tSTOCK      304
-#define tSWITCH     305
-#define tTAGOF      306
-#define tVAR        307
-#define tWHILE      308
+#define tASSERT     283
+#define tBREAK      284
+#define tCASE       285
+#define tCONST      286
+#define tCONTINUE   287
+#define tDEFAULT    288
+#define tDEFINED    289
+#define tDO         290
+#define tELSE       291
+#define tEXIT       292
+#define tFOR        293
+#define tFORWARD    294
+#define tGOTO       295
+#define tIF         296
+#define tNATIVE     297
+#define tNEW        298
+#define tOPERATOR   299
+#define tPUBLIC     300
+#define tRETURN     301
+#define tSIZEOF     302
+#define tSLEEP      303
+#define tSTATE      304
+#define tSTATIC     305
+#define tSTOCK      306
+#define tSWITCH     307
+#define tTAGOF      308
+#define tVAR        309
+#define tWHILE      310
 /* compiler directives */
-#define tpASSERT    309         /**< #assert */
-#define tpDEFINE    310
-#define tpELSE      311         /**< #else */
-#define tpELSEIF    312         /**< #elseif */
-#define tpENDIF     313
-#define tpENDINPUT  314
-#define tpERROR     315
-#define tpFILE      316
-#define tpIF        317         /**< #if */
-#define tpIFDEF     318
-#define tpIFNDEF    319
-#define tpINCLUDE   320
-#define tpLINE      321
-#define tpPRAGMA    322
-#define tpTRYINCLUDE 323
-#define tpUNDEF     324
-#define tpWARNING   325
+#define tpASSERT    311         /**< #assert */
+#define tpDEFINE    312
+#define tpELSE      313         /**< #else */
+#define tpELSEIF    314         /**< #elseif */
+#define tpENDIF     315
+#define tpENDINPUT  316
+#define tpERROR     317
+#define tpFILE      318
+#define tpIF        319         /**< #if */
+#define tpIFDEF     320
+#define tpIFNDEF    321
+#define tpINCLUDE   322
+#define tpLINE      323
+#define tpPRAGMA    324
+#define tpTRYINCLUDE 325
+#define tpUNDEF     326
+#define tpWARNING   327
 /* semicolon and comma are special cases, because they can be optional */
-#define tTERM       326         /**< semicolon or newline */
-#define tSEPARATOR  327         /**< comma or newline */
-#define tENDEXPR    328         /**< forced end of expression */
+#define tTERM       328         /**< semicolon or newline */
+#define tSEPARATOR  329         /**< comma or newline */
+#define tENDEXPR    330         /**< forced end of expression */
 /* other recognized tokens */
-#define tNUMBER     329         /**< integer number */
-#define tRATIONAL   330         /**< rational number */
-#define tSYMBOL     331
-#define tLABEL      332
-#define tSYMLABEL   333         /**< ".name" syntax for named parameters and symbolic array indices */
-#define tSTRING     334
-#define tPACKSTRING 335
-#define tEXPR       336         /**< for assigment to "lastst" only (see SC1.C) */
-#define tENDLESS    337         /**< endless loop, for assigment to "lastst" only */
+#define tNUMBER     321         /**< integer number */
+#define tRATIONAL   332         /**< rational number */
+#define tSYMBOL     333
+#define tLABEL      334
+#define tSYMLABEL   335         /**< ".name" syntax for named parameters and symbolic array indices */
+#define tSTRING     336
+#define tPACKSTRING 337
+#define tEXPR       338         /**< for assigment to "lastst" only (see SC1.C) */
+#define tENDLESS    339         /**< endless loop, for assigment to "lastst" only */
 
 /* (reversed) evaluation of staging buffer */
 #define sSTARTREORDER 0x01
@@ -530,7 +532,6 @@ enum {
   wDISABLE=0,
   wENABLE,
   wTOGGLE,
-  wDISABLE_ONCE,
 };
 DLLEXPORT int pc_enablewarning(unsigned number,int enable);
 
@@ -715,33 +716,34 @@ SC_FUNC void addconst(cell value);
  *          |   +--------- "u"nsigned operator, "s"igned operator or "b"oth ("a" for array operation)
  *          +------------- "o"perator
  */
-SC_FUNC void os_mult(void); /* multiplication (signed) */
-SC_FUNC void os_div(void);  /* division (signed) */
-SC_FUNC void os_mod(void);  /* modulus (signed) */
-SC_FUNC void ob_add(void);  /* addition */
-SC_FUNC void ob_sub(void);  /* subtraction */
-SC_FUNC void ob_sal(void);  /* shift left (arithmetic) */
-SC_FUNC void os_sar(void);  /* shift right (arithmetic, signed) */
-SC_FUNC void ou_sar(void);  /* shift right (logical, unsigned) */
-SC_FUNC void ob_or(void);   /* bitwise or */
-SC_FUNC void ob_xor(void);  /* bitwise xor */
-SC_FUNC void ob_and(void);  /* bitwise and */
-SC_FUNC void ob_eq(void);   /* equality */
-SC_FUNC void ob_ne(void);   /* inequality */
+SC_FUNC void os_mult(void);   /**< multiplication (signed) */
+SC_FUNC void os_div(void);    /**< division (signed) */
+SC_FUNC void os_mod(void);    /**< modulus (signed) */
+SC_FUNC void ob_add(void);    /**< addition */
+SC_FUNC void ob_sub(void);    /**< subtraction */
+SC_FUNC void ob_sal(void);    /**< shift left (arithmetic) */
+SC_FUNC void os_sar(void);    /**< shift right (arithmetic, signed) */
+SC_FUNC void ou_sar(void);    /**< shift right (logical, unsigned) */
+SC_FUNC void ob_or(void);     /**< bitwise or */
+SC_FUNC void ob_xor(void);    /**< bitwise xor */
+SC_FUNC void ob_and(void);    /**< bitwise and */
+SC_FUNC void ob_andnot(void); /**< bitwise and */
+SC_FUNC void ob_eq(void);     /**< equality */
+SC_FUNC void ob_ne(void);     /**< inequality */
 SC_FUNC void relop_prefix(void);
 SC_FUNC void relop_suffix(void);
-SC_FUNC void os_le(void);   /* less or equal (signed) */
-SC_FUNC void os_ge(void);   /* greater or equal (signed) */
-SC_FUNC void os_lt(void);   /* less (signed) */
-SC_FUNC void os_gt(void);   /* greater (signed) */
+SC_FUNC void os_le(void);     /**< less or equal (signed) */
+SC_FUNC void os_ge(void);     /**< greater or equal (signed) */
+SC_FUNC void os_lt(void);     /**< less (signed) */
+SC_FUNC void os_gt(void);     /**< greater (signed) */
 
-SC_FUNC void ob_eq_val(cell value); /* compare ALT to constant value */
-SC_FUNC void oa_eq(cell size);      /* equal, array operator */
-SC_FUNC void oa_ne(cell size);      /* not equal, array operator */
+SC_FUNC void ob_eq_val(cell value); /**< compare ALT to constant value */
+SC_FUNC void oa_eq(cell size);      /**< equal, array operator */
+SC_FUNC void oa_ne(cell size);      /**< not equal, array operator */
 
-SC_FUNC void lneg(void);
-SC_FUNC void neg(void);
-SC_FUNC void invert(void);
+SC_FUNC void lneg(void);      /**< logical not */
+SC_FUNC void neg(void);       /**< unary minus */
+SC_FUNC void invert(void);    /**< binary not */
 SC_FUNC void nooperation(void);
 SC_FUNC void inc(value *lval);
 SC_FUNC void dec(value *lval);

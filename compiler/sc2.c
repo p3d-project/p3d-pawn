@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7701 2026-09-29 11:09:02Z thiadmer $
+ *  Version: $Id: sc2.c 7702 2026-10-01 15:09:39Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -939,6 +939,7 @@ static bool preproc_expr(cell *val,int *tag,bool clear_lex)
   } /* if */
   /* save the position in the literal queue too */
   int cur_lit=litidx;
+  assert(lexptr!=NULL && srcline!=NULL);
   assert(lexptr>=srcline && (lexptr-srcline)<(int)strlen((char*)srcline));   /* lexptr must point inside the string */
 # if !defined NO_DEFINE
     /* preprocess the string */
@@ -1378,11 +1379,8 @@ static int command(void)
               pragma_warning_loop(wENABLE);
             else if (strcmp(str,"disable")==0)
               pragma_warning_loop(wDISABLE);
-            else if (strcmp(str,"disable-once")==0)
-              pragma_warning_loop(wDISABLE_ONCE);
-            else {
+            else
               ok=false;
-            }
           }
         } else {
           ok=false;
@@ -2166,9 +2164,9 @@ SC_FUNC int lexinit(int releaseall)
 }
 
 static const char *sc_tokens[] = {
-         "*=", "/=", "%=", "+=", "-=", "<<=", ">>>=", ">>=", "&=", "^=", "|=",
-         "||", "&&", "==", "!=", "<=", ">=", "<<", ">>>", ">>", "++", "--",
-         "...", "..", "::",
+         "*=", "/=", "%=", "+=", "-=", "<<=", ">>>=", ">>=", "&=", "&^=", "^=",
+         "|=", "||", "&&", "==", "!=", "<=", ">=", "<<", ">>>", ">>", "++", "--",
+         "&^", "...", "..", "::",
          "assert", "break", "case", "const", "continue", "default", "defined",
          "do", "else", "exit", "for", "forward", "goto", "if", "native", "new",
          "operator", "public", "return", "sizeof", "sleep", "state", "static",

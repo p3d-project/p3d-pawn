@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc3.c 7701 2026-09-29 11:09:02Z thiadmer $
+ *  Version: $Id: sc3.c 7702 2026-10-01 15:09:39Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -65,21 +65,21 @@ static bool in_test_expr=false;     /* flag that expression is test of if / whil
 static int parenthesized_level=0;   /* flag fully parenthesized "test" expression */
 
 /* Function addresses of binary operators for signed operations */
-static void (* const op1[17])(void) = {
+static void (* const op1[18])(void) = {
   os_mult,os_div,os_mod,        /* hier3, index 0 */
   ob_add,ob_sub,                /* hier4, index 3 */
   ob_sal,os_sar,ou_sar,         /* hier5, index 5 */
-  ob_and,                       /* hier6, index 8 */
+  ob_and,ob_andnot,             /* hier6, index 8 */
   ob_xor,                       /* hier7, index 9 */
   ob_or,                        /* hier8, index 10 */
   os_le,os_ge,os_lt,os_gt,      /* hier9, index 11 */
   ob_eq,ob_ne,                  /* hier10, index 15 */
 };
-static void (* const op2[17])(cell size) = {
+static void (* const op2[18])(cell size) = {
   NULL,NULL,NULL,               /* hier3, index 0 */
   NULL,NULL,                    /* hier4, index 3 */
   NULL,NULL,NULL,               /* hier5, index 5 */
-  NULL,                         /* hier6, index 8 */
+  NULL,NULL,                    /* hier6, index 8 */
   NULL,                         /* hier7, index 9 */
   NULL,                         /* hier8, index 10 */
   NULL,NULL,NULL,NULL,          /* hier9, index 11 */
@@ -157,9 +157,10 @@ SC_FUNC int check_userop(void (*oper)(void),int tag1,int tag2,int numparam,
                          value *lval,int *resulttag)
 {
 static const char *binoperstr[] = { "*", "/", "%", "+", "-", "", "", "",
-                                    "", "", "", "<=", ">=", "<", ">", "==", "!=" };
+                                    "", "", "", "", "<=", ">=", "<", ">",
+                                    "==", "!=" };
 static const int binoper_savepri[] = { false, false, false, false, false, false,
-                                       false, false, false, false, false,
+                                       false, false, false, false, false, false,
                                        true, true, true, true, false, false };
 static const char *unoperstr[] = { "!", "-", "++", "--" };
 static void (* const unopers[])(void) = { lneg, neg, user_inc, user_dec };
@@ -186,7 +187,7 @@ static void (* const unopers[])(void) = { lneg, neg, user_inc, user_dec };
         savealt=true;
     } else {
       unsigned idx;
-      assert( (sizeof binoperstr / sizeof binoperstr[0]) == (sizeof op1 / sizeof op1[0]) );
+      assert(countof(binoperstr)==countof(op1));
       for (idx=0; idx<countof(op1); idx++) {
         if (oper==op1[idx]) {
           strcpy(opername,binoperstr[idx]);
@@ -1088,6 +1089,9 @@ static int hier14(value *lval1)
     case taAND:
       oper=ob_and;
       break;
+    case taANDNOT:
+      oper=ob_andnot;
+      break;
     case taADD:
       oper=ob_add;
       break;
@@ -1427,16 +1431,16 @@ static int hier13(value *lval)
  * exception of list11 and list12, because these "early-exit" operators
  * are a special case anyway)
  */
-static const int list3[]  = {'*','/','%',0};
-static const int list4[]  = {'+','-',0};
-static const int list5[]  = {tSHL,tSHR,tSHRU,0};
-static const int list6[]  = {'&',0};
-static const int list7[]  = {'^',0};
-static const int list8[]  = {'|',0};
-static const int list9[]  = {tlLE,tlGE,'<','>',0};
-static const int list10[] = {tlEQ,tlNE,0};
-static const int list11[] = {tlAND,0};
-static const int list12[] = {tlOR,0};
+static const int list3[]  = {'*','/','%',0};      /* 0 - 2 */
+static const int list4[]  = {'+','-',0};          /* 3 - 4 */
+static const int list5[]  = {tSHL,tSHR,tSHRU,0};  /* 5 - 7 */
+static const int list6[]  = {'&',tANDNOT,0};      /* 8 - 9 */
+static const int list7[]  = {'^',0};              /* 10 */
+static const int list8[]  = {'|',0};              /* 11 */
+static const int list9[]  = {tlLE,tlGE,'<','>',0};/* 12 - 15 */
+static const int list10[] = {tlEQ,tlNE,0};        /* 16 - 17 */
+static const int list11[] = {tlAND,0};            /* 18 */
+static const int list12[] = {tlOR,0};             /* 19 */
 
 static int hier12(value *lval)
 {
@@ -1450,23 +1454,23 @@ static int hier11(value *lval)
 
 static int hier10(value *lval)
 { /* ==, != */
-  return plnge(list10,15,hier9,lval,"bool",true);
-}                  /* ^ this variable is the starting index in the op1[]
+  return plnge(list10,16,hier9,lval,"bool",true);
+}                  /* ^ this constant is the starting index in the op1[]
                     *   array of the operators of this hierarchy level */
 
 static int hier9(value *lval)
 { /* <=, >=, <, > */
-  return plnge_rel(list9,11,hier8,lval);
+  return plnge_rel(list9,12,hier8,lval);
 }
 
 static int hier8(value *lval)
 { /* | */
-  return plnge(list8,10,hier7,lval,NULL,false);
+  return plnge(list8,11,hier7,lval,NULL,false);
 }
 
 static int hier7(value *lval)
 { /* ^ */
-  return plnge(list7,9,hier6,lval,NULL,false);
+  return plnge(list7,10,hier6,lval,NULL,false);
 }
 
 static int hier6(value *lval)

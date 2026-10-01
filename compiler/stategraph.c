@@ -219,8 +219,8 @@ int main(int argc,char *argv[])
               "\tnode [nodesep=2.0];\n");
   for (member=ezxml_child(list,"member"); member!=NULL; member=member->next) {
     func=ezxml_attr(member,"name");
-    if (func[0]!='M' || func[1]!=':')
-      continue;
+    if (func==NULL || func[0]!='M' || func[1]!=':')
+      continue;                 /* no name attribute, or not a member function */
     func+=2;  /* skip prefix */
     fsaname=NULL;
     automaton=ezxml_child(member,"automaton");
@@ -242,10 +242,15 @@ int main(int argc,char *argv[])
           strlcpy(targetfsa,target,sizeof targetfsa);
           targetfsa[ptr-target]='\0';
           target=ptr+1;
+        } else if (fsaname!=NULL) {
+          strlcpy(targetfsa,fsaname,sizeof targetfsa);
         } else {
-          strcpy(targetfsa,fsaname);
-        }
-        node_add(target,targetfsa,0);
+          targetfsa[0]='\0';
+        } /* if */
+        /* the report writes ":state" for the anonymous automaton, and an
+         * absent automaton is NULL here, not an empty name
+         */
+        node_add(target,(targetfsa[0]!='\0') ? targetfsa : NULL,0);
       }
       if (target!=NULL && source!=NULL) {
         /* standard transition */

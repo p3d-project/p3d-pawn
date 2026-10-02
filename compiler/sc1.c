@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: sc1.c 7704 2026-10-02 16:58:19Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -134,7 +134,7 @@ static void reduce_referrers(symbol *root);
 static void gen_ovlinfo(symbol *root);
 static long max_stacksize(symbol *root,bool *recursion);
 static long max_overlaysize(symbol *root,char **funcname);
-static int checkundefined(symbol *root);
+static bool checkundefined(symbol *root);
 static bool testsymbols(const symbol *root,short level,bool testfunclvl,bool testconst);
 static int test_skippedundef(void);
 static void destructsymbols(symbol *root,int level);
@@ -164,17 +164,17 @@ static void addwhile(int *ptr);
 static void delwhile(void);
 static int *readwhile(void);
 
-static int lastst     =0;       /**< last executed statement type */
-static int endlessloop=0;       /**< nesting level of endless loop */
-static int rettype    =0;       /**< the type that a "return" expression should have */
-static int skipinput  =0;       /**< number of lines to skip from the first input file */
-static int verbosity  =1;       /**< verbosity level, 0=quiet, 1=normal, 2=verbose */
-static int sc_reparse =0;       /**< needs 3th parse because of changed prototypes? */
-static int sc_parsenum=0;       /**< number of the extra parses */
-static int undefined_vars=false;/**< if true, undefined symbols were found */
-static int pc_enumsequence=0;   /**< sequence number of enumerated constant lists, for reporting these lists */
-static int wq_glb[wqTABSZ];     /**< "while queue", internal stack for nested loops */
-static int *wq_ptr;             /**< pointer to next entry */
+static int lastst      =0;        /**< last executed statement type */
+static int endlessloop =0;        /**< nesting level of endless loop */
+static int rettype     =0;        /**< the type that a "return" expression should have */
+static int skipinput   =0;        /**< number of lines to skip from the first input file */
+static int verbosity   =1;        /**< verbosity level, 0=quiet, 1=normal, 2=verbose */
+static bool sc_reparse =false;    /**< needs 3th parse because of changed prototypes? */
+static int sc_parsenum =0;        /**< number of the extra parses */
+static bool undefined_vars=false; /**< if true, undefined symbols were found */
+static int pc_enumsequence=0;     /**< sequence number of enumerated constant lists, for reporting these lists */
+static int wq_glb[wqTABSZ];       /**< "while queue", internal stack for nested loops */
+static int *wq_ptr;               /**< pointer to next entry */
 #if !defined PAWN_LIGHT
   static char sc_rootpath[_MAX_PATH]; /**< base path of the installation */
   static char sc_binpath[_MAX_PATH];  /**< path for the binaries, often sc_rootpath + /bin */
@@ -813,7 +813,6 @@ int pc_compile(int argc, char *argv[])
     freading=true;
     pc_resetsrc(inpf,inpfmark); /* reset file position */
     pc_curline=skipinput;       /* reset line number */
-    sc_reparse=false;           /* assume no extra passes */
     sc_status=statBROWSE;       /* resetglobals() resets it to IDLE */
 
     insert_inputfile(inpfname); /* save for the error system and the report mechanism */
@@ -1171,6 +1170,7 @@ static void resetglobals(void)
   sc_status=statIDLE;   /* browse/write/skip status */
   sc_allowproccall=false; /* allow/detect tagnames in lex() */
   pc_pendingflags=0;    /* operations to perform on next function/data declaration (bit set) */
+  sc_reparse=false;     /* assume no extra pass needed */
   pc_docexpr=false;
   pc_deprecate=NULL;
   sc_curstates=0;
@@ -5648,7 +5648,7 @@ static long max_overlaysize(symbol *root,char **funcname)
 }
 #endif
 
-static int checkundefined(symbol *root)
+static bool checkundefined(symbol *root)
 {
   int count=0;
   symbol *sym=root->next;
@@ -7042,7 +7042,7 @@ static void doreturn(void)
          * need an additional pass.
          */
         if ((curfunc->usage & uREAD)!=0)
-          sc_reparse=true;
+          sc_reparse=true;              /* no warning, because a forward declare won't fix this */
       } /* if */
       /* get the hidden parameter, copy the array (the array is on the heap;
        * it stays on the heap for the moment, and it is removed -usually- at

@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: sc.h 7704 2026-10-02 16:58:19Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -272,11 +272,11 @@ typedef struct s_value {
   cell constval;        /* value of the constant expression (if ident==iCONSTEXPR)
                          * also used for the size of a literal array */
   int tag;              /* tag (of the expression) */
-  char ident;           /* iCONSTEXPR, iVARIABLE, iARRAY, iARRAYCELL,
+  short ident;          /* iCONSTEXPR, iVARIABLE, iARRAY, iARRAYCELL,
                          * iEXPRESSION or iREFERENCE */
-  char boolresult;      /* boolean result for relational operators */
-  char ispacked;        /* flag "packed arrays" for literal arrays and for pseudo-arrays */
-  char has_assign;      /* flag assignment (for checking assigment inside if/while etc.) */
+  bool boolresult;      /* boolean result for relational operators */
+  bool ispacked;        /* flag "packed arrays" for literal arrays and for pseudo-arrays */
+  bool has_assign;      /* flag assignment (for checking assigment inside if/while etc.) */
   cell *arrayidx;       /* last used array indices, for checking self assignment */
 } value;
 

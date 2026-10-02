@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc3.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: sc3.c 7704 2026-10-02 16:58:19Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -36,7 +36,7 @@ static int plnge1(int (*hier)(value *lval),value *lval);
 static void plnge2(void (*oper)(void),void (*arrayoper)(cell),
                    int (*hier)(value *lval),
                    value *lval1,value *lval2);
-static cell calc(cell left,void (*oper)(),cell right,char *boolresult);
+static cell calc(cell left,void (*oper)(),cell right,bool *boolresult);
 static int hier14(value *lval);
 static int hier13(value *lval);
 static int hier12(value *lval);
@@ -58,11 +58,11 @@ static int dbltest(void (*oper)(),const value *lval1,const value *lval2);
 static bool commutative(void (*oper)());
 static bool constant(value *lval);
 
-static char lastsymbol[sNAMEMAX+1]; /* name of last function/variable */
-static int bitwise_opercount;       /* count of bitwise operators in an expression */
+static char lastsymbol[sNAMEMAX+1]; /**< name of last function/variable */
+static int bitwise_opercount;       /**< count of bitwise '&' and '|' operators in an expression */
 static int decl_heap=0;
-static bool in_test_expr=false;     /* flag that expression is test of if / while / etc. statement */
-static int parenthesized_level=0;   /* flag fully parenthesized "test" expression */
+static bool in_test_expr=false;     /**< flag that expression is test of if / while / etc. statement */
+static int parenthesized_level=0;   /**< flag fully parenthesized "test" expression */
 
 /* Function addresses of binary operators for signed operations */
 static void (* const op1[18])(void) = {
@@ -112,7 +112,7 @@ static void user_dec(void) {}
  *
  *  Global references: sc_allowproccall   (modified)
  */
-static int nextop(int *opidx,const int *list)
+static bool nextop(int *opidx,const int *list)
 {
   *opidx=0;
   while (*list){
@@ -386,20 +386,15 @@ SC_FUNC int matchtag(int formaltag,int actualtag,int allowcoerce)
 static int skim(const int *opstr,void (*testfunc)(int),int dropval,int endval,
                 int (*hier)(value*),value *lval)
 {
-  int hits,droplab,endlab,opidx;
-  int allconst;
-  cell constval;
   unsigned index;
   cell cidx;
-
   stgget(&index,&cidx);         /* mark position in code generator */
-  hits=false;                   /* no logical operators "hit" yet */
-  allconst=true;                /* assume all values "const" */
-  constval=0;
-  droplab=0;                    /* to avoid a compiler warning */
+  int hits=false;               /* no logical operators "hit" yet */
+  bool allconst=true;           /* assume all values "const" */
+  cell constval=0;
+  int droplab=0;                /* label for early drop-out */
   for ( ;; ) {
     int lvalue=plnge1(hier,lval);   /* evaluate left expression */
-    int foundop;
 
     allconst= allconst && (lval->ident==iCONSTEXPR);
     if (allconst) {
@@ -413,7 +408,8 @@ static int skim(const int *opstr,void (*testfunc)(int),int dropval,int endval,
       constval=lval->constval;  /* save result accumulated so far */
     } /* if */
 
-    foundop=nextop(&opidx,opstr);
+    int opidx;
+    int foundop=nextop(&opidx,opstr);
     if ((foundop || hits) && (lval->ident==iARRAY || lval->ident==iREFARRAY))
       error(33, check_symbolname(lval));  /* array was not indexed in an expression */
     if (foundop) {
@@ -428,7 +424,8 @@ static int skim(const int *opstr,void (*testfunc)(int),int dropval,int endval,
     } else if (hits) {                  /* no (more) identical operators */
       dropout(lvalue,testfunc,droplab,lval);  /* found at least one operator! */
       ldconst(endval,sPRI);
-      jumplabel(endlab=getlabel());
+      int endlab=getlabel();
+      jumplabel(endlab);
       setlabel(droplab);
       ldconst(dropval,sPRI);
       setlabel(endlab);
@@ -479,10 +476,9 @@ static cell checkarrays(value *lval1,value *lval2)
    * a large array to a smaller one. This is to make it easier to work with strings.
    * Symbolic arrays must always match exactly.
    */
-  int exactmatch=true;
+  bool exactmatch=true;
   int level;
-  int ispacked1,ispacked2;
-  cell ltlength,length,totalsize1;
+  cell length;
 
   assert(lval1!=NULL);
   assert(lval2!=NULL);
@@ -490,15 +486,16 @@ static cell checkarrays(value *lval1,value *lval2)
   assert(lval1->sym!=NULL);
   assert(lval1->sym->name!=NULL);
 
-  ltlength=(int)lval1->sym->dim.array.length;
-  ispacked1=((lval1->sym->usage & uPACKED)!=0);
+  cell ltlength=lval1->sym->dim.array.length;
+  bool ispacked1=((lval1->sym->usage & uPACKED)!=0);
   if (IS_PSEUDO_ARRAY(*lval1)) {
     ltlength=(int)lval1->constval;
     ispacked1=lval1->ispacked;
   } /* if */
-  totalsize1=array_totalsize(lval1->sym);
+  cell totalsize1=array_totalsize(lval1->sym);
   if (!IS_ARRAY(*lval2) && !IS_PSEUDO_ARRAY(*lval2))
     error(33,lval1->sym->name);         /* array must be indexed */
+  bool ispacked2;
   if (lval2->sym!=NULL) {
     if (totalsize1==0)
       return error(46,lval1->sym->name);/* unknown array size */
@@ -840,44 +837,51 @@ static cell flooreddiv(cell a,cell b,int return_remainder)
   return return_remainder ? r : q;
 }
 
-static cell calc(cell left,void (*oper)(),cell right,char *boolresult)
+static cell calc(cell left,void (*oper)(),cell right,bool *boolresult)
 {
-  if (oper==ob_or)
+  if (oper==ob_or) {
     return (left | right);
-  else if (oper==ob_xor)
+  } else if (oper==ob_xor) {
     return (left ^ right);
-  else if (oper==ob_and)
+  } else if (oper==ob_and) {
     return (left & right);
-  else if (oper==ob_eq)
+  } else if (oper==ob_andnot) {
+    return (left & ~right);
+  } else if (oper==ob_eq) {
     return (left == right);
-  else if (oper==ob_ne)
+  } else if (oper==ob_ne) {
     return (left != right);
-  else if (oper==os_le)
-    return *boolresult &= (char)(left <= right), right;
-  else if (oper==os_ge)
-    return *boolresult &= (char)(left >= right), right;
-  else if (oper==os_lt)
-    return *boolresult &= (char)(left < right), right;
-  else if (oper==os_gt)
-    return *boolresult &= (char)(left > right), right;
-  else if (oper==os_sar)
+  } else if (oper==os_le) {
+    *boolresult= *boolresult && (left <= right);
+    return  right;
+  } else if (oper==os_ge) {
+    *boolresult= *boolresult && (left >= right);
+    return  right;
+  } else if (oper==os_lt) {
+    *boolresult= *boolresult && (left < right);
+    return right;
+  } else if (oper==os_gt) {
+    *boolresult= *boolresult && (left > right);
+    return right;
+  } else if (oper==os_sar) {
     return (left >> (int)right);
-  else if (oper==ou_sar)
+  } else if (oper==ou_sar) {
     return ((ucell)(left & (~(~(ucell)0 << pc_cellsize*8))) >> (ucell)right);
-  else if (oper==ob_sal)
+  } else if (oper==ob_sal) {
     return ((ucell)left << (int)right);
-  else if (oper==ob_add)
+  } else if (oper==ob_add) {
     return (left + right);
-  else if (oper==ob_sub)
+  } else if (oper==ob_sub) {
     return (left - right);
-  else if (oper==os_mult)
+  } else if (oper==os_mult) {
     return (left * right);
-  else if (oper==os_div)
+  } else if (oper==os_div) {
     return flooreddiv(left,right,0);
-  else if (oper==os_mod)
+  } else if (oper==os_mod) {
     return flooreddiv(left,right,1);
-  else
+  } else {
     error(29);  /* invalid expression, assumed 0 (this should never occur) */
+  } /* if */
   return 0;
 }
 
@@ -1055,17 +1059,15 @@ static cell array_levelsize(symbol *sym,int level)
  */
 static int hier14(value *lval1)
 {
-  bool lvalue;
-  value lval2={0},lval1copy={0};
+  value lval2={0};
   void (*oper)(void);
   int tok,i;
   cell val;
   char *st;
-  int bwcount,leftarray;
   cell arrayidx1[sDIMEN_MAX],arrayidx2[sDIMEN_MAX];  /* last used array indices */
   cell *org_arrayidx;
 
-  bwcount=bitwise_opercount;
+  int bwcount=bitwise_opercount;  /* save + reset test for possibly unintentional '&' and '|' operators */
   bitwise_opercount=0;
   /* initialize the index arrays with unlikely constant indices; note that
    * these indices will only be changed when the array is indexed with a
@@ -1077,7 +1079,7 @@ static int hier14(value *lval1)
   org_arrayidx=lval1->arrayidx; /* save current pointer, to reset later */
   if (lval1->arrayidx==NULL)
     lval1->arrayidx=arrayidx1;  /* ok, because lval1->arrayidx is only used in deeper functions, not by the caller of hier14() */
-  lvalue=plnge1(hier13,lval1);
+  bool lvalue=plnge1(hier13,lval1);
   if (lval1->ident!=iARRAYCELL && lval1->ident!=iARRAYCHAR)
     lval1->arrayidx=NULL;
   if (lval1->ident==iCONSTEXPR) /* load constant here */
@@ -1158,7 +1160,7 @@ static int hier14(value *lval1)
     return (bool)error(22);     /* assignment to const argument */
   } /* if */
 
-  lval1copy=*lval1;             /* save symbol to enable storage of expresion result */
+  value lval1copy=*lval1;       /* save symbol to enable storage of expresion result */
   lval1->arrayidx=org_arrayidx; /* restore array index pointer */
   if (lval1->ident==iARRAYCELL || lval1->ident==iARRAYCHAR
       || lval1->ident==iARRAY || lval1->ident==iREFARRAY)
@@ -1208,8 +1210,8 @@ static int hier14(value *lval1)
    * If the expression on the right side of the assignment is a cell,
    * or if an operation is in effect, this does not apply.
    */
-  leftarray= IS_ARRAY(lval1copy)
-             || (IS_PSEUDO_ARRAY(lval1copy) && !oper && (lval2.ident==iARRAY || lval2.ident==iREFARRAY));
+  bool leftarray= IS_ARRAY(lval1copy)
+                  || (IS_PSEUDO_ARRAY(lval1copy) && !oper && (lval2.ident==iARRAY || lval2.ident==iREFARRAY));
   if (leftarray) {
     /* Left operand is an array, right operand should be an array variable
      * of the same size and the same dimension, an array literal (of the
@@ -1243,7 +1245,12 @@ static int hier14(value *lval1)
       bool skip_memcopy=false;
       if (lval2.sym==NULL) {
         cell array_sz=lval2.constval;
-        assert(array_sz!=0);/* literal array must have a size */
+        /* a literal array must have a size; however when lval2 refers to the
+         * function result of a yet undefined function, the symbol is `NULL`
+         * and the size (in `constval` is also zero (this happens in the first
+         * pass only)
+         */
+        assert(array_sz!=0 || sc_status==statBROWSE);
         if (array_sz<0)
           array_sz=-array_sz;
         if (litidx>=(unsigned)array_sz) {
@@ -1256,7 +1263,7 @@ static int hier14(value *lval1)
             cell v=litq[--litidx];
             ldconst(v,sPRI);
             store(&lval1copy);
-          } else {
+          } else if (array_sz>0) {
             cell addr;
             if (litarray_find(&addr,litidx-array_sz,array_sz)) {
               /* overrule the earlier address load, see comment #MERGE_LITERAL
@@ -1853,13 +1860,11 @@ static int hier1(value *lval1)
   value lval2={0};
   char *symlabel;
   int close,optbrackets;
-  symbol *sym,*cursym;
-  symbol dummysymbol; /* for plunging into pseudo-arrays */
 
   lvalue=primary(lval1,&symtok);
-  cursym=lval1->sym;
+  symbol *cursym=lval1->sym;
 restart:
-  sym=cursym;
+  symbol *sym=cursym;
   if (matchtoken('[') || matchtoken('{') || matchtoken('(') || matchtoken(tSYMLABEL)) {
     if (parenthesized_level==0)
       parenthesized_level=NOT_SET;
@@ -2065,6 +2070,7 @@ restart:
        * array symbol (cval points to a symbolic index; if no matching symbolic
        * index was found, error 94 was already given above)
        */
+      symbol dummysymbol={0};               /* for plunging into pseudo-arrays */
       if (lval2.ident==iCONSTEXPR && sym->dim.array.names!=NULL && cval!=NULL) {
         lval1->tag=lval2.tag;
         assert(cval->next!=NULL);
@@ -2080,7 +2086,7 @@ restart:
            * but with an adjusted index tag
            */
           assert(sym!=NULL);
-          dummysymbol=*sym;
+          dummysymbol=*sym;                 /* for plunging into pseudo-arrays */
           dummysymbol.dim.array.length=lval1->constval;
           dummysymbol.dim.array.names=NULL; /* disallow symbolic indices in the sub-array */
           if (lval2.ispacked)               /* copy packed/unpacked flag */
@@ -2975,60 +2981,63 @@ static bool commutative(void (*oper)())
  *
  *  If the operand was a number, it is stored in lval->constval.
  *
- *  The function returns 1 if the token was a constant or a string, 0
- *  otherwise.
+ *  The function returns `true` if the token was a constant or a string,
+ *  `false` otherwise.
  */
 static bool constant(value *lval)
 {
-  int tok,ident;
-  unsigned index;
-  cell val,item,cidx;
-  char *st;
-  symbol *sym;
+  lval->sym=NULL;
+  cell lexval;
+  char *lexstr;
+  int tok=lex(&lexval,&lexstr);
+  if (tok==tSYMBOL)
+    lval->sym=findconst(lexstr);
 
-  tok=lex(&val,&st);
-  if (tok==tSYMBOL && (sym=findconst(st))!=0) {
+  if (tok==tSYMBOL && lval->sym!=NULL) {
+    symbol *sym=lval->sym;
     lval->constval=sym->addr;
     ldconst(lval->constval,sPRI);
     lval->ident=iCONSTEXPR;
     lval->tag=sym->tag;
-    lval->sym=sym;
-    markusage(sym,uREAD);
+    markusage(lval->sym,uREAD);
   } else if (tok==tNUMBER) {
-    lval->constval=val;
+    lval->constval=lexval;
     ldconst(lval->constval,sPRI);
     lval->ident=iCONSTEXPR;
     lastsymbol[0]='\0';
   } else if (tok==tRATIONAL) {
-    lval->constval=val;
+    lval->constval=lexval;
     ldconst(lval->constval,sPRI);
     lval->ident=iCONSTEXPR;
     lval->tag=sc_rationaltag;
     lastsymbol[0]='\0';
   } else if (tok==tSTRING || tok==tPACKSTRING) {
     /* lex() stores starting index of string in the literal table in 'val' */
-    ldconst((val+glb_declared)*pc_cellsize,sPRI);
+    ldconst((lexval+glb_declared)*pc_cellsize,sPRI);
     lval->ident=iARRAY;         /* pretend this is a global array */
-    lval->constval=val-litidx;  /* constval == the negative value of the
-                                 * size of the literal array; using a negative
-                                 * value distinguishes between literal arrays
-                                 * and literal strings (this was done for
-                                 * array assignment). */
+    lval->constval=lexval-litidx; /* constval == the negative value of the
+                                   * size of the literal array; using a negative
+                                   * value distinguishes between literal arrays
+                                   * and literal strings (this was done for
+                                   * array assignment). */
     lval->ispacked= (tok==tPACKSTRING);
     lastsymbol[0]='\0';
   } else if (tok=='{' || tok=='[') {
     int match,packcount,tag,lasttag=-1;
     cell packitem;
     match=(tok=='{') ? '}' : ']';
-    val=(cell)litidx;
+    lexval=(cell)litidx;
     packitem=0;
     packcount=0;
     do {
       /* cannot call constexpression() here, because "staging" is already turned
        * on at this point */
       assert(staging);
+      unsigned index;
+      cell cidx;
       stgget(&index,&cidx);     /* mark position in code generator */
-      ident=expression(&item,&tag,NULL,NULL,false,false);
+      cell item;
+      int ident=expression(&item,&tag,NULL,NULL,false,false);
       stgdel(index,cidx);       /* scratch generated code */
       if (ident!=iCONSTEXPR) {
         error(8);               /* must be constant expression */
@@ -3056,9 +3065,9 @@ static bool constant(value *lval)
     } while (matchtoken(','));
     if (packcount!=0 && match=='}')
       litadd(packitem);         /* store final collected values */
-    ldconst((val+glb_declared)*pc_cellsize,sPRI);
+    ldconst((lexval+glb_declared)*pc_cellsize,sPRI);
     lval->ident=iARRAY;         /* pretend this is a global array */
-    lval->constval=litidx-val;  /* constval == the size of the literal array */
+    lval->constval=litidx-lexval; /* constval == the size of the literal array */
     lval->ispacked= (match=='}'); /* flag packed array */
     if (!needtoken(match))
       skiptotoken(match,false); /* skip all until ']'/'}' or end of expression */

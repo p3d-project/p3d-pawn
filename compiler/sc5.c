@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: sc5.c 7705 2026-10-02 20:10:15Z thiadmer $
  */
 #include <assert.h>
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -50,6 +50,7 @@
 # pragma warning(pop)
 #endif
 
+#define FATAL_BASE      100     /**< first 'fatal error' number */
 #define WARN_BASE       200     /**< first warning number */
 #define WARN_COUNT      (sizeof warnmsg / sizeof warnmsg[0])
 typedef struct s_warnstack {
@@ -73,6 +74,7 @@ static int errstart;    /**< line number at which the instruction started */
 static int warnignore;  /**< line number for warning to ignore (when error was also given for the line) */
 static int errcount;    /**< number of errors */
 static int warncount;   /**< number of warnings */
+static bool errhidden;  /**< are there more errors than have been displayed */
 
 /*  error
  *
@@ -109,7 +111,7 @@ static short lastfile;
    * the error reporting is enabled only in the second pass (and only when
    * actually producing output). Fatal errors may never be ignored.
    */
-  if ((errflag || sc_status!=statWRITE) && (number<100 || number>=200))
+  if ((errflag || sc_status!=statWRITE) && (number<FATAL_BASE || number>=WARN_BASE))
     return 0;
 
   /* also check for disabled warnings */
@@ -119,24 +121,24 @@ static short lastfile;
     return 0;
   } /* if */
 
-  if (number<100){
+  if (number<FATAL_BASE){
     assert(number>0 && number<countof(errmsg));
     msg=errmsg[number];
     pre=prefix[0];
     errflag=true;       /* set errflag (skip rest of erroneous expression) */
     errcount++;
     warnignore=pc_curline;
-  } else if (number<200) {
-    assert(((int)number-100)>=0 && (number-100)<countof(fatalmsg));
-    msg=fatalmsg[number-100];
+  } else if (number<WARN_BASE) {
+    assert(((int)number-FATAL_BASE)>=0 && (number-FATAL_BASE)<countof(fatalmsg));
+    msg=fatalmsg[number-FATAL_BASE];
     pre=prefix[1];
-    errcount++;           /* a fatal error also counts as an error */
+    errcount++;         /* a fatal error also counts as an error */
   } else {
-    assert(((int)number-200)>=0 && (number-200)<countof(warnmsg));
+    assert(((int)number-WARN_BASE)>=0 && (number-WARN_BASE)<countof(warnmsg));
     if (pc_curline==warnignore)
       return 0;         /* an error was already given for this line, gobble up the (probably incorrect) warning*/
     warnignore=-1;
-    msg=warnmsg[number-200];
+    msg=warnmsg[number-WARN_BASE];
     pre=prefix[2];
     warncount++;
   } /* if */
@@ -168,10 +170,16 @@ static short lastfile;
   } /* if */
   assert(filename!=NULL);
 
-  /* limit the number of errors that are reported on a single line */
-  if (errcount_on_line<3) {
+  /* limit the number of errors that are reported on a single line when
+   * printing the errors on the terminal (but list all when writing them to an
+   * error file)
+   */
+  bool on_terminal= (strlen(errfname)==0);
+  if ((errstart<0 && lastline!=pc_curline) || lastline<errstart || lastline>pc_curline || fcurrent!=lastfile)
+    errcount_on_line=0;
+  if (errcount_on_line<3 || !on_terminal) {
     va_start(argptr,number);
-    if (strlen(errfname)==0) {
+    if (on_terminal) {
       int start= (errstart==errline) ? -1 : errstart;
       if (pc_error((int)number,string,filename,start,errline,argptr)) {
         if (outf!=NULL) {
@@ -192,10 +200,14 @@ static short lastfile;
       } /* if */
     } /* if */
     va_end(argptr);
+  } else if (number<WARN_BASE) {
+    errhidden=true;
   } /* if */
+  if (number<WARN_BASE || errcount_on_line>0)
+    errcount_on_line++; /* don't count warnings, unless an error was also flagged */
 
-  if (number>=100 && number<200 || errcount>25){
-    if (strlen(errfname)==0) {
+  if (number>=FATAL_BASE && number<WARN_BASE || errcount>25){
+    if (on_terminal) {
       va_start(argptr,number);
       pc_error(0,"\nCompilation aborted.",NULL,0,0,argptr);
       va_end(argptr);
@@ -209,11 +221,6 @@ static short lastfile;
 
   errline=-1;
   errfile=-1;
-  /* check whether we are seeing many errors on the same line */
-  if ((errstart<0 && lastline!=pc_curline) || lastline<errstart || lastline>pc_curline || fcurrent!=lastfile)
-    errcount_on_line=0;
-  if (number<200 || errcount_on_line>0)
-    errcount_on_line++; /* don't count only warnings, unless an error was also flagged */
   lastline=pc_curline;
   lastfile=fcurrent;
 
@@ -270,7 +277,9 @@ SC_FUNC int error_suggest_list(unsigned number,const char *name,constvalue *list
  *                      parameter may be set to `NULL`.
  *
  *  \return 0 when no errors or warnings were detected, 1 when there are
- *          warnings (but no errors), 2 when there are errors.
+ *          warnings (but no errors), 2 when there are errors, 3 when there are
+ *          errors, some of which were hidden (because there were many errors on
+ *          the same line).
  */
 SC_FUNC int errorcount(int *errors,int *warnings)
 {
@@ -279,10 +288,10 @@ SC_FUNC int errorcount(int *errors,int *warnings)
   if (warnings)
     *warnings=warncount;
   if (errcount>0)
-    return 2;     /* errors found -> level 2 */
+    return errhidden ? 3 : 2;   /* errors found -> level 2 or 3 */
   if (warncount>0)
-    return 1;     /* no errors, but warnings found -> level 1 */
-  return 0;       /* all is fine -> 0 */
+    return 1;                   /* no errors, but warnings found -> level 1 */
+  return 0;                     /* all is fine -> 0 */
 }
 
 SC_FUNC void errorset(int code,int line)
@@ -313,6 +322,7 @@ SC_FUNC void errorset(int code,int line)
     errcount=0;
     warncount=0;
     errflag=false;
+    errhidden=false;
     break;
   } /* switch */
 }
@@ -338,7 +348,7 @@ SC_FUNC void errorset(int code,int line)
 DLLEXPORT
 int pc_enablewarning(unsigned number,int enable)
 {
-  if (number<WARN_BASE || number>=200+WARN_COUNT)
+  if (number<WARN_BASE || number>=WARN_BASE+WARN_COUNT)
     return false;       /* errors and fatal errors cannot be disabled */
 
   if (enable==wTOGGLE)

@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7704 2026-10-02 16:58:19Z thiadmer $
+ *  Version: $Id: sc1.c 7705 2026-10-02 20:10:15Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -945,7 +945,7 @@ cleanup:
     outf=NULL;
   } /* if */
   if (binf!=NULL) {
-    pc_closebin(binf,(errorcount(NULL,NULL)==2));
+    pc_closebin(binf,(errorcount(NULL,NULL)>=2));
     binf=NULL;
   } /* if */
 
@@ -1069,10 +1069,15 @@ cleanup:
   delete_autolisttable();
   delete_heaplisttable();
   int errnum,warnnum;
-  errorcount(&errnum,&warnnum);
+  int errlevel=errorcount(&errnum,&warnnum);
   if (errnum!=0) {
-    if (strlen(errfname)==0)
-      pc_printf("\n%d Error%s.\n",errnum,(errnum>1) ? "s" : "");
+    assert(errlevel==2 || errnum>1);  /* when errors are hidden, there must be more than 1 */
+    if (strlen(errfname)==0) {
+      if (errlevel==3)
+        pc_printf("\n%d Errors (not all errors are shown).\n",errnum);
+      else
+        pc_printf("\n%d Error%s.\n",errnum,(errnum>1) ? "s" : "");
+    } /* if */
     retcode=1;
   } else if (warnnum!=0){
     if (strlen(errfname)==0)
@@ -2878,17 +2883,18 @@ static bool declloc(bool fstatic)
              * array literal can be merged with an earlier one
              */
             cell src_addr=cur_lit+glb_declared;
+            cell src_size=litidx-cur_lit;
             assert(litidx>=cur_lit);
-            if (litarray_find(&src_addr,cur_lit,litidx-cur_lit)) {
+            if (litarray_find(&src_addr,cur_lit,src_size)) {
               litidx=cur_lit;   /* reset literal queue */
             } else {
               /* save this literal array as a candidate for a future merge */
-              litarray_add(glb_declared,cur_lit,litidx-cur_lit);
+              litarray_add(glb_declared,cur_lit,src_size);
             } /* if */
             ldconst(src_addr*pc_cellsize,sPRI); /* PRI = source */
             address(sym,sALT);                  /* ALT = dest */
             sym->usage &= ~uREAD; /* clear this flag that address() implicitly sets */
-            memcopy((litidx-cur_lit)*pc_cellsize);
+            memcopy(src_size*pc_cellsize);
           } /* if */
           markusage(sym,uWRITTEN);
         } /* if */

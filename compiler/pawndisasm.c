@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawndisasm.c 7701 2026-09-29 11:09:02Z thiadmer $
+ *  Version: $Id: pawndisasm.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <inttypes.h>
@@ -751,7 +751,7 @@ static bool disassemble(FILE *fpamx,FILE *fplist,uint32_t addr_from,uint32_t add
   /* load the code block */
   unsigned char *code=(unsigned char*)malloc(codesize);
   if (code==NULL) {
-    fprintf(stderr,"Error: insufficient memory: need %d bytes\n",codesize);
+    fprintf(stderr,"Error: insufficient memory: need %u bytes\n",codesize);
     fclose(fpamx);
     fclose_not_stdout(fplist);
     return false;

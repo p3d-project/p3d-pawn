@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scvars.c 7701 2026-09-29 11:09:02Z thiadmer $
+ *  Version: $Id: scvars.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <stdio.h>
 #include <stdlib.h>     /* for _MAX_PATH */
@@ -30,7 +30,7 @@
 SC_VDEFINE symbol loctab;                   /**< local symbol table */
 SC_VDEFINE symbol glbtab;                   /**< global symbol table */
 SC_VDEFINE cell *litq;                      /**< the literal queue */
-SC_VDEFINE size_t litidx=0;                 /**< index to literal table */
+SC_VDEFINE unsigned litidx=0;               /**< index to literal table */
 SC_VDEFINE unsigned char *srcline=NULL;     /**< the line read from the input file */
 SC_VDEFINE const unsigned char *lexptr;     /**< points to the current position in "srcline" */
 SC_VDEFINE constvalue tagname_tab={NULL,"",0,0,0};  /**< tagname table */

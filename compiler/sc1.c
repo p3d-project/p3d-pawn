@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7702 2026-10-01 15:09:39Z thiadmer $
+ *  Version: $Id: sc1.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -235,7 +235,7 @@ int pc_printf(const char *message,...)
  */
 int pc_error(int number,const char *message,const char *filename,int firstline,int lastline,va_list argptr)
 {
-static char *prefix[3]={ "error", "fatal error", "warning" };
+static const char *prefix[3]={ "error", "fatal error", "warning" };
 
   if (number!=0) {
     const char *pre=prefix[number/100];
@@ -1572,13 +1572,13 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
       /* no output filename is set, use the name of the first source file,
        * without the path
        */
-      const char *name;
-      if ((name=get_sourcefile(0))!=NULL) {
-        assert(strlen(name)<_MAX_PATH);
-        if ((ptr=strrchr(name,DIRSEP_CHAR))!=NULL)
+      const char *srcname=get_sourcefile(0);
+      if (srcname!=NULL) {
+        assert(strlen(srcname)<_MAX_PATH);
+        if ((ptr=strrchr(srcname,DIRSEP_CHAR))!=NULL)
           ptr++;          /* strip path */
         else
-          ptr=name;
+          ptr=srcname;
         assert(strlen(ptr)<_MAX_PATH);
         strcpy(rname,ptr);
       } /* if */
@@ -1665,7 +1665,6 @@ static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
     if (sc_rootpath[0]!='\0') {
       char cfgfile[_MAX_PATH];
       const char *ptr;
-      int isoption;
       /* copy the default config file name, but keep a pointer to the location
        * of the base name
        */
@@ -1682,9 +1681,9 @@ static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
       bool found=false;
       for (int i=1; i<argc && !found; i++) {
 #       if DIRSEP_CHAR=='/'
-          isoption= argv[i][0]=='-';
+          bool isoption= argv[i][0]=='-';
 #       else
-          isoption= argv[i][0]=='/' || argv[i][0]=='-';
+          bool isoption= argv[i][0]=='/' || argv[i][0]=='-';
 #       endif
         if (isoption && argv[i][1]=='T') {
           found=true;
@@ -1720,8 +1719,7 @@ static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
 static void setconfig(const char *root)
 {
   char path[_MAX_PATH]="";
-  char *ptr,*base;
-  size_t len;
+  char *ptr;
 
 # if defined macintosh || defined __APPLE__
     /* on OS X, use argv[0] */
@@ -1782,9 +1780,9 @@ static void setconfig(const char *root)
       assert(sizeof sc_binpath==sizeof path);
       strcpy(sc_binpath,path);
 #   endif
-    base=strchr(path,'\0')-1; /* base points to last character in the string (probably a directory separator) */
+    char *base=strchr(path,'\0')-1; /* base points to last character in the string (probably a directory separator) */
     strcat(path,"include");
-    len=strlen(path);
+    size_t len=strlen(path);
     path[len]=DIRSEP_CHAR;
     path[len+1]='\0';
     /* see if it exists */
@@ -2259,7 +2257,7 @@ static void dumplits(void)
 {
   if (sc_status==statSKIP)
     return;
-  size_t k=0;
+  unsigned k=0;
   while (k<litidx){
     /* should be in the data segment */
     int j=32/pc_cellsize; /* 16 values per line for 2-byte cells, 8 for 4-byte cells, etc. */
@@ -2388,8 +2386,6 @@ static void declfuncvar(bool fpublic,bool fstatic,bool fstock,bool fconst)
  */
 static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic,bool fstock,bool fconst)
 {
-  int tag,usage;
-  cell cidx;
   ucell address;
   int glb_incr;
   int dim[sDIMEN_MAX];
@@ -2409,6 +2405,7 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
     int numdim=0;                       /* no dimensions */
     int ident=iVARIABLE;
     char name[sNAMEMAX+1];
+    int tag;
     if (firstname!=NULL) {
       assert(strlen(firstname)<countof(name));
       strlcpy(name,firstname,countof(name)); /* save symbol name */
@@ -2444,7 +2441,7 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
 #     endif
       dim[numdim++]=(int)size;
     } /* while */
-    usage=0;
+    int usage=0;
     if (matchtoken('{')) {              /* last dimension may be specified as {} */
       ident=iARRAY;
       usage=uPACKED;
@@ -2514,7 +2511,7 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
     /* if this variable is never used (which can be detected only in the
      * second stage), shut off code generation
      */
-    cidx=0;             /* only to avoid a compiler warning */
+    cell cidx=0;        /* only to avoid a compiler warning */
     if (sc_status==statWRITE && sym!=NULL && (sym->usage & (uREAD | uWRITTEN))==0) {
       sc_status=statSKIP;
       cidx=code_idx;
@@ -2533,7 +2530,7 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
     pc_pendingflags=0;
     assert(litidx==0);  /* literal queue should be empty (again) */
     initials(ident,usage,tag,&size,dim,numdim,dimnames);/* stores values in the literal queue */
-    if ((size_t)size<litidx) {
+    if ((unsigned)size<litidx) {
       int oldstatus=sc_status;
       if (sc_status==statSKIP)
         sc_status=statWRITE;
@@ -2698,7 +2695,7 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
 static bool declloc(bool fstatic)
 {
   value lval={0};
-  size_t cur_lit=0;
+  unsigned cur_lit=0;
   int dim[sDIMEN_MAX];
   constvalue *dimnames[sDIMEN_MAX];
 
@@ -2861,7 +2858,7 @@ static bool declloc(bool fstatic)
            * if it is, more compact code can be generated
            */
           cell first=litq[cur_lit];
-          size_t i;
+          unsigned i;
           for (i=cur_lit; i<litidx && litq[i]==first; i++)
             /* nothing */;
           if (i==litidx) {
@@ -2880,11 +2877,11 @@ static bool declloc(bool fstatic)
             /* copy the literals to the array, but first check whether the
              * array literal can be merged with an earlier one
              */
-            cell src_addr=litarray_find(cur_lit,litidx-cur_lit);
-            if (src_addr>=0) {
-              litidx=cur_lit;     /* reset literal queue */
+            cell src_addr=cur_lit+glb_declared;
+            assert(litidx>=cur_lit);
+            if (litarray_find(&src_addr,cur_lit,litidx-cur_lit)) {
+              litidx=cur_lit;   /* reset literal queue */
             } else {
-              src_addr=cur_lit+glb_declared;
               /* save this literal array as a candidate for a future merge */
               litarray_add(glb_declared,cur_lit,litidx-cur_lit);
             } /* if */
@@ -2938,7 +2935,7 @@ static int base;
 
   assert(cur>=0 && cur<numdim);
   assert(increment>=0);
-  assert(cur>0 && startlit==-1 || startlit>=0 && (size_t)startlit<=litidx);
+  assert(cur>0 && startlit==-1 || startlit>=0 && (unsigned)startlit<=litidx);
   if (cur==0)
     base=startlit;
   if (cur==numdim-1)
@@ -2993,7 +2990,7 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
                      constvalue *dimnames[])
 {
   int ctag;
-  int curlit=litidx;
+  int curlit=(int)litidx;
 
   if (!matchtoken('=')) {
     assert(ident!=iARRAY || numdim>0);
@@ -3184,7 +3181,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
 {
   cell prev1=0,prev2=0;
   int ellips=false;
-  size_t curlit=litidx;
+  unsigned curlit=litidx;
   int ctag;
   int match=0;
   int packcount=-1;
@@ -3206,7 +3203,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
     if (match=='}' && field!=NULL)
       error(51);        /* error (only unpacked arrays can use symbolic indices) */
     do {
-      size_t fieldlit=litidx;
+      unsigned fieldlit=litidx;
       int matchbrace,fieldusage,ftag;
       if (matchtoken(match)) {  /* to allow for trailing ',' after the initialization */
         lexpush();
@@ -3250,7 +3247,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
         assert(field->next!=NULL);
         cell fsize=(field->next->value - field->value);
         assert(fieldlit<litidx || packcount>0);
-        if (litidx-fieldlit>(size_t)fsize)
+        if (litidx-fieldlit>(unsigned)fsize)
           error(228);           /* length of initialler exceeds size of the array field */
         if (ellips) {
           val=prev1;
@@ -3259,7 +3256,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
           step=0;
           val=0;                /* fill up with zeros */
         } /* if */
-        for (int i=litidx-fieldlit; i<fsize; i++) {
+        for (unsigned i=litidx-fieldlit; i<fsize; i++) {
           if (packcount>=0) {
             assert(packcount<pc_cellsize);
             do {
@@ -3303,9 +3300,9 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
     cell step=((litidx-curlit)>1 || packcount>1) ? prev1-prev2 : (cell)0;
     if (size==0 || (litidx-curlit)==0 && packcount<=0)
       error(41);                /* invalid ellipsis, array size unknown */
-    else if ((litidx-curlit)==(size_t)size)
+    else if ((litidx-curlit)==(unsigned)size)
       error(18);                /* initialisation data exceeds declared size */
-    while ((litidx-curlit)<(size_t)size) {
+    while ((litidx-curlit)<(unsigned)size) {
       if (packcount>=0) {
         assert(packcount<pc_cellsize);
         do {
@@ -3323,12 +3320,12 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
     } /* while */
   } /* if */
   if (fillzero && size>0) {
-    while ((litidx-curlit)<(size_t)size)
+    while ((litidx-curlit)<(unsigned)size)
       litadd(0);
   } /* if */
   if (size==0) {
-    size=litidx-curlit;                     /* number of elements defined */
-  } else if (litidx-curlit>(size_t)size) {  /* e.g. "myvar[3]=[1,2,3,4];" */
+    size=litidx-curlit;                       /* number of elements defined */
+  } else if (litidx-curlit>(unsigned)size) {  /* e.g. "myvar[3]=[1,2,3,4];" */
     error(18);                  /* initialisation data exceeds declared size */
     litidx=size+curlit;         /* avoid overflow in memory moves */
   } /* if */
@@ -3344,7 +3341,7 @@ static cell init(int ident,int usage,int *tag,bool *errorfound,int *packcount,ce
   cell val;
   char *str;
   int tok;
-  int curlit=litidx;
+  unsigned curlit=litidx;
   cell i = 0;
 
   tok=lex(&val,&str);
@@ -3355,8 +3352,9 @@ static cell init(int ident,int usage,int *tag,bool *errorfound,int *packcount,ce
      * increases "litidx")
      */
     if (ident==iVARIABLE) {
-      error(6);         /* must be assigned to an array */
-      litidx=curlit+1;  /* reset literal queue */
+      error(6);                 /* must be assigned to an array */
+      if (litidx>curlit)
+        litidx=curlit+1;        /* reset literal queue */
     } /* if */
     if (tok==tSTRING && (usage & uPACKED)!=0 || tok==tPACKSTRING && (usage & uPACKED)==0)
       error(229);
@@ -3366,16 +3364,16 @@ static cell init(int ident,int usage,int *tag,bool *errorfound,int *packcount,ce
       assert(packitem!=NULL);
       assert(*packcount<pc_cellsize);
       if ((ucell)i>=(ucell)(1U<<sCHARBITS))
-        error(43,(long)i);    /* constant exceeds range */
+        error(43,(long)i);      /* constant exceeds range */
       *packcount+=1;
       *packitem|=(cell)(((ucell)i & 0xff) << ((pc_cellsize-*packcount)*sCHARBITS));
       if (*packcount==pc_cellsize) {
-        litadd(*packitem);    /* store collected values in literal table */
+        litadd(*packitem);      /* store collected values in literal table */
         *packitem=0;
         *packcount=0;
       } /* if */
     } else {
-      litadd(i);        /* store expression result in literal table */
+      litadd(i);                /* store expression result in literal table */
     } /* if */
   } else {
     if (errorfound!=NULL)
@@ -3400,7 +3398,6 @@ static cell needsub(char match,constvalue **namelist)
   if (namelist!=NULL && matchtoken(tSYMLABEL)) {
     /* this is a name list */
     char *str;
-    constvalue *field;
     cell index=0;
     cell size;
     if (match!=']') {
@@ -3418,7 +3415,7 @@ static cell needsub(char match,constvalue **namelist)
       /* add the name that was already parsed */
       tokeninfo(NULL,&str);
       assert(strlen(str)>0 && alphanum(str[0]));
-      field=append_constval(*namelist,str,index,tag);
+      constvalue *field=append_constval(*namelist,str,index,tag);
       /* get the size (parse optional '[' and '{') */
       if (matchtoken('[')) {
         size=needsub(']',NULL); /* get size; size==0 for "var[]" */
@@ -3497,11 +3494,10 @@ static void verify_array_namelist(constvalue *namelist[], int numdim)
 static void decl_const(int scope)
 {
   char constname[sNAMEMAX+1];
-  cell val,defaultval;
+  cell val;
   char *str;
-  int tag,defaulttag,exprtag;
+  int tag,exprtag;
   int symbolline;
-  int enumerate,first;
   symbol *sym;
 
   insert_docstring_separator();         /* see comment #DOCSTRING_SEPARATOR in newfunc() */
@@ -3509,10 +3505,10 @@ static void decl_const(int scope)
 #   if !defined PAWN_LIGHT
       pc_docstring_suspended=true;      /* suspend attaching documentation to global/recent blocks */
 #   endif
-    defaulttag=pc_addtag(NULL);
-    enumerate=matchtoken('{') ? ++pc_enumsequence : 0;
-    first=1;
-    defaultval=0;
+    int defaulttag=pc_addtag(NULL);
+    cell defaultval=0;
+    int enumerate=matchtoken('{') ? ++pc_enumsequence : 0;
+    int first=1;
     do {
       if (enumerate!=0 && matchtoken('}')) { /* quick exit if '}' follows ',' */
         lexpush();
@@ -4016,24 +4012,22 @@ SC_FUNC char *funcdisplayname(char *dest,size_t destsz,const char *funcname)
 
 static void funcstub(int fnative)
 {
-  int tok,tag,fpublic,usage;
   char *str;
   cell val,size;
   char symbolname[sNAMEMAX+1];
   int dim[sDIMEN_MAX];
   int numdim;
   constvalue *dimnames[sDIMEN_MAX];
-  symbol *sym,*sub;
-  int opertok;
+  symbol *sym;
 
-  opertok=0;
+  int opertok=0;
   lastst=0;
   litidx=0;                     /* clear the literal pool */
   assert(loctab.next==NULL);    /* local symbol table should be empty */
 
-  tag=pc_addtag(NULL);          /* get the tag of the return value */
-  tok=lex(&val,&str);
-  fpublic=(tok==tPUBLIC) || (tok==tSYMBOL && str[0]==PUBLIC_CHAR);
+  int tag=pc_addtag(NULL);      /* get the tag of the return value */
+  int tok=lex(&val,&str);
+  bool fpublic=(tok==tPUBLIC) || (tok==tSYMBOL && str[0]==PUBLIC_CHAR);
   if (fnative) {
     if (fpublic || tok==tSTOCK || tok==tSTATIC || tok==tSYMBOL && *str==PUBLIC_CHAR)
       error(42);                /* invalid combination of class specifiers */
@@ -4073,7 +4067,7 @@ static void funcstub(int fnative)
 #   endif
     dim[numdim++]=(int)size;
   } /* while */
-  usage=0;
+  int usage=0;
   if (matchtoken('{')) {        /* handle {} for the last dimension, too */
     if (numdim==sDIMEN_MAX) {
       error(53);                /* exceeding maximum number of dimensions */
@@ -4175,7 +4169,7 @@ static void funcstub(int fnative)
   /* attach the array to the function symbol */
   if (numdim>0) {
     assert(sym!=NULL);
-    sub=addvariable(symbolname,0,iREFARRAY,sGLOBAL,0,tag,dim,dimnames,numdim,usage);
+    symbol *sub=addvariable(symbolname,0,iREFARRAY,sGLOBAL,0,tag,dim,dimnames,numdim,usage);
     sub->parent=sym;
   } /* if */
 
@@ -4198,7 +4192,7 @@ static void funcstub(int fnative)
 static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,int stock)
 {
   symbol *sym;
-  int argcnt,tok,tag;
+  int argcnt,tag;
   int opertok,opererror;
   char symbolname[sNAMEMAX+1];
   char *str;
@@ -4216,11 +4210,11 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
 
   if (firstname!=NULL) {
     assert(strlen(firstname)<=sNAMEMAX);
-    strcpy(symbolname,firstname);       /* save symbol name */
+    strcpy(symbolname,firstname); /* save symbol name */
     tag=firsttag;
   } else {
     tag= (firsttag>=0) ? firsttag : pc_addtag(NULL);
-    tok=lex(&val,&str);
+    int tok=lex(&val,&str);
     assert(!fpublic);
     if (tok==tNATIVE || tok==tPUBLIC && stock)
       error(42);                /* invalid combination of class specifiers */
@@ -4443,7 +4437,7 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     }
 # endif
   sc_attachdocumentation(sym,false);  /* attach collected documentation to the function */
-  if (litidx) {                 /* if there are literals defined */
+  if (litidx>0) {               /* if there are literals defined */
     glb_declared+=litidx;
     begdseg();                  /* flip to DATA segment */
     dumplits();                 /* dump literal strings */
@@ -4799,14 +4793,14 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       assert(litidx==0);        /* at the start of a function, this is reset */
       assert(numtags>0);
       initials(ident,usage,tags[0],&size,arg->dim,arg->numdim,arg->dimnames);
-      assert(size>=0 && (size_t)size>=litidx);
+      assert(size>=0 && (unsigned)size>=litidx);
       /* allocate memory to hold the initial values */
       arg->defvalue.array.data=(cell *)malloc(litidx*sizeof(cell));
       if (arg->defvalue.array.data!=NULL) {
         int i;
         memcpy(arg->defvalue.array.data,litq,litidx*sizeof(cell));
         arg->hasdefault=true;   /* argument has default value */
-        arg->defvalue.array.size=litidx;
+        arg->defvalue.array.size=(int)litidx;
         arg->defvalue.array.addr=-1;
         /* calulate size to reserve on the heap */
         arg->defvalue.array.arraysize=1;
@@ -5070,7 +5064,7 @@ static void write_docstring(FILE *log,const char *string)
 static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makestategraph)
 {
   char symname[_MAX_PATH];
-  int i,arg,dim,count,tag;
+  int i,arg,dim,count;
   symbol *sym,*ref;
   const constvalue *tagsym;
   char *ptr;
@@ -5114,7 +5108,7 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
   for (arg=1; ; arg++) {
     count=0;
     dim=0;
-    tag=0;
+    int tag=0;
     /* count how many constants there are in this list, and count how many are used */
     for (sym=root->next; sym!=NULL; sym=sym->next) {
       if (sym->ident!=iCONSTEXPR || sym->x.enumlist!=arg)
@@ -7002,7 +6996,7 @@ static void doreturn(void)
           } /* for */
         } /* if */
       } else {
-        int argcount,usage;
+        int argcount,usage=0;
         /* this function does not yet have an array attached; clone the
          * returned symbol beneath the current function
          */
@@ -7159,14 +7153,9 @@ static void dostate(void)
   constvalue *state;
   statelist *stlist;
   int label_failcond;
-  int curautomaton,result;
+  int result;
   symbol *sym;
   constvalue dummyautomaton,dummystate;
-# if !defined PAWN_LIGHT
-    size_t length;
-    int index,listid,listindex,stateindex;
-    char *doc;
-# endif
 
   /* check for an optional condition */
   if (matchtoken('(')) {
@@ -7217,6 +7206,7 @@ static void dostate(void)
   } /* if */
 
   /* check whether variables need to be cleared */
+  bool alt_loaded=false;
   for (sym=glbtab.next; sym!=NULL; sym=sym->next) {
     assert(sym->states==NULL || sym->states->next!=NULL);
     if (sym->ident==iVARIABLE
@@ -7234,7 +7224,6 @@ static void dostate(void)
        *  counts of both
        */
       int idx;
-      int alt_loaded=false;
       int count_present=0,count_absent=0;
       int top=state_top_id(automaton->index);
       unsigned char *slist=malloc((top+1));
@@ -7341,6 +7330,7 @@ static void dostate(void)
     assert(state!=NULL && state->name!=NULL);
     if (sc_status==statBROWSE && strlen(state->name)>0) {
       const char *str;
+      int listid;
       /* get the last list-id attached to the function, this contains the source
          states for the active function */
       assert(curfunc!=NULL);
@@ -7355,15 +7345,16 @@ static void dostate(void)
       } /* if */
       /* get the automaton id. for the current function, to check whether to
          include the automaton name */
-      curautomaton=(listid>0) ? state_getfsa(listid) : -1;
+      int curautomaton=(listid>0) ? state_getfsa(listid) : -1;
       assert(state!=NULL && state->name!=NULL && strlen(state->name)>0);
       assert(automaton!=NULL && automaton->name!=NULL);
-      length=strlen(statename)+strlen(automaton->name)+70; /* +70 for the fixed part "<transition ... />\n" */
+      size_t length=strlen(statename)+strlen(automaton->name)+70; /* +70 for the fixed part "<transition ... />\n" */
       /* see if there are any condition strings to attach */
-      for (index=0; (str=get_autolist(index))!=NULL; index++)
+      for (int index=0; (str=get_autolist(index))!=NULL; index++)
         length+=strlen(str);
-      listindex=0;
-      if ((doc=(char*)malloc(length*sizeof(char)))!=NULL) {
+      char *doc=(char*)malloc(length*sizeof(char));
+      if (doc!=NULL) {
+        int listindex=0;
         do {
           /* this may be a transition for the current automaton, or a transition
              for a different one */
@@ -7373,7 +7364,7 @@ static void dostate(void)
             sprintf(doc,"<transition target=\"%s:%s\"",automaton->name,statename);
           if (listid>=0) {
             /* get the source state */
-            stateindex=state_listitem(listid,listindex);
+            int stateindex=state_listitem(listid,listindex);
             state=state_findid(stateindex,curautomaton);
             assert(state!=NULL);
             sprintf(doc+strlen(doc)," source=\"%s\"",state->name);
@@ -7381,7 +7372,7 @@ static void dostate(void)
           if (get_autolist(0)!=NULL) {
             /* add the condition */
             strcat(doc," condition=\"");
-            for (index=0; (str=get_autolist(index))!=NULL; index++) {
+            for (int index=0; (str=get_autolist(index))!=NULL; index++) {
               /* remove the ')' token that may be appended before detecting that the expression has ended */
               if (*str!=')' || *(str+1)!='\0' || get_autolist(index+1)!=NULL)
                 strcat(doc,str);

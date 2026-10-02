@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc3.c 7702 2026-10-01 15:09:39Z thiadmer $
+ *  Version: $Id: sc3.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -1043,15 +1043,19 @@ static cell array_levelsize(symbol *sym,int level)
   return sym->dim.array.length;
 }
 
-/*  hier14
+/** hier14() - Lowest hierarchy level (except for the comma operator).
  *
- *  Lowest hierarchy level (except for the , operator).
+ *  \param lval1        [in/out] expression result.
  *
- *  Global references: sc_allowproccall (modified)
+ *  \return `true` if the expression refers to an 'lvalue', `false` if the
+ *          expression is an 'rvalue' (or if there is an error in the
+ *          expression).
+ *
+ *  \note Global references: sc_allowproccall (modified)
  */
 static int hier14(value *lval1)
 {
-  int lvalue;
+  bool lvalue;
   value lval2={0},lval1copy={0};
   void (*oper)(void);
   int tok,i;
@@ -1135,9 +1139,9 @@ static int hier14(value *lval1)
   } else if (lval1->ident==iARRAY || lval1->ident==iREFARRAY) {
     /* array assignment is permitted too (with restrictions) */
     if (oper)
-      return error(23);         /* array assignment must be simple assigment */
+      return (bool)error(23);   /* array assignment must be simple assigment */
     if (lval1->sym==NULL)
-      return error(22);         /* must be an lvalue */
+      return (bool)error(22);   /* must be an lvalue */
     lvalue=true;
   } /* if */
 
@@ -1145,13 +1149,13 @@ static int hier14(value *lval1)
   sc_allowproccall=false;       /* may no longer use "procedure call" syntax */
   if (!lvalue) {
     hier14(&lval2);             /* gobble up right-hand of the operator */
-    return error(22);           /* must be lvalue */
+    return (bool)error(22);     /* must be lvalue */
   } /* if */
   /* may not change "constant" parameters */
   assert(lval1->sym!=NULL);
   if ((lval1->sym->usage & uCONST)!=0) {
     hier14(&lval2);             /* gobble up right-hand of the operator */
-    return error(22);           /* assignment to const argument */
+    return (bool)error(22);     /* assignment to const argument */
   } /* if */
 
   lval1copy=*lval1;             /* save symbol to enable storage of expresion result */
@@ -1242,26 +1246,29 @@ static int hier14(value *lval1)
         assert(array_sz!=0);/* literal array must have a size */
         if (array_sz<0)
           array_sz=-array_sz;
-        if (array_sz==1) {
-          /* the size of the literal array is only a single cell, so simply
-           * set that cell and reset the literal queue
-           */
-          lval1copy.ident=iARRAYCELL; /* translate 'str = ""' to 'str[0] = 0' */
-          skip_memcopy=true;
-          cell v=litq[--litidx];
-          ldconst(v,sPRI);
-          store(&lval1copy);
-        } else {
-          cell addr=-1;
-          if (litidx>=array_sz && (addr=litarray_find(litidx-array_sz,array_sz))>=0) {
-            /* overrule the earlier address load, see comment #MERGE_LITERAL in
-             * callfunction()
+        if (litidx>=(unsigned)array_sz) {
+          if (array_sz==1) {
+            /* the size of the literal array is only a single cell, so simply
+             * set that cell and reset the literal queue
              */
-            ldconst(addr*pc_cellsize,sPRI);
-            litidx-=array_sz; /* reset literal queue */
+            lval1copy.ident=iARRAYCELL; /* translate 'str = ""' to 'str[0] = 0' */
+            skip_memcopy=true;
+            cell v=litq[--litidx];
+            ldconst(v,sPRI);
+            store(&lval1copy);
           } else {
-            /* save this literal array as a candidate for a future merge */
-            litarray_add(glb_declared,litidx-array_sz,array_sz);
+            cell addr;
+            if (litarray_find(&addr,litidx-array_sz,array_sz)) {
+              /* overrule the earlier address load, see comment #MERGE_LITERAL
+               * in callfunction()
+               */
+              ldconst(addr*pc_cellsize,sPRI);
+              litidx-=array_sz; /* reset literal queue */
+            } else {
+              /* save this literal array as a candidate for a future merge */
+              assert(litidx>=(unsigned)array_sz);
+              litarray_add(glb_declared,litidx-array_sz,array_sz);
+            } /* if */
           } /* if */
         } /* if */
       } /* if */
@@ -1862,10 +1869,10 @@ restart:
       if (sym==NULL || (sym->ident!=iARRAY && sym->ident!=iREFARRAY)) {
         /* quick scan to check for what looks like an array index -> error 28 */
         if (sym!=NULL) {
-          const unsigned char *close=lexptr;
-          while (*close!='\0' && *close!='}')
-            close++;
-          if (*close=='}') {
+          const unsigned char *closebrace=lexptr;
+          while (*closebrace!='\0' && *closebrace!='}')
+            closebrace++;
+          if (*closebrace=='}') {
             int num;
             cell val;
             const unsigned char *head=lexptr;
@@ -1885,20 +1892,20 @@ restart:
                 name[num]='\0';
                 if (findloc(name) || findglb(name,sSTATEVAR) || findconst(name))
                   head=tail;
-              }
-            }
+              } /* if */
+            } /* if */
             while (*head<=' ')
               head++;
             if (num>0 && *head=='}')
               error(28,sym->name);  /* invalid subscript (not an array) */
-          }
-        }
+          } /* if */
+        } /* if */
         lexpush();              /* analyse '{' again later */
         if (lvalue)
           rvalue(lval1);        /* expression ends here, do pending read */
         return false;
-      }
-    }
+      } /* if */
+    } /* if */
     if (sym==NULL && symtok!=tSYMBOL || lval1->ident==iEXPRESSION || lval1->ident==iCONSTEXPR) {
       /* we do not have a valid symbol and we appear not to have read a valid
        * symbol name (so it is unlikely that we would have read a name of an
@@ -2302,7 +2309,7 @@ static void setdefarray(const cell *defdata,cell size,cell array_sz,cell *dataad
   /* check whether to dump the default array */
   assert(dataaddr!=NULL);
   if (sc_status==statWRITE && *dataaddr<0) {
-    *dataaddr=(litidx+glb_declared)*pc_cellsize;
+    *dataaddr=((cell)litidx+glb_declared)*pc_cellsize;
     for (int i=0; i<size; i++)
       litadd(*defdata++);
     if (fconst)
@@ -2387,7 +2394,7 @@ static void callfunction(symbol *sym,value *lval_result,int matchparanthesis)
 static long nest_stkusage=0L;
 static int nesting=0;
   int locheap;
-  int close,lvalue;
+  int close;
   int argpos;       /* index in the output stream (argpos==nargs if positional parameters) */
   int argidx=0;     /* index in "arginfo" list */
   int nargs=0;      /* number of arguments */
@@ -2520,7 +2527,7 @@ static int nesting=0;
          */
       } else {
         arglist[argpos]=ARG_DONE; /* flag argument as "present" */
-        lvalue=hier14(&lval);
+        int lvalue=hier14(&lval);
         assert(sc_status==statBROWSE || arg[argidx].ident== 0 || arg[argidx].tags!=NULL);
         reloc=false;
         switch (arg[argidx].ident) {
@@ -2702,22 +2709,25 @@ static int nesting=0;
               assert(array_sz!=0);/* literal array must have a size */
               if (array_sz<0)
                 array_sz=-array_sz;
-              cell addr=-1;
-              if (litidx>=array_sz && (addr=litarray_find(litidx-array_sz,array_sz))>=0) {
-                /* #MERGE_LITERAL: the address of the earlier literal array is
-                 * now loaded (and the literal queue is reset); the address
-                 * overrules the value already loaded as a side effect of
-                 * hier14(), we rely on the peephole optimizer to remove the
-                 * first load
-                 */
-                ldconst(addr*pc_cellsize,sPRI);
-                litidx-=array_sz; /* reset literal queue */
-              } else {
-                /* this literal array was not seen before, or there is another
-                 * reason that it cannot be merged; but it may be a candidate for
-                 * future merge
-                 */
-                litarray_add(glb_declared,litidx-array_sz,array_sz);
+              if (litidx>=(unsigned)array_sz) {
+                cell addr;
+                if (litarray_find(&addr,litidx-array_sz,array_sz)) {
+                  /* #MERGE_LITERAL: the address of the earlier literal array is
+                   * now loaded (and the literal queue is reset); the address
+                   * overrules the value already loaded as a side effect of
+                   * hier14(), we rely on the peephole optimizer to remove the
+                   * first load
+                   */
+                  ldconst(addr*pc_cellsize,sPRI);
+                  litidx-=array_sz; /* reset literal queue */
+                } else {
+                  /* this literal array was not seen before, or there is another
+                   * reason that it cannot be merged; but it may be a candidate for
+                   * future merge
+                   */
+                  assert(litidx>=(unsigned)array_sz);
+                  litarray_add(glb_declared,litidx-array_sz,array_sz);
+                } /* if */
               } /* if */
             } else if ((arg[argidx].usage & uWRITTEN)==0) {
               /* this literal array is passed to a function argument that is
@@ -3010,7 +3020,7 @@ static bool constant(value *lval)
     int match,packcount,tag,lasttag=-1;
     cell packitem;
     match=(tok=='{') ? '}' : ']';
-    val=litidx;
+    val=(cell)litidx;
     packitem=0;
     packcount=0;
     do {

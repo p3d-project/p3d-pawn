@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: libpawnc.c 7699 2026-09-25 21:36:04Z thiadmer $
+ *  Version: $Id: libpawnc.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <stdbool.h>
@@ -483,4 +483,5 @@ long long pc_lengthbin(void *handle)
     fseek((FILE*)handle,curpos,SEEK_SET);
     return (long long)tail;
 # endif
+}
 

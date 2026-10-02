@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc6.c 7700 2026-09-28 15:46:30Z thiadmer $
+ *  Version: $Id: sc6.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -331,9 +331,6 @@ static cell do_call(FILE *fbin,const char *params,cell opcode,cell cip)
 {
   char name[sNAMEMAX+1];
   int i;
-  const symbol *sym;
-  ucell p;
-
   for (i=0; !isspace(*params); i++,params++) {
     assert(*params!='\0');
     assert(i<sNAMEMAX);
@@ -341,19 +338,18 @@ static cell do_call(FILE *fbin,const char *params,cell opcode,cell cip)
   } /* for */
   name[i]='\0';
 
+  ucell p=0;
   if (name[0]=='l' && name[1]=='.') {
     /* this is a label, not a function symbol */
     i=(int)hex2ucell(name+2,NULL);
     assert(i>=0 && i<sc_labnum);
-    if (fbin!=NULL) {
-      assert(lbltab!=NULL);
+    if (lbltab!=NULL)
       p=lbltab[i]-cip;          /* make relative address */
-    } /* if */
   } else {
     /* look up the function address; note that the correct file number must
      * already have been set (in order for static globals to be found).
      */
-    sym=findglb(name,sGLOBAL);
+    const symbol *sym=findglb(name,sGLOBAL);
     assert(sym!=NULL);
     assert(sym->ident==iFUNCTN);
     assert(sym->scope==sGLOBAL);
@@ -1118,8 +1114,6 @@ static void append_dbginfo(FILE *fout)
   ucell codeidx,previdx;
   constvalue *constptr;
   char symname[2*sNAMEMAX+16];
-  int16_t id1,id2;
-  ucell address;
 
   /* header with general information */
   memset(&dbghdr, 0, sizeof dbghdr);
@@ -1331,7 +1325,7 @@ static void append_dbginfo(FILE *fout)
   /* tag table */
   for (constptr=tagname_tab.next; constptr!=NULL; constptr=constptr->next) {
     assert(strlen(constptr->name)>0);
-    id1=(int16_t)(constptr->value & TAGMASK);
+    int16_t id1=(int16_t)(constptr->value & TAGMASK);
 #   if BYTE_ORDER==BIG_ENDIAN
       align16(&id1);
 #   endif
@@ -1342,23 +1336,22 @@ static void append_dbginfo(FILE *fout)
   /* automaton table */
   for (constptr=sc_automaton_tab.next; constptr!=NULL; constptr=constptr->next) {
     assert(constptr->index==0 && strlen(constptr->name)==0 || strlen(constptr->name)>0);
-    id1=(int16_t)constptr->index;
-    address=(ucell)constptr->value;
+    int16_t id1=(int16_t)constptr->index;
+    ucell addr=(ucell)constptr->value;
 #   if BYTE_ORDER==BIG_ENDIAN
       align16(&id1);
-      align32(&address);
+      align32(&addr);
 #   endif
     writeerror |= !pc_writebin(fout,&id1,sizeof id1);
-    writeerror |= !pc_writebin(fout,&address,sizeof(uint32_t));
+    writeerror |= !pc_writebin(fout,&addr,sizeof(uint32_t));
     writeerror |= !pc_writebin(fout,constptr->name,(int)strlen(constptr->name)+1);
   } /* for */
 
   /* state table */
   for (constptr=sc_state_tab.next; constptr!=NULL; constptr=constptr->next) {
     assert(strlen(constptr->name)>0);
-    id1=(int16_t)constptr->value;
-    id2=(int16_t)constptr->index;
-    address=(ucell)constptr->value;
+    int16_t id1=(int16_t)constptr->value;
+    int16_t id2=(int16_t)constptr->index;
 #   if BYTE_ORDER==BIG_ENDIAN
       align16(&id1);
       align16(&id2);

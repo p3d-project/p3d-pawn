@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: stategraph.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: stategraph.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -182,7 +182,7 @@ size_t strlcpy(char *dst, const char *src, size_t siz)
 int main(int argc,char *argv[])
 {
   ezxml_t rpt,list,member,transition,automaton;
-  const char *func,*fsaname,*source,*target,*ptr;
+  const char *fsaname,*source,*target,*ptr;
   char targetfsa[100];
   NODE *node;
   FILE *dot;
@@ -218,7 +218,7 @@ int main(int argc,char *argv[])
               "\tgraph [overlap=prism];\n"
               "\tnode [nodesep=2.0];\n");
   for (member=ezxml_child(list,"member"); member!=NULL; member=member->next) {
-    func=ezxml_attr(member,"name");
+    const char *func=ezxml_attr(member,"name");
     if (func==NULL || func[0]!='M' || func[1]!=':')
       continue;                 /* no name attribute, or not a member function */
     func+=2;  /* skip prefix */

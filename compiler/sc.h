@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7702 2026-10-01 15:09:39Z thiadmer $
+ *  Version: $Id: sc.h 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -550,7 +550,7 @@ int pc_error(int number,const char *message,const char *filename,int firstline,i
 void *pc_opensrc(const char *filename); /* reading only */
 void *pc_createsrc(const char *filename);
 void pc_closesrc(void *handle);   /* never delete */
-bool pc_readsrc(void *handle,unsigned char *vuffer,size_t buffer_sz);
+bool pc_readsrc(void *handle,unsigned char *buffer,size_t buffer_sz);
 bool pc_writesrc(void *handle,const unsigned char *buffer);
 long long pc_getpossrc(void *handle);              /* mark the current position */
 bool pc_resetsrc(void *handle,long long position); /* reset to a position marked earlier */
@@ -610,8 +610,8 @@ SC_FUNC void sc_attachdocumentation(symbol *sym,int onlylastblock);
 SC_FUNC void pushstk(stkitem val);
 SC_FUNC stkitem popstk(void);
 SC_FUNC void clearstk(void);
-SC_FUNC int plungequalifiedfile(const char *name);  /* explicit path included */
-SC_FUNC int plungefile(char *name,int try_currentpath,int try_includepaths);   /* search through "include" paths */
+SC_FUNC bool plungequalifiedfile(const char *name);  /* explicit path included */
+SC_FUNC bool plungefile(char *name,int try_currentpath,int try_includepaths);   /* search through "include" paths */
 SC_FUNC char *strdel(char *str,size_t len);
 SC_FUNC char *strins(char *dest,const char *src,size_t srclen);
 SC_FUNC void preprocess(void);
@@ -802,7 +802,7 @@ SC_FUNC stringlist *insert_inputfile(const char *path);
 SC_FUNC const char *get_inputfile(int index);
 SC_FUNC int find_inputfile(const char *path);
 SC_FUNC void delete_inputfiletable(void);
-SC_FUNC bool insert_undefsymbol(const char *string,short filenr,int linenr);
+SC_FUNC bool insert_undefsymbol(const char *symbolname,short filenr,int linenr);
 SC_FUNC const char *get_undefsymbol(int index,short *filenr,int *linenr);
 SC_FUNC void delete_undefsymboltable(void);
 SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short block);
@@ -819,8 +819,8 @@ SC_FUNC void delete_autolisttable(void);
 SC_FUNC valuepair *push_heaplist(long first, long second);
 SC_FUNC bool popfront_heaplist(long *first, long *second);
 SC_FUNC void delete_heaplisttable(void);
-SC_FUNC void litarray_add(cell baseaddr,cell offset,cell size);
-SC_FUNC cell litarray_find(cell offset,cell size);
+SC_FUNC bool litarray_add(cell baseaddr,cell offset,cell size);
+SC_FUNC bool litarray_find(cell *address,cell offset,cell size);
 SC_FUNC void litarray_deleteall(void);
 SC_FUNC stringlist *insert_dbgfile(const char *filename);
 SC_FUNC stringlist *insert_dbgline(int linenr);
@@ -855,8 +855,8 @@ SC_FUNC constvalue *automaton_findid(int id);
 SC_FUNC constvalue *state_add(const char *name,int fsa_id);
 SC_FUNC int state_top_id(int fsa_id);
 SC_FUNC constvalue *state_find(const char *name,int fsa_id,char *closestmatch);
-SC_FUNC constvalue *state_findid(int id,int fsa_id);
-SC_FUNC void state_buildlist(int **list,int *listsize,int *count,int stateid);
+SC_FUNC constvalue *state_findid(int state_id,int fsa_id);
+SC_FUNC void state_buildlist(int **list,int *listsize,int *count,int state_id);
 SC_FUNC int state_addlist(const int *list,int count,int fsa_id);
 SC_FUNC void state_deletetable(void);
 SC_FUNC int state_getfsa(int listid);
@@ -873,7 +873,7 @@ SC_FUNC void delete_statelisttable(statelist *root);
 SC_VDECL symbol loctab;         /**< local symbol table */
 SC_VDECL symbol glbtab;         /**< global symbol table */
 SC_VDECL cell *litq;            /**< the literal queue */
-SC_VDECL size_t litidx;         /**< index to literal table */
+SC_VDECL unsigned litidx;       /**< index to literal table */
 SC_VDECL unsigned char *srcline;/**< the line read from the input file */
 SC_VDECL const unsigned char *lexptr;/**< points to the current position in "srcline" */
 SC_VDECL constvalue tagname_tab;/**< tagname table */

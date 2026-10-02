@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7699 2026-09-25 21:36:04Z thiadmer $
+ *  Version: $Id: sc7.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -400,19 +400,17 @@ static SEQUENCE *sequences; /**< list of peephole optimzation sequences */
  */
 SC_FUNC int phopt_init(void)
 {
-  int number, i;
-  char str[160];
-
   /* count number of sequences */
-  for (number=0; sequences_cmp[number].find!=NULL; number++)
+  int count;
+  for (count=0; sequences_cmp[count].find!=NULL; count++)
     /* nothing */;
-  number++;             /* include an item for the NULL terminator */
+  count++;             /* include an item for the NULL terminator */
 
-  if ((sequences=(SEQUENCE*)malloc(number * sizeof(SEQUENCE)))==NULL)
+  if ((sequences=(SEQUENCE*)malloc(count * sizeof(SEQUENCE)))==NULL)
     return false;
 
   /* pre-initialize all to NULL (in case of failure) */
-  for (i=0; i<number; i++) {
+  for (int i=0; i<count; i++) {
     sequences[i].find=NULL;
     sequences[i].replace=NULL;
     sequences[i].opc=0;
@@ -420,7 +418,8 @@ SC_FUNC int phopt_init(void)
   } /* for */
 
   /* expand all strings */
-  for (i=0; i<number-1; i++) {
+  for (int i=0; i<count-1; i++) {
+    char str[160];
     unsigned len = strexpand(str,(unsigned char*)sequences_cmp[i].find,sizeof str,SCPACK_TABLE);
     assert(len<=sizeof str);
     assert(len==strlen(str)+1);

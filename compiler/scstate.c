@@ -39,7 +39,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scstate.c 7692 2026-09-09 10:40:34Z thiadmer $
+ *  Version: $Id: scstate.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -199,7 +199,7 @@ SC_FUNC constvalue *state_findid(int state_id,int fsa_id)
   return ptr;
 }
 
-SC_FUNC void state_buildlist(int **list,int *listsize,int *count,int stateid)
+SC_FUNC void state_buildlist(int **list,int *listsize,int *count,int state_id)
 {
   int idx;
 
@@ -221,11 +221,11 @@ SC_FUNC void state_buildlist(int **list,int *listsize,int *count,int stateid)
   } /* if */
 
   /* find the insertion point (the list has to stay sorted) */
-  for (idx=0; idx<*count && (*list)[idx]<stateid; idx++)
+  for (idx=0; idx<*count && (*list)[idx]<state_id; idx++)
     /* nothing */;
   if (idx<*count)
     memmove(&(*list)[idx+1],&(*list)[idx],(int)((*count-idx+1)*sizeof(int)));
-  (*list)[idx]=stateid;
+  (*list)[idx]=state_id;
   *count+=1;
 }
 
@@ -263,14 +263,14 @@ static statepool *state_getlist_ptr(int listid)
   return ptr;
 }
 
-SC_FUNC int state_addlist(const int *list,int count,int fsa)
+SC_FUNC int state_addlist(const int *list,int count,int fsa_id)
 {
   statepool *ptr;
   int last;
 
   assert(list!=NULL);
   assert(count>0);
-  ptr=state_findlist(list,count,fsa,&last);
+  ptr=state_findlist(list,count,fsa_id,&last);
   if (ptr==NULL) {
     if ((ptr=(statepool*)malloc(sizeof(statepool)))==NULL)
       error(103);       /* insufficient memory */
@@ -280,7 +280,7 @@ SC_FUNC int state_addlist(const int *list,int count,int fsa)
     } /* if */
     memcpy(ptr->states,list,count*sizeof(int));
     ptr->numstates=count;
-    ptr->fsa=fsa;
+    ptr->fsa=fsa_id;
     ptr->listid=last+1;
     ptr->next=statepool_tab.next;
     statepool_tab.next=ptr;

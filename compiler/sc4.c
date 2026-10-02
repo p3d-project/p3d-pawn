@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7702 2026-10-01 15:09:39Z thiadmer $
+ *  Version: $Id: sc4.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -1011,7 +1011,7 @@ SC_FUNC void jumplabel(int number)
  */
 SC_FUNC void defstorage(void)
 {
-  assert(curseg=sIN_DSEG);
+  assert(curseg==sIN_DSEG);
   stgwrite("dump ");
 }
 

@@ -21,7 +21,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sclist.c 7696 2026-09-20 14:46:13Z thiadmer $
+ *  Version: $Id: sclist.c 7703 2026-10-02 06:08:41Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -688,9 +688,13 @@ static arraymerge litarray_list={0};
  *  \param offset       The index in the literal queue where the array starts.
  *  \param size         The size (in cells) of the array.
  */
-SC_FUNC void litarray_add(cell baseaddr,cell offset,cell size)
+SC_FUNC bool litarray_add(cell baseaddr,cell offset,cell size)
 {
-  arraymerge *item=(arraymerge*)malloc(sizeof(arraymerge));
+  assert(baseaddr>=0);
+  assert(offset>=0);
+  if (size==0)
+    return false;
+  arraymerge *item=(arraymerge *)malloc(sizeof(arraymerge));
   if (item!=NULL) {
     assert(size>0);
     item->data=(cell*)malloc(size*sizeof(cell));
@@ -704,35 +708,45 @@ SC_FUNC void litarray_add(cell baseaddr,cell offset,cell size)
       litarray_list.next=item;
     } else {
       free(item);
-    }
-  }
+      item=NULL;
+    } /* if */
+  } /* if */
+  return (item!=NULL);
 }
 
 /** litarray_find() looks up an array in the literal queue from data saved
  *  earlier.
  *
+ *  \param address      [out] The address at which a copy of the data in the
+ *                      literal queue (in the range given by `offset` and
+ *                      `size`) was found (if any). This is a cell offset and
+ *                      must be multiplied with the cell size to get an address
+ *                      (relative to DATA).
  *  \param offset       The index in the literal queue where the array starts.
  *                      This is a cell offset (so must be multiplied with the
  *                      cell size to get a byte offset in the literal queue).
  *  \param size         The size (in cells) of the array.
  *
- *  \return The offset of the matching (earlier) literal array in the DATA
- *          section. This is a cell offset and must be multiplied with the cell
- *          size to get an address (relative to DATA).
+ *  \return `true` on success, `false` when no saved record that matches the
+ *          literal queue is found.
  */
-SC_FUNC cell litarray_find(cell offset,cell size)
+SC_FUNC bool litarray_find(cell *address,cell offset,cell size)
 {
+  if (offset<0 || size<=0)
+    return false;
   arraymerge *item;
   for (item=litarray_list.next; item!=NULL; item=item->next) {
     if (item->size==size) {
       cell idx;
       for (idx=0; idx<size && item->data[idx]==litq[offset+idx]; idx++)
         /* nothing */;
-      if (idx==size)
-        return item->addr;
-    }
-  }
-  return -1;
+      if (idx==size) {
+        *address=item->addr;
+        return true;
+      } /* if */
+    } /* if */
+  } /* for */
+  return false;
 }
 
 SC_FUNC void litarray_deleteall(void)

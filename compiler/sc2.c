@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: sc2.c 7706 2026-10-03 08:17:49Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -1122,7 +1122,7 @@ static int command(void)
     assert(iflevel>=0);
     if (iflevel==0) {
       error(26);                /* no matching #if */
-      errorset(sRESET,0);
+      errorset(sRESET);
     } else {
       /* check for earlier #else */
       if ((ifstack[iflevel-1] & HANDLED_ELSE)==HANDLED_ELSE) {
@@ -1130,7 +1130,7 @@ static int command(void)
           error(61);            /* #elseif directive may not follow an #else */
         else
           error(60);            /* multiple #else directives between #if ... #endif */
-        errorset(sRESET,0);
+        errorset(sRESET);
       } else {
         assert(iflevel>0);
         /* if there has been a "parse mode" on this level, set "skip mode",
@@ -1177,7 +1177,7 @@ static int command(void)
     ret=CMD_IF;
     if (iflevel==0){
       error(26);                    /* no matching "#if" */
-      errorset(sRESET,0);
+      errorset(sRESET);
     } else {
       iflevel--;
       if (iflevel<skiplevel)
@@ -1361,7 +1361,10 @@ static int command(void)
             for (i=0; i<(int)countof(name) && alphanum(*lexptr); i++,lexptr++)
               name[i]=*lexptr;
             name[i]='\0';
-            add_unusedvar(name,fcurrent,pc_curline,pc_blocklevel);
+            /* if a variable already exists, copy its scope */
+            const symbol *sym= (pc_blocklevel==0) ? findglb(name,sGLOBAL) : findloc(name);
+            short blocklevel= (sym!=NULL) ? sym->block : pc_blocklevel;
+            add_unusedvar(name,fcurrent,pc_curline,blocklevel);
             /* see if a comma follows the name */
             while (*lexptr<=' ' && *lexptr!='\0')
               lexptr++;
@@ -1958,7 +1961,7 @@ SC_FUNC void preprocess(void)
     lexptr=srcline;       /* set "line pointer" to start of the parsing buffer */
     iscommand=command();
     if (iscommand!=CMD_NONE)
-      errorset(sRESET,0); /* reset error flag ("panic mode") on empty line or directive */
+      errorset(sRESET);   /* reset error flag ("panic mode") on empty line or directive */
 #   if !defined NO_DEFINE
       if (iscommand==CMD_NONE) {
         assert(lexptr!=term_expr);
@@ -2238,7 +2241,7 @@ SC_FUNC int lex(cell *lexvalue,char **lexstr)
     if (*lexptr==**tokptr && match(*tokptr,true)) {
       cached_tok=i;
       strcpy(cached_str,*tokptr);
-      errorset(sRESET,0); /* reset error flag (clear the "panic mode")*/
+      errorset(sRESET); /* reset error flag (clear the "panic mode")*/
       if (pc_docexpr)   /* optionally concatenate to documentation string */
         insert_autolist(*tokptr);
       return cached_tok;
@@ -2420,7 +2423,7 @@ SC_FUNC int lex(cell *lexvalue,char **lexstr)
   } else if (*lexptr==';') {      /* semicolon resets "error" flag */
     cached_tok=';';
     lexptr+=1;
-    errorset(sRESET,0);   /* reset error flag (clear the "panic mode")*/
+    errorset(sRESET);     /* reset error flag (clear the "panic mode")*/
   } else {
     cached_tok=*lexptr;   /* if every match fails, return the character */
     lexptr+=1;            /* advance the "lexptr" pointer */
@@ -3198,14 +3201,24 @@ SC_FUNC void markusage(symbol *sym,short usage)
 
 /** findglb() returns a pointer to the global symbol (if found) or `NULL` (if
  *  not found).
+ *
+ *  \param name         [in] The variable/function name.
+ *  \param filter       If set to `sGLOBAL`, it looks for a variable/function
+ *                      with no states attached; if set to `sSTATEVAR` it tries
+ *                      to first find a variable/function with a state that
+ *                      matches the current state & automaton (and if that
+ *                      fails, it drops back to `sGLOBAL`).
+ *
+ *  \return The matching symbol, or `NULL` if none found.
  */
 SC_FUNC symbol *findglb(const char *name,int filter)
 {
-  symbol *sym=NULL;
+  assert(filter==sGLOBAL || filter==sSTATEVAR);
 
   /* first check for a symbol whose state-list matches the current automaton
    * and has overlapping state
    */
+  symbol *sym=NULL;
   if (filter>sGLOBAL && sc_curstates>0)
      sym=find_symbol(&glbtab,name,fcurrent,sc_curstates);
 

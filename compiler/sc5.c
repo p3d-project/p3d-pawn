@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7705 2026-10-02 20:10:15Z thiadmer $
+ *  Version: $Id: sc5.c 7706 2026-10-03 08:17:49Z thiadmer $
  */
 #include <assert.h>
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -76,35 +76,41 @@ static int errcount;    /**< number of errors */
 static int warncount;   /**< number of warnings */
 static bool errhidden;  /**< are there more errors than have been displayed */
 
-/*  error
+/** error_v() outputs an error message (internal 'work horse' function).
  *
- *  Outputs an error message (note: msg is passed optionally).
- *  If an error is found, the variable "errflag" is set and subsequent
- *  errors are ignored until lex() finds a semicolon or a keyword
- *  (lex() resets "errflag" in that case).
+ *  \param number       The error/warning number. The upper half of the value
+ *                      may contain a 'notice' number to show extra information.
+ *  \param argptr       A pointer to parameters of the error/warning message.
  *
- *  Global references: inpfname   (read-only)
- *                     pc_curline (read-only)
- *                     fcurrent   (read-only)
- *                     errflag    (modified)
+ *  \return This function always returns 0.
+ *
+ *  \note If an error is found, the variable "errflag" is set and subsequent
+ *        errors are ignored until lex() finds a semicolon or a keyword (lex()
+ *        resets "errflag" in that case).
+ *
+ *  \note On a fatal error, the function aborts the program, with a `longjmp` to
+ *        the clean-up code.
+ *
+ *  \note Global references: inpfname   (read-only)
+ *                           pc_curline (read-only)
+ *                           fcurrent   (read-only)
+ *                           sc_status  (read-only)
+ *                           errflag    (modified)
+ *                           errline    (modified)
+ *                           errfile    (modified)]
  */
-SC_FUNC int error(unsigned long number,...)
+static int error_v(unsigned long number,va_list argptr)
 {
 static const char *prefix[3]={ "error", "fatal error", "warning" };
 static int lastline,errcount_on_line;
 static short lastfile;
-  const char *msg,*pre;
-  const char *filename;
-  va_list argptr;
-  char string[256];
-  unsigned notice;
 
   /* split the error field between the real error/warning number and an optional
    * "notice" number
    */
-  notice=number >> (sizeof(long)*4);
+  unsigned notice=number >> (sizeof(long)*4);
   number&=((unsigned long)~0) >> (sizeof(long)*4);
-  assert(number>0 && number<300);
+  assert(number>0 && number<WARN_BASE+WARN_COUNT);
 
   /* errflag is reset on each semicolon.
    * In a two-pass compiler, an error should not be reported twice. Therefore
@@ -121,6 +127,7 @@ static short lastfile;
     return 0;
   } /* if */
 
+  const char *msg,*pre;
   if (number<FATAL_BASE){
     assert(number>0 && number<countof(errmsg));
     msg=errmsg[number];
@@ -143,6 +150,7 @@ static short lastfile;
     warncount++;
   } /* if */
 
+  char string[256];
   strexpand(string,(const unsigned char*)msg,sizeof string-2,SCPACK_TABLE);
   if (notice>0) {
     int len;
@@ -159,6 +167,7 @@ static short lastfile;
     errline=pc_curline;         /* normal error, errstart may (or may not) have been marked, endpoint is current line */
   if (errstart>errline)
     errstart=errline;           /* special case: error found at end of included file */
+  const char *filename;
   if (errfile>=0) {
     filename=get_inputfile(errfile);/* forced filename */
   } else {
@@ -178,7 +187,6 @@ static short lastfile;
   if ((errstart<0 && lastline!=pc_curline) || lastline<errstart || lastline>pc_curline || fcurrent!=lastfile)
     errcount_on_line=0;
   if (errcount_on_line<3 || !on_terminal) {
-    va_start(argptr,number);
     if (on_terminal) {
       int start= (errstart==errline) ? -1 : errstart;
       if (pc_error((int)number,string,filename,start,errline,argptr)) {
@@ -199,7 +207,6 @@ static short lastfile;
         fclose(fp);
       } /* if */
     } /* if */
-    va_end(argptr);
   } else if (number<WARN_BASE) {
     errhidden=true;
   } /* if */
@@ -207,11 +214,8 @@ static short lastfile;
     errcount_on_line++; /* don't count warnings, unless an error was also flagged */
 
   if (number>=FATAL_BASE && number<WARN_BASE || errcount>25){
-    if (on_terminal) {
-      va_start(argptr,number);
+    if (on_terminal)
       pc_error(0,"\nCompilation aborted.",NULL,0,0,argptr);
-      va_end(argptr);
-    } /* if */
     if (outf!=NULL) {
       pc_closeasm(outf,true);
       outf=NULL;
@@ -219,12 +223,68 @@ static short lastfile;
     longjmp(errbuf,2);          /* fatal error, quit */
   } /* if */
 
-  errline=-1;
+  errline=-1;                   /* reset forced file/line position */
   errfile=-1;
   lastline=pc_curline;
   lastfile=fcurrent;
 
   return 0;
+}
+
+/** error() - wrapper function to output an error/warning message for the
+ *  current file/line postion.
+ *
+ *  \param number       The error/warning number. The upper half of the value
+ *                      may contain a 'notice' number to show extra information.
+ *  \param ...          Variable argument list for parameters of the
+ *                      error/warning message.
+ *
+ *  \return This function always returns 0.
+ *
+ *  \note See `error_onpos()` for a variant that gives an error message for a
+ *        specific location (other than the 'current' file/line).
+ *
+ *  \note See `error_v()` for details.
+ */
+SC_FUNC int error(unsigned long number,...)
+{
+  va_list argptr;
+  va_start(argptr,number);
+  int result=error_v(number,argptr);
+  va_end(argptr);
+  return result;
+}
+
+/** error_onpos() - wrapper function to output an error/warning message for the
+ *  current file/line postion.
+ *
+ *  \param filenr       The file number for the message; -1 means the current
+ *                      file.
+ *  \param linenr       The line number for the message; -1 means the current
+ *                      line number.
+ *  \param number       The error/warning number. The upper half of the value
+ *                      may contain a 'notice' number to show extra information.
+ *  \param ...          Variable argument list for parameters of the
+ *                      error/warning message.
+ *
+ *  \return This function always returns 0.
+ *
+ *  \note See `error()` for a variant that gives an error message for the
+ *        'current' file/line.
+ *
+ *  \note See `error_v()` for details.
+ */
+SC_FUNC int error_onpos(short filenr,int linenr,unsigned long number,...)
+{
+  errfile=filenr;
+  errline=linenr;
+  va_list argptr;
+  va_start(argptr,number);
+  int result=error_v(number,argptr);
+  va_end(argptr);
+  errfile=-1;           /* reset forced file/line position */
+  errline=-1;
+  return result;
 }
 
 SC_FUNC int error_symbolname(unsigned number,const char *name)
@@ -294,7 +354,7 @@ SC_FUNC int errorcount(int *errors,int *warnings)
   return 0;                     /* all is fine -> 0 */
 }
 
-SC_FUNC void errorset(int code,int line)
+SC_FUNC void errorset(int code)
 {
   switch (code) {
   case sRESET:
@@ -310,13 +370,6 @@ SC_FUNC void errorset(int code,int line)
     errstart=-1;        /* forget start line number */
     errline=-1;
     errfile=-1;
-    break;
-  case sSETLINE:
-    errstart=-1;        /* force error line number, forget start line */
-    errline=line;
-    break;
-  case sSETFILE:
-    errfile=line;
     break;
   case sRESETERRCOUNT:
     errcount=0;

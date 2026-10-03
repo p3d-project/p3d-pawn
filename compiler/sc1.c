@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7705 2026-10-02 20:10:15Z thiadmer $
+ *  Version: $Id: sc1.c 7706 2026-10-03 08:17:49Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -89,8 +89,8 @@
 #endif
 
 #include "svnrev.h"
-#define VERSION_STR "4.1." SVNREV_STR
-#define VERSION_INT 0x0401
+#define VERSION_STR "4.2." SVNREV_STR
+#define VERSION_INT 0x0402
 
 
 static void resetglobals(void);
@@ -662,8 +662,8 @@ int pc_compile(int argc, char *argv[])
   binf=NULL;
   tmpname=NULL;
   initglobals();
-  errorset(sRESET,0);
-  errorset(sEXPRRELEASE,0);
+  errorset(sRESET);
+  errorset(sEXPRRELEASE);
   if (!lexinit(false))
     error(103);         /* insufficient memory */
 
@@ -807,7 +807,7 @@ int pc_compile(int argc, char *argv[])
     litarray_deleteall();
     resetglobals();
     pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
-    errorset(sRESET,0);
+    errorset(sRESET);
     /* reset the source file */
     inpf=inpf_org;
     freading=true;
@@ -890,7 +890,7 @@ int pc_compile(int argc, char *argv[])
     litarray_deleteall();
     resetglobals();
     pc_tabsize=(pc_matchedtabsize<=1) ? lcl_tabsize : pc_matchedtabsize;
-    errorset(sRESET,0);
+    errorset(sRESET);
     /* reset the source file */
     inpf=inpf_org;
     freading=true;
@@ -1103,7 +1103,7 @@ cleanup:
 DLLEXPORT
 int pc_addconstant(const char *name,cell value,int tag)
 {
-  errorset(sFORCESET,0);        /* make sure error engine is silenced */
+  errorset(sFORCESET);  /* make sure error engine is silenced */
   sc_status=statIDLE;
   add_constant(name,value,sGLOBAL,tag);
   return 1;
@@ -1181,14 +1181,14 @@ static void resetglobals(void)
   sc_curstates=0;
   pc_memflags=0;
   pc_enumsequence=0;
-  errorset(sEXPRRELEASE,0);
+  errorset(sEXPRRELEASE);
   curlibrary=NULL;      /* current library name, selected by '#pragma library' */
 }
 
 static void initglobals(void)
 {
   resetglobals();
-  errorset(sRESETERRCOUNT,0);
+  errorset(sRESETERRCOUNT);
 
   pc_asmfile=false;     /* do not create .ASM file */
   pc_listing=false;     /* do not create .LST file */
@@ -2539,7 +2539,7 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
       int oldstatus=sc_status;
       if (sc_status==statSKIP)
         sc_status=statWRITE;
-      errorset(sRESET,0); /* this is an important error; it should not be gobbled */
+      errorset(sRESET); /* this is an important error; it should not be gobbled */
       error(10);        /* invalid declaration */
       litidx=0;
       sc_status=oldstatus;
@@ -3115,7 +3115,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
   totalsize=0;
   if (!needtoken('[')) {
     if (numdim>1 && lexpeek()!='{') {
-      errorset(sRESET,0);   /* force additional error, because this is the likely cause */
+      errorset(sRESET);     /* force additional error, because this is the likely cause */
       error(52);            /* array is not fully initialized */
     }
     startlit=0;             /* because literal pool is cleared on a mismatch in needtoken() */
@@ -3541,8 +3541,7 @@ static void decl_const(int scope)
       first=0;
       defaultval=val;
       if (exprtag!=0 && !matchtag(tag,exprtag,false)) {
-        errorset(sSETLINE,symbolline);  /* temporarily reset the line number to where the symbol was defined */
-        error(213);                     /* tagname mismatch */
+        error_onpos(-1,symbolline,213); /* tagname mismatch */
       } /* if */
       /* add_constant() checks for duplicate definitions */
       sym=add_constant(constname,val,scope,tag);
@@ -4718,14 +4717,14 @@ static int declargs(symbol *sym,int chkshadow)
         assert(arglist[altidx].ident!=iVARARGS);
         if (arglist[altidx].ident!=iREFARRAY && (arglist[idx].hasdefault & uSIZEOF)!=0) {
           assert(arglist[altidx].ident==iVARIABLE || arglist[altidx].ident==iREFERENCE);
-          error(223,ptr);               /* redundant sizeof */
+          error(223,ptr);       /* redundant sizeof */
         } /* if */
       } /* if */
     } /* if */
   } /* for */
 
   sym->usage|=uPROTOTYPED;
-  errorset(sRESET,0);           /* reset error flag (clear the "panic mode")*/
+  errorset(sRESET);             /* reset error flag (clear the "panic mode")*/
   return argcnt;
 }
 
@@ -5529,9 +5528,7 @@ static long max_stacksize_recurse(symbol **sourcesym,symbol *sym,long basesize,i
           if ((sym->flags & flgRECURSIVE)==0) {
             char symname[2*sNAMEMAX+16];  /* allow space for user defined operators */
             funcdisplayname(symname,countof(symname),sym->name);
-            errorset(sSETFILE,sym->fnumber);
-            errorset(sSETLINE,sym->lnumber);
-            error(237,symname);         /* recursive function */
+            error_onpos(sym->fnumber,sym->lnumber,237,symname); /* recursive function */
           } /* if */
           *recursion=true;
           goto break_recursion;         /* recursion was detected, quit loop */
@@ -5566,8 +5563,8 @@ static long max_stacksize_recurse(symbol **sourcesym,symbol *sym,long basesize,i
       *pubfuncparams=count;
   } /* if */
 
-  errorset(sEXPRRELEASE,0); /* clear error data */
-  errorset(sRESET,0);
+  errorset(sEXPRRELEASE); /* clear error data */
+  errorset(sRESET);
 
   return maxsize+basesize;
 }
@@ -5734,24 +5731,18 @@ static bool testsymbols(const symbol *root,short level,bool testfunclvl,bool tes
     switch (sym->ident) {
     case iLABEL:
       if (testfunclvl) {
-        if ((sym->usage & uDEFINE)==0) {
+        if ((sym->usage & uDEFINE)==0)
           error_suggest(19,sym->name,iLABEL);  /* not a label: ... */
-        } else if ((sym->usage & uREAD)==0 && !marked_unused) {
-          errorset(sSETFILE,sym->fnumber);
-          errorset(sSETLINE,sym->lnumber);
-          error(203,sym->name); /* symbol isn't used: ... */
-        } /* if */
+        else if ((sym->usage & uREAD)==0 && !marked_unused)
+          error_onpos(sym->fnumber,sym->lnumber,203,sym->name); /* symbol isn't used: ... */
       } /* if */
       break;
     case iFUNCTN:
       if ((sym->usage & (uDEFINE | uREAD | uNATIVE | uSTOCK | uPUBLIC))==uDEFINE && !marked_unused) {
         char symname[2*sNAMEMAX+16];
         funcdisplayname(symname,countof(symname),sym->name);
-        if (strlen(symname)>0) {
-          errorset(sSETFILE,sym->fnumber);
-          errorset(sSETLINE,sym->lnumber);
-          error(203,symname);   /* symbol isn't used ... (and not public/native/stock) */
-        } /* if */
+        if (strlen(symname)>0)
+          error_onpos(sym->fnumber,sym->lnumber,203,symname);   /* symbol isn't used ... (and not public/native/stock) */
       } /* if */
       if (((sym->usage & uPUBLIC)!=0 || (sym->flags & flgENTRYPOINT)!=0) && (sym->usage & uDEFINE)!=0)
         entry=true;             /* there is an entry point */
@@ -5761,26 +5752,18 @@ static bool testsymbols(const symbol *root,short level,bool testfunclvl,bool tes
         insert_dbgsymbol(sym);
       break;
     case iCONSTEXPR:
-      if (testconst && (sym->usage & uREAD)==0 && !marked_unused) {
-        errorset(sSETFILE,sym->fnumber);
-        errorset(sSETLINE,sym->lnumber);
-        error(203,sym->name);   /* symbol isn't used: ... */
-      } /* if */
+      if (testconst && (sym->usage & uREAD)==0 && !marked_unused)
+        error_onpos(sym->fnumber,sym->lnumber,203,sym->name);   /* symbol isn't used: ... */
       break;
     default:
       /* a variable */
       if (sym->parent!=NULL)
         break;                  /* ignore sub-symbols of a hierarchical data type */
       if (!marked_unused) {
-        if ((sym->usage & (uWRITTEN|uREAD|uSTOCK))==0) {
-          errorset(sSETFILE,sym->fnumber);
-          errorset(sSETLINE,sym->lnumber);
-          error(203,sym->name,sym->lnumber);  /* symbol isn't used (and not stock) */
-        } else if ((sym->usage & (uREAD|uSTOCK|uPUBLIC))==0 && (sym->ident==iVARIABLE || sym->ident==iARRAY)) {
-          errorset(sSETFILE,sym->fnumber);
-          errorset(sSETLINE,sym->x.lnumber_write);
-          error(204,sym->name);   /* value assigned to symbol is never used */
-        } /* if */
+        if ((sym->usage & (uWRITTEN|uREAD|uSTOCK))==0)
+          error_onpos(sym->fnumber,sym->lnumber,203,sym->name,sym->lnumber);  /* symbol isn't used (and not stock) */
+        else if ((sym->usage & (uREAD|uSTOCK|uPUBLIC))==0 && (sym->ident==iVARIABLE || sym->ident==iARRAY))
+          error_onpos(sym->fnumber,sym->lnumber,204,sym->name);   /* value assigned to symbol is never used */
       } /* if */
       if (argptr!=NULL && sym->ident==iREFARRAY && (sym->usage & (uWRITTEN|uPUBLIC|uCONST))==0) {
         /* only function arguments can have iREFARRAY type, when the symbol is
@@ -5791,11 +5774,8 @@ static bool testsymbols(const symbol *root,short level,bool testfunclvl,bool tes
          */
         assert(curfunc!=NULL);  /* must be inside a function to have scope>0 */
         assert((sym->flags & flgARGUMENT)!=0 && sym->block==1);
-        if (argptr->hasdefault!=0) {
-          errorset(sSETFILE,sym->fnumber);
-          errorset(sSETLINE,sym->lnumber);
-          error(214,sym->name);   /* make array argument "const" */
-        } /* if */
+        if (argptr->hasdefault!=0)
+          error_onpos(sym->fnumber,sym->lnumber,214,sym->name);   /* make array argument "const" */
       } /* if */
       /* also mark the variable (local or global) to the debug information */
       if ((sym->usage & (uWRITTEN|uREAD))!=0)
@@ -5818,17 +5798,14 @@ static bool testsymbols(const symbol *root,short level,bool testfunclvl,bool tes
     int linenr;
     bool handled;
     for (int idx=0; (name=get_unusedvar(idx,&filenr,&linenr,&scope,&handled)); idx++) {
-      if (!handled && scope>=level) {
-        errorset(sSETFILE,filenr);
-        errorset(sSETLINE,linenr);
-        error(17,name);   /* undefined symbol */
-      } /* if */
+      if (!handled && scope>=level)
+        error_onpos(filenr,linenr,17,name);   /* undefined symbol */
     } /* for */
     delete_unusedvartable(level);
   } /* if */
 
-  errorset(sEXPRRELEASE,0); /* clear error data */
-  errorset(sRESET,0);
+  errorset(sEXPRRELEASE); /* clear error data */
+  errorset(sRESET);
   return entry;
 }
 
@@ -5862,16 +5839,14 @@ static int test_skippedundef(void)
          switch to "write" state just for the warning */
       assert(sc_status==statBROWSE);
       sc_status=statWRITE;
-      errorset(sSETFILE,filenr);
-      errorset(sSETLINE,linenr);
-      error(208,symname);
+      error_onpos(filenr,linenr,208,symname);
       sc_status=statBROWSE;
       count++;  /* symbol that was undefined when tested, became defined */
     }
   }
 
-  errorset(sEXPRRELEASE,0); /* clear error data */
-  errorset(sRESET,0);
+  errorset(sEXPRRELEASE); /* clear error data */
+  errorset(sRESET);
   return count;
 }
 
@@ -6133,7 +6108,7 @@ static void statement(int *lastindent,bool allow_decl)
     error(36);                  /* empty statement */
     return;
   } /* if */
-  errorset(sRESET,0);
+  errorset(sRESET);
 
   cell val;
   char *st;
@@ -6333,7 +6308,7 @@ static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
     assert(stgidx==0);
   } /* if */
   index=stgidx;
-  errorset(sEXPRMARK,0);
+  errorset(sEXPRMARK);
   do {
     /* on second round through, mark the end of the previous expression */
     if (index!=stgidx)
@@ -6353,7 +6328,7 @@ static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
   } while (comma && matchtoken(',')); /* more? */
   if (mark_endexpr)
     markexpr(sEXPR,NULL,0);     /* optionally, mark the end of the expression */
-  errorset(sEXPRRELEASE,0);
+  errorset(sEXPRRELEASE);
   if (localstaging) {
     stgout(index);
     stgset(false);              /* stop staging */
@@ -6379,7 +6354,7 @@ SC_FUNC bool constexpression(cell *val,int *tag,symbol **symptr)
   unsigned index;
   cell cidx;
   stgget(&index,&cidx); /* mark position in code generator */
-  errorset(sEXPRMARK,0);
+  errorset(sEXPRMARK);
   int ident=expression(val,tag,symptr,NULL,false,false);
   stgdel(index,cidx);   /* scratch generated code */
   stgset(false);        /* stop stage-buffering */
@@ -6393,7 +6368,7 @@ SC_FUNC bool constexpression(cell *val,int *tag,symbol **symptr)
     if (symptr!=NULL)
       *symptr=NULL;
   } /* if */
-  errorset(sEXPRRELEASE,0);
+  errorset(sEXPRRELEASE);
   return (ident==iCONSTEXPR);
 }
 

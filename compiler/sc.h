@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7704 2026-10-02 16:58:19Z thiadmer $
+ *  Version: $Id: sc.h 7706 2026-10-03 08:17:49Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -476,9 +476,7 @@ typedef struct s_arraymerge {
 #define sFORCESET       1       /**< force error flag on */
 #define sEXPRMARK       2       /**< mark start of expression */
 #define sEXPRRELEASE    3       /**< mark end of expression */
-#define sSETLINE        4       /**< set line number for the error */
-#define sSETFILE        5       /**< set file number for the error */
-#define sRESETERRCOUNT  6       /**< clear error and warning counts */
+#define sRESETERRCOUNT  4       /**< clear error and warning counts */
 
 enum {
   sOPTIMIZE_NONE,               /**< no optimization */
@@ -753,11 +751,12 @@ SC_FUNC void outval(cell val,int fullcell,int newline);
 
 /* function prototypes in SC5.C */
 SC_FUNC int error(unsigned long number,...);
+SC_FUNC int error_onpos(short filenr,int linrnr,unsigned long number,...);
 SC_FUNC int error_symbolname(unsigned number,const char *name);
 SC_FUNC int error_suggest(unsigned number,const char *name,int ident);
 SC_FUNC int error_suggest_list(unsigned number,const char *name,constvalue *list);
 SC_FUNC int errorcount(int *errors,int *warnings);
-SC_FUNC void errorset(int code,int line);
+SC_FUNC void errorset(int code);
 SC_FUNC void pushwarnings(void);
 SC_FUNC void popwarnings(void);
 SC_FUNC void clear_warningstack(void);

@@ -237,8 +237,15 @@ bool pc_readsrc(void *handle,unsigned char *buffer,size_t buffer_sz)
   size_t count=0;
   int c;
   while (count<buffer_sz-1 && (c=fgetc((FILE*)handle))>=0) {
-    if (c=='\n' && count>0 && buffer[count-1]=='\r')
-      count--;          /* let '\n' overwrite the '\r' */
+    if (c=='\r') {
+      /* a line ends in "\r\n" (DOS/Windows) or in a lone "\r" (classic
+       * Macintosh), as well as in "\n"; store it as "\n" in all cases
+       */
+      int next=fgetc((FILE*)handle);
+      if (next>=0 && next!='\n')
+        ungetc(next,(FILE*)handle);
+      c='\n';
+    } /* if */
     buffer[count++]=c;
     if (c=='\n')
       break;

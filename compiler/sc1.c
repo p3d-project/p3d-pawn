@@ -343,8 +343,15 @@ bool pc_readsrc(void *handle,unsigned char *buffer,size_t buffer_sz)
   size_t count=0;
   int c;
   while (count<buffer_sz-1 && (c=fgetc((FILE*)handle))>=0) {
-    if (c=='\n' && count>0 && buffer[count-1]=='\r')
-      count--;          /* let '\n' overwrite the '\r' */
+    if (c=='\r') {
+      /* a line ends in "\r\n" (DOS/Windows) or in a lone "\r" (classic
+       * Macintosh), as well as in "\n"; store it as "\n" in all cases
+       */
+      int next=fgetc((FILE*)handle);
+      if (next>=0 && next!='\n')
+        ungetc(next,(FILE*)handle);
+      c='\n';
+    } /* if */
     buffer[count++]=c;
     if (c=='\n')
       break;
@@ -724,19 +731,17 @@ int pc_compile(int argc, char *argv[])
 #   elif defined __MSDOS__ || defined _Windows
       tmpname=strdup(tempnam(NULL,"pawn"));
 #   elif defined __LINUX__ || defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__ || defined __APPLE__
-      char mask[]="pawn.XXXXXX";
-      int tmpfd=mkstemp(mask);
-      char procname[64];
-      snprintf(procname,countof(procname),"/proc/self/fd/%d",tmpfd);
-      char *linkbuf=alloca(PATH_MAX);  /* allocate maximum size buffer, it is temporary */
-      int linklen=readlink(procname,linkbuf,PATH_MAX);
+      /* create the file in the directory for temporary files, as tempnam() did */
+      const char *tmpdir=getenv("TMPDIR");
+      if (tmpdir==NULL || *tmpdir=='\0')
+        tmpdir=P_tmpdir;
+      char mask[_MAX_PATH];
+      snprintf(mask,countof(mask),"%s/pawn.XXXXXX",tmpdir);
+      int tmpfd=mkstemp(mask);  /* replaces the X's in "mask" by the name of the file it creates */
+      if (tmpfd<0)
+        error(301,mask);        /* cannot write to file */
       close(tmpfd);
-      if (linklen>0 && linklen<PATH_MAX) {
-        linkbuf[linklen]='\0';  /* readlink() does not NUL-terminate its output, and may return -1 */
-        tmpname=strdup(linkbuf);
-      } else {
-        error(313,"multiple sources on the command line");  /* unsupported feature */
-      }
+      tmpname=strdup(mask);
 #   else
       error(313,"multiple sources on the command line");  /* unsupported feature */
 #   endif
@@ -821,6 +826,10 @@ int pc_compile(int argc, char *argv[])
     freading=true;
     pc_resetsrc(inpf,inpfmark); /* reset file position */
     pc_curline=skipinput;       /* reset line number */
+    if (!lexinit(false))        /* clear internal flags of lex(), as for the write pass:
+                                 * an extra browse pass must not start inside an #if
+                                 * left open by the previous one */
+      error(303);               /* insufficient memory */
     sc_status=statBROWSE;       /* resetglobals() resets it to IDLE */
 
     insert_inputfile(inpfname); /* save for the error system and the report mechanism */
@@ -4066,6 +4075,8 @@ static void funcstub(int fnative)
   } else {
     if (tok!=tSYMBOL && freading) {
       error(10);                /* illegal function or declaration */
+      lexclr(true);             /* drop the rest of the line */
+      litidx=0;                 /* drop the literal queue too */
       return;
     } /* if */
     strcpy(symbolname,str);
@@ -6913,6 +6924,10 @@ static void dogoto(void)
   cell lexval;
   if (lex(&lexval,&lexstr)==tSYMBOL) {
     symbol *sym=fetchlab(lexstr);
+    if (sym==NULL) {            /* not a label (error already given) */
+      needtoken(tTERM);
+      return;
+    } /* if */
     jumplabel((int)sym->addr);
     /* for a backward goto, destruct the symbols at the deeper nested levels;
      * for a forward goto, the block nesting level of the label is yet unknown
@@ -6941,7 +6956,8 @@ static void dolabel(void)
   if (find_constval(&tagname_tab,name,-1)!=NULL)
     error(221,name);      /* label name shadows tagname */
   symbol *sym=fetchlab(name);
-  assert(sym!=NULL);
+  if (sym==NULL)
+    return;               /* not a label (error already given) */
   if ((sym->usage & uDEFINE)!=0)
     error(21,name);       /* symbol already defined */
   setlabel((int)sym->addr);
@@ -6973,8 +6989,10 @@ static symbol *fetchlab(const char *name)
 
   sym=findlcl(name);            /* labels are local in scope */
   if (sym) {
-    if (sym->ident!=iLABEL)
+    if (sym->ident!=iLABEL) {
       error_suggest(19,sym->name,iLABEL);  /* not a label: ... */
+      return NULL;              /* the symbol is something else; it must not be used as a label */
+    } /* if */
   } else {
     sym=addsym(name,getlabel(),iLABEL,sLOCAL,pc_blocklevel,0,0);
     assert(sym!=NULL);          /* fatal error 103 must be given on error */

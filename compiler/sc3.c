@@ -1763,7 +1763,7 @@ static int hier2(value *lval)
         lval->constval=array_levelsize(sym,level);
       } /* if */
       if (lval->constval==0 && !inside_preproc())
-        error(224,st);          /* indeterminate array size in "sizeof" expression */
+        error(224,sym->name);   /* indeterminate array size in "sizeof" expression */
     } /* if */
     ldconst(lval->constval,sPRI);
     while (paranthese--)

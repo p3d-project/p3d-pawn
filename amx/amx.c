@@ -1406,6 +1406,7 @@ int AMXAPI amx_Init(AMX *amx,void *program)
 # elif defined __LINUX__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __APPLE__
 
     /* Linux, BSD and OSX already have mprotect() */
+#   include <unistd.h>         /* sysconf(), for the page size below */
 #   define ALIGN(addr) (char *)(((long)addr + sysconf(_SC_PAGESIZE)-1) & ~(sysconf(_SC_PAGESIZE)-1))
 
 # else
@@ -2574,21 +2575,31 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
       if (pri==0)
         ABORT(amx,AMX_ERR_DIVIDE);
       /* use floored division and matching remainder */
-      val=pri;
-#     if defined TRUNC_SDIV
-        pri=alt/val;
-        alt=alt%val;
-#     else
-        /* portable routine for truncated division */
-        pri=IABS(alt)/IABS(val);
-        if ((cell)(val ^ val)<0)
-          pri=-pri;
-        alt-=pri*val;          /* calculate the matching remainder */
-#     endif
+      offs=pri;
+      if (offs==-1) {
+        /* the one division that overflows in two's complement (the smallest cell
+         * divided by -1): it is a negation, and the smallest cell stays itself
+         */
+        pri=(cell)(0-(ucell)alt);
+        alt=0;
+      } else {
+        val=alt;          /* keep the dividend, "pri" and "alt" are overwritten below */
+#       if defined TRUNC_SDIV
+          pri=val/offs;
+          alt=val%offs;
+#       else
+          /* portable routine for truncated division, on the magnitudes (unsigned,
+           * because the magnitude of the smallest cell does not fit in a cell)
+           */
+          ucell q=((val<0) ? 0-(ucell)val : (ucell)val)/((offs<0) ? 0-(ucell)offs : (ucell)offs);
+          pri=(cell)(((val<0)!=(offs<0)) ? 0-q : q);
+          alt=(cell)((ucell)val-(ucell)pri*(ucell)offs); /* calculate the matching remainder */
+#       endif
+      } /* if */
       /* now "fiddle" with the values to get floored division */
-      if (alt!=0 && (cell)(alt ^ val)<0) {
+      if (alt!=0 && (cell)(alt ^ offs)<0) {
         pri--;
-        alt+=val;
+        alt+=offs;
       } /* if */
       break;
     case OP_ADD:
@@ -2997,16 +3008,26 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
         ABORT(amx,AMX_ERR_DIVIDE);
       /* use floored division and matching remainder */
       offs=alt;
-#     if defined TRUNC_SDIV
-        pri=pri/offs;
-        alt=pri%offs;
-#     else
-        val=pri;                /* portable routine for truncated division */
-        pri=IABS(pri)/IABS(offs);
-        if ((cell)(val ^ offs)<0)
-          pri=-pri;
-        alt=val-pri*offs;       /* calculate the matching remainder */
-#     endif
+      if (offs==-1) {
+        /* the one division that overflows in two's complement (the smallest cell
+         * divided by -1): it is a negation, and the smallest cell stays itself
+         */
+        pri=(cell)(0-(ucell)pri);
+        alt=0;
+      } else {
+        val=pri;          /* keep the dividend, "pri" and "alt" are overwritten below */
+#       if defined TRUNC_SDIV
+          pri=val/offs;
+          alt=val%offs;
+#       else
+          /* portable routine for truncated division, on the magnitudes (unsigned,
+           * because the magnitude of the smallest cell does not fit in a cell)
+           */
+          ucell q=((val<0) ? 0-(ucell)val : (ucell)val)/((offs<0) ? 0-(ucell)offs : (ucell)offs);
+          pri=(cell)(((val<0)!=(offs<0)) ? 0-q : q);
+          alt=(cell)((ucell)val-(ucell)pri*(ucell)offs); /* calculate the matching remainder */
+#       endif
+      } /* if */
       /* now "fiddle" with the values to get floored division */
       if (alt!=0 && (cell)(alt ^ offs)<0) {
         pri--;

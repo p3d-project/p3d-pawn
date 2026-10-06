@@ -471,16 +471,26 @@ static const void * const amx_opcodelist[] = {
       ABORT(amx,AMX_ERR_DIVIDE);
     /* use floored division and matching remainder */
     offs=pri;
-#   if defined TRUNC_SDIV
-      pri=alt/offs;
-      alt=alt%offs;
-#   else
-      val=alt;                  /* portable routine for truncated division */
-      pri=IABS(alt)/IABS(offs);
-      if ((cell)(val ^ offs)<0)
-        pri=-pri;
-      alt=val-pri*offs;         /* calculate the matching remainder */
-#   endif
+    if (offs==-1) {
+      /* the one division that overflows in two's complement (the smallest cell
+       * divided by -1): it is a negation, and the smallest cell stays itself
+       */
+      pri=(cell)(0-(ucell)alt);
+      alt=0;
+    } else {
+      val=alt;          /* keep the dividend, "pri" and "alt" are overwritten below */
+#     if defined TRUNC_SDIV
+        pri=val/offs;
+        alt=val%offs;
+#     else
+        /* portable routine for truncated division, on the magnitudes (unsigned,
+         * because the magnitude of the smallest cell does not fit in a cell)
+         */
+        ucell q=((val<0) ? 0-(ucell)val : (ucell)val)/((offs<0) ? 0-(ucell)offs : (ucell)offs);
+        pri=(cell)(((val<0)!=(offs<0)) ? 0-q : q);
+        alt=(cell)((ucell)val-(ucell)pri*(ucell)offs); /* calculate the matching remainder */
+#     endif
+    } /* if */
     /* now "fiddle" with the values to get floored division */
     if (alt!=0 && (cell)(alt ^ offs)<0) {
       pri--;
@@ -905,21 +915,31 @@ static const void * const amx_opcodelist[] = {
     if (alt==0)
       ABORT(amx,AMX_ERR_DIVIDE);
     /* use floored division and matching remainder */
-    val=alt;
-#   if defined TRUNC_SDIV
-      pri=pri/val;
-      alt=pri%val;
-#   else
-      /* portable routine for truncated division */
-      pri=IABS(pri)/IABS(val);
-      if ((cell)(val ^ val)<0)
-        pri=-pri;
-      alt-=pri*val;             /* calculate the matching remainder */
-#   endif
+    offs=alt;
+    if (offs==-1) {
+      /* the one division that overflows in two's complement (the smallest cell
+       * divided by -1): it is a negation, and the smallest cell stays itself
+       */
+      pri=(cell)(0-(ucell)pri);
+      alt=0;
+    } else {
+      val=pri;          /* keep the dividend, "pri" and "alt" are overwritten below */
+#     if defined TRUNC_SDIV
+        pri=val/offs;
+        alt=val%offs;
+#     else
+        /* portable routine for truncated division, on the magnitudes (unsigned,
+         * because the magnitude of the smallest cell does not fit in a cell)
+         */
+        ucell q=((val<0) ? 0-(ucell)val : (ucell)val)/((offs<0) ? 0-(ucell)offs : (ucell)offs);
+        pri=(cell)(((val<0)!=(offs<0)) ? 0-q : q);
+        alt=(cell)((ucell)val-(ucell)pri*(ucell)offs); /* calculate the matching remainder */
+#     endif
+    } /* if */
     /* now "fiddle" with the values to get floored division */
-    if (alt!=0 && (cell)(alt ^ val)<0) {
+    if (alt!=0 && (cell)(alt ^ offs)<0) {
       pri--;
-      alt+=val;
+      alt+=offs;
     } /* if */
     NEXT(cip,op);
   op_sub_inv:

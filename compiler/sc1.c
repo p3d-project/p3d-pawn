@@ -4486,9 +4486,9 @@ static bool argcompare(arginfo *a1,arginfo *a2)
         result= a1->defvalue.array.size==a2->defvalue.array.size;
       if (result)
         result= a1->defvalue.array.arraysize==a2->defvalue.array.arraysize;
-      /* ??? should also check contents of the default array (these troubles
-       * go away in a 2-pass compiler that forbids double declarations but
-       * Pawn currently does not forbid them) */
+      if (result)                               /* contents of the default array */
+        result= memcmp(a1->defvalue.array.data,a2->defvalue.array.data,
+                       a1->defvalue.array.size*sizeof(cell))==0;
     } else {
       if (result) {
         if ((a1->hasdefault & uSIZEOF)!=0 || (a1->hasdefault & uTAGOF)!=0)
@@ -6217,7 +6217,10 @@ static void statement(int *lastindent,bool allow_decl)
     lastst=tSTATE;
     break;
   case tCONST:
-    decl_const(sLOCAL);
+    if (allow_decl)
+      decl_const(sLOCAL);
+    else
+      error(3);                 /* declaration only valid in a block */
     break;
   default:          /* non-empty expression */
     sc_allowproccall=true;

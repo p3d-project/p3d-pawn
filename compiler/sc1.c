@@ -691,15 +691,12 @@ int pc_compile(int argc, char *argv[])
   setopt(argc,argv,outfname,errfname,incfname,reportname,codepage);
   strcpy(binfname,outfname);
   ptr=get_extension(binfname);
-  if (ptr!=NULL && stricmp(ptr,".asm")==0)
-    set_extension(binfname,".amx",true);
-  else
-    set_extension(binfname,".amx",false);
+  bool replace= (ptr!=NULL && stricmp(ptr,".asm")==0);
+  if (!set_extension(binfname,_MAX_PATH,".amx",replace))
+    error(309,binfname);  /* invalid path (no room for the extension) */
   /* set output names that depend on the input name */
-  if (pc_listing)
-    set_extension(outfname,".lst",true);
-  else
-    set_extension(outfname,".asm",true);
+  if (!set_extension(outfname,_MAX_PATH,pc_listing ? ".lst" : ".asm",true))
+    error(309,outfname);  /* invalid path (no room for the extension) */
   if (strlen(errfname)!=0)
     remove(errfname);   /* delete file on startup */
   else if (verbosity>0)
@@ -865,10 +862,12 @@ int pc_compile(int argc, char *argv[])
           char dotname[_MAX_PATH];
           char pgmname[_MAX_PATH];
           strcpy(dotname,reportname);
-          set_extension(dotname,".dot",true);
+          if (!set_extension(dotname,countof(dotname),".dot",true))
+            error(309,dotname);   /* invalid path */
           add_path_prefix(pgmname,countof(pgmname),sc_binpath,"stategraph");
 #         if defined __MSDOS__ || defined __WIN32__ || defined _Windows
-            set_extension(pgmname,".exe",true);
+            if (!set_extension(pgmname,countof(pgmname),".exe",true))
+              error(309,pgmname); /* invalid path */
             spawnl(P_WAIT,pgmname,pgmname,reportname,dotname,NULL);
 #         else
             posix_spawnl(pgmname,reportname,dotname,(void*)0);
@@ -1021,12 +1020,16 @@ cleanup:
     (void)POPSTK_I();   /* sc_is_utf8 */
     (void)POPSTK_I();   /* iflevel */
     (void)POPSTK_P();   /* curlibrary */
+    /* release the include file being abandoned, then return to the one that
+     * included it, in the same order as readline() does at the end of a file
+     */
+    free(inpfname);
+    if (inpf!=NULL && inpf!=inpf_org)
+      pc_closesrc(inpf);
     inpfname=(char *)POPSTK_P();
     inpf=(FILE *)POPSTK_P();
     assert(inpfname!=NULL && inpfname!=(char*)-1);
-    free(inpfname);
     assert(inpf!=NULL && inpf!=(FILE*)-1);
-    pc_closesrc(inpf);
   } /* while */
   lexinit(true);                          /* reset and release buffers */
   phopt_cleanup();
@@ -1279,17 +1282,32 @@ static char *add_path_prefix(char *fullpath,size_t maxsize,const char *path,cons
  * Set the default extension, or force an extension. To erase the
  * extension of a filename, set "extension" to an empty string.
  */
-SC_FUNC void set_extension(char *filename,const char *extension,int force)
+SC_FUNC bool set_extension(char *filename,size_t size,const char *extension,int force)
 {
   char *ptr;
 
   assert(extension!=NULL && (*extension=='\0' || *extension=='.'));
   assert(filename!=NULL);
   ptr=get_extension(filename);
-  if (force && ptr!=NULL)
-    *ptr='\0';          /* set zero terminator at the position of the period */
-  if (force || ptr==NULL)
-    strcat(filename,extension);
+  if (!force && ptr!=NULL)
+    return true;        /* keep the extension that is there */
+  /* replace the extension (or append one), if it fits in the buffer */
+  size_t base= (ptr!=NULL) ? (size_t)(ptr-filename) : strlen(filename);
+  if (base+strlen(extension)>=size)
+    return false;
+  strcpy(filename+base,extension);
+  return true;
+}
+
+/** optionpath() copies a path given on the command line into a buffer; a path
+ *  that does not fit is an error, because a truncated name would refer to
+ *  another file
+ */
+static void optionpath(char *dest,size_t size,const char *path)
+{
+  if (strlen(path)>=size)
+    error(309,path);    /* invalid path */
+  strlcpy(dest,path,size);
 }
 
 static const char *option_value(const char *optptr)
@@ -1399,7 +1417,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
         } /* switch */
         break;
       case 'e':
-        strlcpy(ename,option_value(ptr),_MAX_PATH); /* set name of error file */
+        optionpath(ename,_MAX_PATH,option_value(ptr)); /* set name of error file */
         break;
       case 'i':
         /* set name of include directory */
@@ -1416,10 +1434,12 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
           ptr++;
           if (*ptr=='/' || *ptr==DIRSEP_CHAR)
             ptr++;
+          if (strlen(name)+strlen(ptr)>=sizeof(name)-1)
+            error(309,ptr);     /* invalid path (too long) */
           strlcat(name,ptr,sizeof name);
         } else {
           /* absolute path (or relative to current directory) */
-          strlcpy(name,ptr,sizeof name);
+          optionpath(name,sizeof(name)-1,ptr);  /* -1 for the directory separator */
         }
         i=(int)strlen(name);
         if (i>0) {
@@ -1462,7 +1482,7 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
         } /* if */
         break;
       case 'o':
-        strlcpy(oname,option_value(ptr),_MAX_PATH); /* set name of (binary) output file */
+        optionpath(oname,_MAX_PATH,option_value(ptr)); /* set name of (binary) output file */
         break;
       case 'O':
         pc_optimize=*option_value(ptr) - '0';
@@ -1470,14 +1490,14 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
           about();
         break;
       case 'p':
-        strlcpy(pname,option_value(ptr),_MAX_PATH); /* set name of implicit include file */
+        optionpath(pname,_MAX_PATH,option_value(ptr)); /* set name of implicit include file */
         break;
 #if !defined PAWN_LIGHT
       case 'r':
-        strlcpy(rname,option_value(ptr),_MAX_PATH); /* set name of report file */
+        optionpath(rname,_MAX_PATH,option_value(ptr)); /* set name of report file */
         sc_makereport=true;
-        if (strlen(rname)>0)
-          set_extension(rname,".xml",false);
+        if (strlen(rname)>0 && !set_extension(rname,_MAX_PATH,".xml",false))
+          error(309,rname);     /* invalid path (no room for the extension) */
         break;
 #endif
       case 'S':
@@ -1560,8 +1580,9 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
       i=atoi(ptr+1);
       add_constant(name,i,sGLOBAL,0);
     } else {
-      strlcpy(name,argv[arg],sizeof(name)-2); /* -2 because default extension is ".p" */
-      set_extension(name,".p",false);
+      optionpath(name,sizeof name,argv[arg]);
+      if (!set_extension(name,sizeof name,".p",false))
+        error(309,name);        /* invalid path (no room for the extension) */
       insert_sourcefile(name);
       /* The output name is the first input name with a different extension,
        * but it is stored in a different directory
@@ -1574,7 +1595,8 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
         assert(strlen(ptr)<_MAX_PATH);
         strcpy(oname,ptr);
       } /* if */
-      set_extension(oname,".asm",true);
+      if (!set_extension(oname,_MAX_PATH,".asm",true))
+        error(309,oname);       /* invalid path (no room for the extension) */
     } /* if */
   } /* for */
 #if !defined PAWN_LIGHT
@@ -1597,7 +1619,8 @@ static void parseoptions(int argc,char **argv,char *oname,char *ename,char *pnam
       /* a specific output filename is set, use it for the report name too */
       strcpy(rname,oname);
     } /* if */
-    set_extension(rname,".xml",true);
+    if (!set_extension(rname,_MAX_PATH,".xml",true))
+      error(309,rname);         /* invalid path (no room for the extension) */
   } /* if */
 #endif
 }
@@ -2934,11 +2957,15 @@ static cell calc_arraysize(int dim[],int numdim,int cur)
   if (cur==numdim)
     return 0;
   subsize=calc_arraysize(dim,numdim,cur+1);
-  newsize=dim[cur]+dim[cur]*subsize;
+  if ((ucell)subsize>=ARRAY_MAX)
+    return CELLMAX;             /* also when a deeper dimension returned CELLMAX */
+  /* newsize = dim + dim*subsize; refuse it before it overflows */
+  if (dim[cur]>0 && (ucell)subsize+1>ARRAY_MAX/(ucell)dim[cur])
+    return CELLMAX;
+  newsize=(ucell)dim[cur]*((ucell)subsize+1);
   if (newsize==0)
     return 0;
-  if ((ucell)subsize>=ARRAY_MAX || newsize>=ARRAY_MAX || newsize<(ucell)subsize
-      || newsize*pc_cellsize>=ARRAY_MAX)
+  if (newsize>=ARRAY_MAX || newsize*pc_cellsize>=ARRAY_MAX)
     return CELLMAX;
   return newsize;
 # undef ARRAY_MAX
@@ -4630,7 +4657,7 @@ static int declparams(symbol *sym,int chkshadow)
         param2symbol(name,ident,(argcnt+3)*pc_cellsize,tags,numtags,fpublic,fconst,chkshadow,&arg);
         if (fpublic && arg.hasdefault)
           error(59,name);       /* parameters of a public function may not have a default value */
-        if ((sym->usage & uPROTOTYPED)==0) {
+        if ((sym->usage & uPROTOTYPED)==0 && argcnt<sMAXARGS) {
           /* redimension the argument list, add the entry */
           sym->dim.arglist=(arginfo*)realloc(sym->dim.arglist,(argcnt+2)*sizeof(arginfo));
           if (sym->dim.arglist==0)
@@ -4645,8 +4672,10 @@ static int declparams(symbol *sym,int chkshadow)
           } /* for */
           sym->dim.arglist[argcnt]=arg;
         } else {
-          /* check the argument with the earlier definition */
-          if (argcnt>oldargcnt || !argcompare(&sym->dim.arglist[argcnt],&arg))
+          /* check the argument with the earlier definition; an argument beyond
+           * sMAXARGS (error 45) is not kept, because calls cannot pass it
+           */
+          if (argcnt<sMAXARGS && (argcnt>oldargcnt || !argcompare(&sym->dim.arglist[argcnt],&arg)))
             error(25);          /* function definition does not match prototype */
           /* may need to free default array argument */
           if (arg.ident==iREFARRAY && arg.hasdefault)

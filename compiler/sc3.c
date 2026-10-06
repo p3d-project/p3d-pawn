@@ -774,9 +774,13 @@ static void plnge2(void (*oper)(void),void (*arrayoper)(cell),
         && (IS_ARRAY(*lval2) || IS_PSEUDO_ARRAY(*lval2)))
     {
       /* there is an array operator and both sides are an array; test the
-       * dimensions first
+       * dimensions first; as with array assignment, the left operand must be
+       * an array variable (a literal array has no symbol to check against)
        */
-      arraylength=checkarrays(lval1,lval2);
+      if (lval1->sym==NULL)
+        error(22);              /* must be lvalue */
+      else
+        arraylength=checkarrays(lval1,lval2);
     } else if (lval1->ident==iARRAY || lval1->ident==iREFARRAY) {
       error(33,check_symbolname(lval1));  /* array must be indexed */
     } else if (lval2->ident==iARRAY || lval2->ident==iREFARRAY) {
@@ -1751,9 +1755,12 @@ static int hier2(value *lval)
         if (subsym!=NULL)
           subsym=finddepend(subsym);
       } /* for */
-      if (level>sym->dim.array.level+1) {
+      /* one level more than the array has is only valid for a named field of
+       * the last dimension
+       */
+      if (level>sym->dim.array.level+1 || level==sym->dim.array.level+1 && namelist==NULL) {
         error(28,sym->name);  /* invalid subscript */
-      } else if (level==sym->dim.array.level+1 && namelist!=NULL) {
+      } else if (level==sym->dim.array.level+1) {
         constvalue *item=find_constval(namelist,idxname,-1);
         if (item==NULL)
           error_suggest_list(80,idxname,namelist);
@@ -2065,7 +2072,7 @@ restart:
         if (hier14(&lval2))     /* create expression for the array index */
           rvalue(&lval2);
         if (lval2.ident==iARRAY || lval2.ident==iREFARRAY)
-          error(33,lval2.sym->name);    /* array must be indexed */
+          error(33,check_symbolname(&lval2)); /* array must be indexed */
       } /* if */
       if (close!=tSYMLABEL)
         needtoken(close);
@@ -2600,10 +2607,23 @@ static int nesting=0;
        * of the function; check it again for functions with a variable
        * argument list
        */
-      if (argpos>=sMAXARGS)
+      if (argpos>=sMAXARGS) {
         error(45);                            /* too many function arguments */
+        /* there is no room for this argument, neither in the argument list nor
+         * in the expression marks of the stage; read the remaining arguments
+         * without passing them
+         */
+        do {
+          value skipped={0};
+          if (hier14(&skipped))
+            rvalue(&skipped);
+        } while (matchtoken(','));
+        if (matchparanthesis)
+          needtoken(')');
+        break;
+      } /* if */
       stgmark((char)(sEXPRSTART+argpos));     /* mark beginning of new expression in stage */
-      if (argpos<sMAXARGS && arglist[argpos]!=ARG_UNHANDLED)
+      if (arglist[argpos]!=ARG_UNHANDLED)
         error(58,argpos+1,arg[argpos].name);  /* argument already set */
       if (matchtoken('_')) {
         arglist[argpos]=ARG_IGNORED;          /* flag argument as "present, but ignored" */

@@ -1319,9 +1319,14 @@ static int command(void)
             lexptr=pp_getstring((unsigned char*)name,countof(name),lexptr);
           } else {
             int i;
-            for (i=0; i<(int)countof(name) && (alphanum(*lexptr) || *lexptr=='-'); i++,lexptr++)
+            for (i=0; i<(int)countof(name)-1 && (alphanum(*lexptr) || *lexptr=='-'); i++,lexptr++)
               name[i]=*lexptr;
             name[i]='\0';
+            if (alphanum(*lexptr) || *lexptr=='-') {
+              error(200,name,sNAMEMAX);   /* name too long, truncated to sNAMEMAX characters */
+              while (alphanum(*lexptr) || *lexptr=='-')
+                lexptr++;
+            } /* if */
           } /* if */
           if (strlen(name)==0) {
             curlibrary=NULL;

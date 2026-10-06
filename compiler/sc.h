@@ -593,7 +593,7 @@ long long pc_lengthbin(void *handle); /* return the length of the file */
 #endif
 
 /* function prototypes in SC1.C */
-SC_FUNC void set_extension(char *filename,const char *extension,int force);
+SC_FUNC bool set_extension(char *filename,size_t size,const char *extension,int force);
 SC_FUNC symbol *fetchfunc(const char *name,int tag);
 SC_FUNC char *operator_symname(char *symname,size_t symnamesz,const char *opername,int tag1,int tag2,int numtags,int resulttag);
 SC_FUNC char *funcdisplayname(char *dest,size_t destsz,const char *funcname);

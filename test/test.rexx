@@ -11,9 +11,13 @@
  *     bcc32 -w -w-prc -DFLOATPOINT;FIXEDPOINT -DPAWN_DLL -DAMXDBG;AMX_DYNALOAD pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c
  *   Move all DLLs and executables to the "bin" directory.
  *
- * MinGW on Windows
- * ----------------
+ * MinGW (Windows)
+ * ---------------
  *   Create the DLLs with:
+ *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_DLL -DAMXEXPORT=__stdcall -DPAWN_CELL_SIZE=32 -o ..\bin\amxFixed.dll amxFixed.c amx.c dllmain.c amxFixed.def -shared -s -Wl,--subsystem,windows,--enable-stdcall-fixup
+ *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_DLL -DAMXEXPORT=__stdcall -DPAWN_CELL_SIZE=32 -o ..\bin\amxFloat.dll amxFloat.c amx.c dllmain.c amxFloat.def -shared -s -Wl,--subsystem,windows,--enable-stdcall-fixup
+ *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_DLL -DAMXEXPORT=__stdcall -DPAWN_CELL_SIZE=32 -o ..\bin\amxFile.dll amxFile.c amx.c dllmain.c amxFile.def -shared -s -Wl,--subsystem,windows,--enable-stdcall-fixup
+ *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_DLL -DAMXEXPORT=__stdcall -DPAWN_CELL_SIZE=32 -DAMX_NOSTRFMT -o ..\bin\amxString.dll amxString.c amx.c dllmain.c amxString.def -shared -s -Wl,--subsystem,windows,--enable-stdcall-fixup
  *   Create PAWNRUN with:
  *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_DLL -DAMXEXPORT=__stdcall -DAMXDBG -DAMX_DYNALOAD -DFLOATPOINT -DFIXEDPOINT -DPAWN_CELL_SIZE=32 -o../bin/pawnrun pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c
  *
@@ -23,7 +27,7 @@
  *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxFixed.so amxfixed.c amx.c
  *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxFloat.so amxfloat.c amx.c -lm
  *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxFile.so amxfile.c amx.c
- *     gcc -Wall -Wextra -Wno-parentheses -DAMX_NOSTRFMT -DPAWN_CELL_SIZE=32 -I../linux -fpic -shared -o../bin/amxString.so amxstring.c amx.c
+ *     gcc -Wall -Wextra -Wno-parentheses -DPAWN_CELL_SIZE=32 -DAMX_NOSTRFMT -I../linux -fpic -shared -o../bin/amxString.so amxstring.c amx.c
  *   Create PAWNRUN with:
  *     gcc -Wall -Wextra -Wno-parentheses -DENABLE_BINRELOC -DAMXDBG -DAMX_DYNALOAD -DFLOATPOINT -DFIXEDPOINT -DPAWN_CELL_SIZE=32 -I../linux -o../bin/pawnrun pawnrun.c amx.c amxcore.c amxcons.c amxdbg.c ../linux/getch.c ../linux/binreloc.c
  */
@@ -551,7 +555,7 @@ test30:
   say '    compilation.'
   say '-----'
   pawncc '-v0 test6' commandsuffix
-  call matchoutput 'error 001*expected token: ''#endif''*-end of file-'
+  call matchoutput 'error 001*expected token: ''#endif''*<end of file>'
   /* Symptoms of detected bug: silent complation (no error/warning message).
    */
   return
@@ -562,7 +566,7 @@ test31:
   say '    The program has a /* without a matching */ before the end of compilation.'
   say '-----'
   pawncc '-v0 test7' commandsuffix
-  call matchoutput 'error 001*expected token: ''*/''*-end of file-'
+  call matchoutput 'error 001*expected token: ''*/''*<end of file>'
   /* Symptoms of detected bug: silent complation (no error/warning message).
    */
   return
@@ -1649,7 +1653,7 @@ test109:
   say '     You cannot mix expressions and variable declarations in a "for" loop.'
   say '-----'
   pawncc '-v0 FOR_MIX_EXPR_VAR= test1' commandsuffix
-  call matchoutput 'error 001*''[identifier]''', '4 Errors.'
+  call matchoutput 'error 001*''<identifier>''*''new''', '4 Errors.'
   /* Symptoms of detected bug: obscure error messages.
    */
   return
@@ -2684,6 +2688,62 @@ test188:
   pawndisasm '-o- -r0008:0054 test18.amx' commandsuffix
   call matchoutput 'Completed successfully', 'zero.pri', 'addr.alt fffffff8', 'movs 00000008', ,
                    'addr.alt fffffff8', 'zero.pri', 'movs 00000008'
+  return
+
+test189:
+  say '189. The following tests should compile successfully.'
+  say ''
+  say '    A function returning a literal array, called before its definition.'
+  say '-----'
+  pawncc 'FORWARD_FUNC_ARRAY= array2' commandsuffix
+  call matchoutput 'Completed successfully', '/Assertion failed'
+  /* Sympton of detected bug: assertion failed on the array size; the return of
+     the undefined function was incorrectly considered to be a literal array
+   */
+  return
+
+test190:
+  say '190. The following tests should compile successfully. When it runs, it should'
+  say '    print:'
+  say ''
+  say '     b00=5 b10=6'
+  say ''
+  say '    The indirection vectors of a multi-dimensional array are merged as literal'
+  say '    data, if identical to an earlier array declaration.'
+  say '-----'
+  pawncc 'MERGED_ARRAY_VECTOR_INIT= array2' commandsuffix
+  pawnrun 'array2.amx' commandsuffix
+  call matchoutput 'Completed successfully', 'b00=5 b10=6'
+  /* Sympton of detected bug: duplicate data (merged) was detected, but copied
+     incorrectly.
+   */
+  return
+
+test191:
+  say '191. The following tests should issue warning 206 (redundant test).'
+  say ''
+  say '    ''#pragma undefined'' on a symbol declared in a lower block.'
+  say '-----'
+  pawncc 'PRAGMA_UNUSED_BLOCKLVL= test17' commandsuffix
+  call matchoutput 'warning 206', '1 Warning.'
+  /* Sympton of detected bug: the block level was set the that of the #pragma,
+     instead of that of the symbol.
+   */
+  return
+
+test192:
+  say '192. The following tests should compile successfully. When it runs, it should'
+  say '    print:'
+  say ''
+  say '    count = 3'
+  say '    sum = 8'
+  say '    fields = 0 1 2'
+  say ''
+  say '    Tests of the intrinsic variables ''argc'' and ''argv''.'
+  say '-----'
+  pawncc 'sum' commandsuffix
+  pawnrun 'sum.amx' commandsuffix
+  call matchoutput 'Completed successfully', 'count = 3', 'sum = 8', 'fields = 0 1 2'
   return
 
 

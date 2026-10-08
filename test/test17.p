@@ -55,3 +55,16 @@ main()
     }
 #endif
 
+#if defined PRAGMA_UNUSED_BLOCKLVL
+
+main()
+    {
+    new y;
+    if (1)
+        {
+        #pragma unused y
+        return;
+        }
+    }
+
+#endif

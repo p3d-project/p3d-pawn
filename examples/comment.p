@@ -1,4 +1,4 @@
-g/* parse C comments interactively, using events and a state machine */
+/* parse C comments interactively, using events and a state machine */
 
 @start()
     state plain

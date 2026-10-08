@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7706 2026-10-03 08:17:49Z thiadmer $
+ *  Version: $Id: sc.h 7708 2026-10-07 18:58:58Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -49,16 +49,16 @@
 
 /* Note: the "cell" and "ucell" types are defined in AMX.H */
 
-#define PUBLIC_CHAR   '@'   /* character that defines a function "public" */
-#define ESCAPE_CHAR   '\\'  /* for special characters in strings (escape character) */
-#define sCHARBITS     8     /* size of a packed character */
+#define PUBLIC_CHAR   '@'   /**< character that defines a function "public" */
+#define ESCAPE_CHAR   '\\'  /**< for special characters in strings (escape character) */
+#define sCHARBITS     8     /**< size of a packed character */
 
-#define sDIMEN_MAX    3     /* maximum number of array dimensions */
-#define sLINEMAX      1023  /* input line length (in characters) */
-#define sCOMP_STACK   32    /* maximum nesting of #if .. #endif sections */
-#define sDEF_LITMAX   32    /* initial size of the literal pool, in "cells" */
-#define sDEF_AMXSTACK 4096  /* default stack size for AMX files */
-#define PREPROC_TERM  '\x7f'/* termination character for preprocessor expressions (the "DEL" code) */
+#define sDIMEN_MAX    3     /**< maximum number of array dimensions */
+#define sLINEMAX      1023  /**< input line length (in characters) */
+#define sCOMP_STACK   32    /**< maximum nesting of #if .. #endif sections */
+#define sDEF_LITMAX   32    /**< initial size of the literal pool, in "cells" */
+#define sDEF_AMXSTACK 4096  /**< default stack size for AMX files */
+#define PREPROC_TERM  '\x7f'/**< termination character for preprocessor expressions (the "DEL" code) */
 #define sDEF_PREFIX   "default.inc" /* default prefix filename */
 
 typedef union {
@@ -72,7 +72,7 @@ typedef struct s_constvalue {
   char name[sNAMEMAX+1];
   cell value;
   int index;            /* tag for symbolic-array fields; automaton id. for states and automatons */
-  char usage;           /* currently only for pseudo-arrays in symbolic-array fields */
+  short usage;          /* currently only for pseudo-arrays in symbolic-array fields */
 } constvalue;
 
 typedef struct s_arginfo {  /* function argument info */
@@ -235,11 +235,12 @@ typedef struct s_symbol {
 #define uRETVALUE   0x0800 /**< function returns (or should return) a value */
 #define uPREDEF     0x1000 /**< constant is pre-defined */
 #define uVISITED    0x2000 /**< temporary flag, to mark fields as "visited" in recursive loops */
+#define uARGC       0x4000 /**< special variable that holds the variable argument count */
 /* uRETNONE is not stored in the "usage" field of a symbol. It is
  * used during parsing a function, to detect a mix of "return;" and
  * "return value;" in a few special cases.
  */
-#define uRETNONE    0x4000
+#define uRETNONE    0x8000
 
 /*  Possible values for "flags" in a symbol, also used in the 'pc_pendingflags'
  *  global variable
@@ -348,6 +349,8 @@ typedef struct s_arraymerge {
 #endif
 #if !defined makelong
 # define makelong(low,high) ((long)(low) | ((long)(high) << (sizeof(long)*4)))
+# define lowword(value)     ((value) & (((unsigned long)~0u) >> (sizeof(long)*4)))
+# define highword(value)    ((unsigned long)(value) >> (sizeof(long)*4))
 #endif
 
 /*  Tokens recognized by lex()
@@ -468,15 +471,22 @@ typedef struct s_arraymerge {
 
 /* Miscellaneous  */
 #define NOT_SET         (-1)    /**< special "boolean" value: no value set yet */
+
 #define sIN_CSEG        1       /**< if parsing CODE */
 #define sIN_DSEG        2       /**< if parsing DATA */
-#define sCHKBOUNDS      1       /**< bit position in "debug" variable: check bounds */
-#define sSYMBOLIC       2       /**< bit position in "debug" variable: symbolic info */
+
+#define sCHKBOUNDS      0x01    /**< bit position in "debug" variable: check bounds */
+#define sSYMBOLIC       0x02    /**< bit position in "debug" variable: symbolic info */
+
 #define sRESET          0       /**< reset error flag */
 #define sFORCESET       1       /**< force error flag on */
 #define sEXPRMARK       2       /**< mark start of expression */
 #define sEXPRRELEASE    3       /**< mark end of expression */
 #define sRESETERRCOUNT  4       /**< clear error and warning counts */
+#define sSETNOTICE      5       /**< force set a notice for the next error message */
+
+#define sTEST_EXPR      1       /**< expression is the test in an 'if', 'while', etc. statement */
+#define sFOR_POST       2       /**< expression is the 3rd ('post') expression of a 'for' statement */
 
 enum {
   sOPTIMIZE_NONE,               /**< no optimization */
@@ -638,7 +648,7 @@ SC_FUNC int refer_symbol(symbol *entry,symbol *bywhom);
 SC_FUNC void markusage(symbol *sym,short usage);
 SC_FUNC uint32_t namehash(const char *name);
 SC_FUNC symbol *findglb(const char *name,int filter);
-SC_FUNC symbol *findloc(const char *name);
+SC_FUNC symbol *findlcl(const char *name);
 SC_FUNC symbol *findconst(const char *name);
 SC_FUNC symbol *finddepend(const symbol *parent);
 SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int block,
@@ -652,7 +662,7 @@ SC_FUNC char *celltohex(ucell val);
 SC_FUNC int check_userop(void (*oper)(void),int tag1,int tag2,int numparam,
                          value *lval,int *resulttag);
 SC_FUNC int matchtag(int formaltag,int actualtag,int allowcoerce);
-SC_FUNC int expression(cell *val,int *tag,symbol **symptr,bool *parenthesized,bool chkfuncresult,bool in_test);
+SC_FUNC int expression(cell *constval,int *tag,symbol **symptr,bool *parenthesized,bool chkfuncresult,int in_test);
 SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *fsaname,char *statename);
 SC_FUNC cell array_totalsize(symbol *sym);
 
@@ -699,8 +709,7 @@ SC_FUNC void setstk(cell value);
 SC_FUNC void modheap(int delta);
 SC_FUNC void setheap_pri(void);
 SC_FUNC void setheap(cell value);
-SC_FUNC void cell2addr(void);
-SC_FUNC void cell2addr_alt(void);
+SC_FUNC void cell2addr(regid reg);
 SC_FUNC void addr2cell(void);
 SC_FUNC void char2addr(void);
 SC_FUNC void charalign(void);
@@ -756,7 +765,7 @@ SC_FUNC int error_symbolname(unsigned number,const char *name);
 SC_FUNC int error_suggest(unsigned number,const char *name,int ident);
 SC_FUNC int error_suggest_list(unsigned number,const char *name,constvalue *list);
 SC_FUNC int errorcount(int *errors,int *warnings);
-SC_FUNC void errorset(int code);
+SC_FUNC void errorset(unsigned long code);
 SC_FUNC void pushwarnings(void);
 SC_FUNC void popwarnings(void);
 SC_FUNC void clear_warningstack(void);

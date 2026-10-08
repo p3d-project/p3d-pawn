@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7706 2026-10-03 08:17:49Z thiadmer $
+ *  Version: $Id: sc5.c 7708 2026-10-07 18:58:58Z thiadmer $
  */
 #include <assert.h>
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -75,6 +75,7 @@ static int warnignore;  /**< line number for warning to ignore (when error was a
 static int errcount;    /**< number of errors */
 static int warncount;   /**< number of warnings */
 static bool errhidden;  /**< are there more errors than have been displayed */
+static int errnotice;   /**< explicitly set notice number */
 
 /** error_v() outputs an error message (internal 'work horse' function).
  *
@@ -108,9 +109,13 @@ static short lastfile;
   /* split the error field between the real error/warning number and an optional
    * "notice" number
    */
-  unsigned notice=number >> (sizeof(long)*4);
-  number&=((unsigned long)~0) >> (sizeof(long)*4);
+  unsigned notice=highword(number);
+  number=lowword(number);
   assert(number>0 && number<WARN_BASE+WARN_COUNT);
+  if (notice==0)
+    notice=errnotice;
+  errnotice=0;
+  assert(notice<countof(noticemsg));
 
   /* errflag is reset on each semicolon.
    * In a two-pass compiler, an error should not be reported twice. Therefore
@@ -354,14 +359,14 @@ SC_FUNC int errorcount(int *errors,int *warnings)
   return 0;                     /* all is fine -> 0 */
 }
 
-SC_FUNC void errorset(int code)
+SC_FUNC void errorset(unsigned long code)
 {
-  switch (code) {
+  switch (lowword(code)) {
   case sRESET:
-    errflag=false;      /* start reporting errors, line=ignored */
+    errflag=false;      /* start reporting errors */
     break;
   case sFORCESET:
-    errflag=true;       /* stop reporting errors, line=ignored */
+    errflag=true;       /* stop reporting errors */
     break;
   case sEXPRMARK:
     errstart=pc_curline;/* save start line number */
@@ -376,6 +381,10 @@ SC_FUNC void errorset(int code)
     warncount=0;
     errflag=false;
     errhidden=false;
+    errnotice=0;
+    break;
+  case sSETNOTICE:
+    errnotice=highword(code);
     break;
   } /* switch */
 }

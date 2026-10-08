@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: sc4.c 7708 2026-10-07 18:58:58Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -30,6 +30,12 @@
 
 static int fcurseg;     /* the file number (fcurrent) for the active segment */
 
+
+static int cellshift(void)
+{
+  assert(pc_cellsize==8 || pc_cellsize==4 || pc_cellsize==2);
+  return (pc_cellsize==8) ? 3 : (pc_cellsize==4) ? 2 : 1;
+}
 
 /* When a subroutine returns to address 0, the AMX must halt. In earlier
  * releases, the RET and RETN opcodes checked for the special case 0 address.
@@ -424,7 +430,6 @@ SC_FUNC void markexpr(optmark type,const char *name,cell offset)
 
 /*  startfunc   - declare a CODE entry point (function start)
  *
- *  Global references: funcstatus  (read-only)
  */
 SC_FUNC void startfunc(const char *fname,int index)
 {
@@ -486,9 +491,7 @@ SC_FUNC void alignframe(int numbytes)
  */
 SC_FUNC void rvalue(value *lval)
 {
-  symbol *sym;
-
-  sym=lval->sym;
+  symbol *sym=lval->sym;
   if (lval->ident==iARRAYCELL) {
     /* indirect fetch, address already in PRI */
     stgwrite("\tload.i\n");
@@ -512,13 +515,36 @@ SC_FUNC void rvalue(value *lval)
   } else {
     /* direct or stack relative fetch */
     assert(sym!=NULL);
-    if (sym->scope==sLOCAL)
+    if ((sym->usage & uARGC)!=0) {
+      /* intrinsic variable 'argc' */
+      assert(sym->scope==sLOCAL);
+      /* the 'argc' points to the size of all arguments pushed on the stack, which
+       * is also stored in the stack frame (see the comment #STACKLAYOUT in the
+       * declparams() function); the number of fixed arguments has to be
+       * subtracted from it, and the value has to be converted from byte count
+       * to argument count
+       */
+      stgwrite("\tpush.alt\n");
       stgwrite("\tload.s.pri ");
-    else
-      stgwrite("\tload.pri ");
-    outval(sym->addr,true,true);
+      outval(sym->addr,true,true);
+      stgwrite("\tconst.alt ");
+      outval(-sym->index*pc_cellsize,true,true);  /* load negative value then "add" instead of "sub" */
+      stgwrite("\tadd\n");      /* PRI = total-param-count + -fixed-param-count  */
+      stgwrite("\tconst.alt ");
+      outval(cellshift(),true,true);
+      stgwrite("\tshr\n");      /* PRI = PRI << shift-value (from bytes to cells) */
+      stgwrite("\tpop.alt\n");
+      code_idx+=opcodes(7)+opargs(3);
+    } else {
+      /* normal variable */
+      if (sym->scope==sLOCAL)
+        stgwrite("\tload.s.pri ");
+      else
+        stgwrite("\tload.pri ");
+      outval(sym->addr,true,true);
+      code_idx+=opcodes(1)+opargs(1);
+    } /* if */
     markusage(sym,uREAD);
-    code_idx+=opcodes(1)+opargs(1);
   } /* if */
 }
 
@@ -663,7 +689,6 @@ SC_FUNC void memcopy(cell size)
  */
 SC_FUNC void copyarray2d(int majordim,int minordim)
 {
-  int cellshift=(pc_cellsize==8) ? 3 : (pc_cellsize==4) ? 2 : 1;
   int looplbl=getlabel();
 
   stgwrite("\tpush.alt\n");
@@ -685,7 +710,8 @@ SC_FUNC void copyarray2d(int majordim,int minordim)
     stgwrite("\tidxaddr\n");/* PRI = dest + index * sizeof(cell) */
     code_idx+=opcodes(2);
   } else {
-    stgwrite("\tshl.c.alt "); outval(cellshift,true,true); /* ALT = index * sizeof(cell) */
+    stgwrite("\tshl.c.alt ");
+    outval(cellshift(),true,true); /* ALT = index * sizeof(cell) */
     stgwrite("\tadd\n");    /* PRI = dest + index * sizeof(cell) */
     code_idx+=opcodes(2)+opargs(1);
   } /* if */
@@ -704,7 +730,8 @@ SC_FUNC void copyarray2d(int majordim,int minordim)
   } else {
     stgwrite("\tpick 4\n"); /* PRI = index */
     stgwrite("\txchg\n");   /* ALT = index */
-    stgwrite("\tshl.c.alt "); outval(cellshift,true,true); /* ALT = index * sizeof(cell) */
+    stgwrite("\tshl.c.alt ");
+    outval(cellshift(),true,true); /* ALT = index * sizeof(cell) */
     stgwrite("\tpick 8\n"); /* PRI = source */
     stgwrite("\tadd\n");    /* PRI = source + index * sizeof(cell) */
     code_idx+=opcodes(5)+opargs(3);
@@ -1095,63 +1122,36 @@ SC_FUNC void setheap(cell value)
   setheap_pri();
 }
 
-/*
- *  Convert a cell number to a "byte" address; i.e. double or quadruple
- *  the primary register.
+/** cell2addr() converts a cell number to a "byte" address; i.e. multiply the
+ *  primary/secondary register by the cell size.
  */
-SC_FUNC void cell2addr(void)
+SC_FUNC void cell2addr(regid reg)
 {
-  stgwrite("\tshl.c.pri ");
-  if (pc_cellsize==2) {
-    outval(1,true,true);
-  } else if (pc_cellsize==4) {
-    outval(2,true,true);
-  } else {
-    assert(pc_cellsize==8);
-    outval(3,true,true);
-  } /* if */
+  assert(reg==sPRI || reg==sALT);
+  if (reg==sPRI)
+    stgwrite("\tshl.c.pri ");
+  else
+    stgwrite("\tshl.c.alt ");
+  outval(cellshift(),true,true);
   code_idx+=opcodes(1)+opargs(1);
 }
 
-/*
- *  Double or quadruple the alternate register.
- */
-SC_FUNC void cell2addr_alt(void)
-{
-  stgwrite("\tshl.c.alt ");
-  if (pc_cellsize==2) {
-    outval(1,true,true);
-  } else if (pc_cellsize==4) {
-    outval(2,true,true);
-  } else {
-    assert(pc_cellsize==8);
-    outval(3,true,true);
-  } /* if */
-  code_idx+=opcodes(1)+opargs(1);
-}
-
-/* Convert "distance of addresses" to "number of cells" in between.
- * Or convert a number of packed characters to the number of cells (with
+/* Convert "distance of addresses" to "number of cells" in between. This
+ * delta-address value must already be in PRI. This function can also be used
+ * to convert a number of packed characters to the number of cells (with
  * truncation).
- * The ALT register is be used as scratch.
+ * The ALT register is used as scratch.
  */
 SC_FUNC void addr2cell(void)
 {
   stgwrite("\tconst.alt ");
-  if (pc_cellsize==2) {
-    outval(1,true,true);
-  } else if (pc_cellsize==4) {
-    outval(2,true,true);
-  } else {
-    assert(pc_cellsize==8);
-    outval(3,true,true);
-  } /* if */
+  outval(cellshift(),true,true);
   stgwrite("\tshr\n");
   code_idx+=opcodes(2)+opargs(1);
 }
 
 /* Convert from character index to byte address. This routine does
- * nothing if a character has the size of a byte.
+ * nothing if a (packed) character has the size of a byte.
  */
 SC_FUNC void char2addr(void)
 {

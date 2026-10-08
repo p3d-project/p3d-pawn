@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7706 2026-10-03 08:17:49Z thiadmer $
+ *  Version: $Id: sc2.c 7708 2026-10-07 18:58:58Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -327,7 +327,7 @@ static void readline(unsigned char *line,int append)
       if (cont)
         error(49);        /* invalid line continuation */
       else if (append)
-        error(1,"]","-end of file-");
+        error(1,"]","<end of file>");
       if (inpf!=NULL && inpf!=inpf_org)
         pc_closesrc(inpf);
       i=POPSTK_I();
@@ -339,9 +339,9 @@ static void readline(unsigned char *line,int append)
          */
         assert(iflevel>=0);
         if (iflevel>0)
-          error(1,"#endif","-end of file-");
+          error(1,"#endif","<end of file>");
         else if (icomment!=0)
-          error(1,"*/","-end of file-");
+          error(1,"*/","<end of file>");
         return;
       } /* if */
       pc_curline=i;
@@ -356,7 +356,7 @@ static void readline(unsigned char *line,int append)
       inpfname=(char *)POPSTK_P();
       inpf=(FILE *)POPSTK_P();
       if (sc_status==statSKIP)
-        error(1,"}","-end of file-"); /* function not finished at EOF */
+        error(1,"}","<end of file>"); /* function not finished at EOF */
       insert_dbgfile(inpfname);
       setfiledirect(inpfname);
       assert(sc_status==statBROWSE || strcmp(get_inputfile(fcurrent),inpfname)==0);
@@ -1096,7 +1096,7 @@ static int command(void)
       int symtok=lex(&lexval,&lexstr);
       bool found=false;
       if (symtok==tSYMBOL) {
-        const symbol *sym=findloc(lexstr);
+        const symbol *sym=findlcl(lexstr);
         if (sym==NULL)
           sym=findglb(lexstr,sGLOBAL);
         if (sym!=NULL
@@ -1362,7 +1362,7 @@ static int command(void)
               name[i]=*lexptr;
             name[i]='\0';
             /* if a variable already exists, copy its scope */
-            const symbol *sym= (pc_blocklevel==0) ? findglb(name,sGLOBAL) : findloc(name);
+            const symbol *sym= (pc_blocklevel==0) ? findglb(name,sGLOBAL) : findlcl(name);
             short blocklevel= (sym!=NULL) ? sym->block : pc_blocklevel;
             add_unusedvar(name,fcurrent,pc_curline,blocklevel);
             /* see if a comma follows the name */
@@ -1516,7 +1516,7 @@ static int command(void)
       /* check rest of the line (should be empty) */
       if (matchbracket) {
         if (*lexptr!=']')
-          error(1,"]","-end of line-");
+          error(1,"]","<end of file>");
         else
           check_empty(lexptr+1);  /* skip ']' */
       } /* if */
@@ -2178,9 +2178,9 @@ static const char *sc_tokens[] = {
          "#assert", "#define", "#else", "#elseif", "#endif", "#endinput",
          "#error", "#file", "#if", "#ifdef", "#ifndef", "#include", "#line",
          "#pragma", "#tryinclude", "#undef", "#warning",
-         "[semicolon/newline]", "[comma/newline]", "[semicolon/newline]",
-         "[integer value]", "[rational value]", "[identifier]", "[label]",
-         "[field/parameter reference]", "[string]", "[string]"
+         "<semicolon/newline>", "<comma/newline>", "<semicolon/newline>",
+         "<integer value>", "<rational value>", "<identifier>", "<label>",
+         "<field/parameter reference>", "<string literal>", "<string literal>"
        };
 
 SC_FUNC int lex(cell *lexvalue,char **lexstr)
@@ -2578,7 +2578,7 @@ SC_FUNC int needtoken(int token)
     else
       strlcpy(s1,sc_tokens[token-tFIRST],countof(s1));  /* multi-character symbol */
     if (!freading)
-      strlcpy(s2,"-end of file-",countof(s2));
+      strlcpy(s2,"<end of file>",countof(s2));
     else if (cached_tok<256)
       snprintf(s2,countof(s2),"%c",(char)cached_tok);
     else if (cached_tok==tNUMBER)
@@ -3230,10 +3230,10 @@ SC_FUNC symbol *findglb(const char *name,int filter)
   return sym;
 }
 
-/** findloc() returns a pointer to the local symbol (if found) or `NULL` (if not
+/** findlcl() returns a pointer to the local symbol (if found) or `NULL` (if not
  *  found). See add_symbol() how the deepest nesting level is searched first.
  */
-SC_FUNC symbol *findloc(const char *name)
+SC_FUNC symbol *findlcl(const char *name)
 {
   return find_symbol(&loctab,name,-1,0);
 }
@@ -3274,7 +3274,7 @@ SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int block,
   assert(name!=NULL);
 
   /* labels may only be defined once */
-  assert(ident!=iLABEL || findloc(name)==NULL);
+  assert(ident!=iLABEL || findlcl(name)==NULL);
 
   /* create an empty referrer list */
   if ((refer=(symbol**)malloc(sizeof(symbol*)))==NULL) {
@@ -3331,6 +3331,8 @@ SC_FUNC symbol *addvariable(const char *name,cell addr,int ident,int scope,int b
     int level;
     sym=NULL;                   /* to avoid a compiler warning */
     for (level=0; level<numdim; level++) {
+      assert(dim!=NULL);
+      assert(dimnames!=NULL);
       top=addsym(name,addr,ident,scope,block,tag,uDEFINE);
       top->dim.array.length=dim[level];
       top->dim.array.level=(short)(numdim-level-1);

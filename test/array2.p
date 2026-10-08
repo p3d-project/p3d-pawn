@@ -33,4 +33,26 @@ main()
         new b[2];
         b = [1,2); return b[0];
     #endif
+
+    #if defined FORWARD_FUNC_ARRAY
+        var w[3];
+        w = forward_func();
+        return w[0];
+    #endif
+
+    #if defined MERGED_ARRAY_VECTOR_INIT
+        var a[2][3];
+        a[0][0] = 1;
+        var b[2][3];
+        b[0][0] = 5;
+        b[1][0] = 6;
+        printf "b00=%d b10=%d\n", b[0][0], b[1][0];
+    #endif
     }
+
+#if defined FORWARD_FUNC_ARRAY
+forward_func() {
+    var r[3];
+    return r;
+}
+#endif

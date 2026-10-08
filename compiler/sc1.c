@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7706 2026-10-03 08:17:49Z thiadmer $
+ *  Version: $Id: sc1.c 7708 2026-10-07 18:58:58Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -119,16 +119,17 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
 static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
                       int startlit,int counteddim[],constvalue *lastdim,
                       constvalue *dimnames[],bool *errorfound);
-static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
+static cell initvector(int ident,short usage,int tag,cell size,int fillzero,
                        constvalue *dimnames,bool *errorfound);
 static cell init(int ident,int usage,int *tag,bool *errorfound,int *packcount,cell *packitem);
 static int getstates(const char *symname);
 static statelist *attachstatelist(symbol *sym,int state_id);
 static void funcstub(int fnative);
 static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,int stock);
-static int declargs(symbol *sym,int chkshadow);
-static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
-                  int fpublic,int fconst,int chkshadow,arginfo *arg);
+static int declparams(symbol *sym,int chkshadow);
+static void param2symbol(const char *name,int ident,int offset,const int tags[],int numtags,
+                         bool fpublic,bool fconst,bool chkshadow,arginfo *arg);
+static bool vararg_locals(symbol *sym);
 static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makestategraph);
 static void reduce_referrers(symbol *root);
 static void gen_ovlinfo(symbol *root);
@@ -145,7 +146,7 @@ static void statement(int *lastindent,bool allow_decl);
 static void compound(bool stmt_sameline);
 static int test(int label,bool invert,bool test_true,bool *parenthesized);
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
-                  int *tag,symbol **symptr,bool chkfuncresult,bool in_test);
+                  int *tag,symbol **symptr,bool chkfuncresult,int in_test);
 static void doassert(void);
 static void doexit(void);
 static int doif(void);
@@ -2481,7 +2482,7 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
      */
     int tok=lexpeek();
     if (tok==tSTRING || tok==tPACKSTRING) {
-      error(1,"=","-string literal-");  /* expected token '=' */
+      error(1,"=","<string literal>");  /* expected token '=' */
       skiptotoken(',',true);            /* drop the rest of the declaration */
       litidx=0;                         /* and the literals that came with it */
     } /* if */
@@ -2721,7 +2722,7 @@ static bool declloc(bool fstatic)
     strlcpy(name,str,countof(name));    /* save symbol name */
     if (name[0]==PUBLIC_CHAR)
       error(56,name);                   /* local variables cannot be public */
-    symbol *sym=findloc(name);
+    symbol *sym=findlcl(name);
     /* Note: block locals may be named identical to locals at higher
      * compound blocks (as with standard C); so we must check (and add)
      * the "nesting level" of local variables to verify the
@@ -2822,7 +2823,7 @@ static bool declloc(bool fstatic)
         int ctag = tag;         /* set to "tag" by default */
         int explicit_init=false;/* is the variable explicitly initialized? */
         if (matchtoken('=')) {
-          doexpr(false,false,false,false,&ctag,NULL,true,false);
+          doexpr(false,false,false,false,&ctag,NULL,true,0);
           explicit_init=true;
         } else {
           ldconst(0,sPRI);      /* uninitialized variable, set to zero */
@@ -3182,7 +3183,7 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
  *  \return The size in elements (cells for standard arrays, bytes for byte
  *          arrays).
  */
-static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
+static cell initvector(int ident,short usage,int tag,cell size,int fillzero,
                        constvalue *dimnames,bool *errorfound)
 {
   cell prev1=0,prev2=0;
@@ -3210,7 +3211,6 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
       error(51);        /* error (only unpacked arrays can use symbolic indices) */
     do {
       unsigned fieldlit=litidx;
-      int matchbrace,fieldusage,ftag;
       if (matchtoken(match)) {  /* to allow for trailing ',' after the initialization */
         lexpush();
         break;
@@ -3218,8 +3218,8 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
       if ((ellips=matchtoken(tELLIPS))!=0)
         break;
       /* for symbolic subscripts, allow another level of braces ("[...]" or "{...}") */
-      matchbrace=0;             /* preset */
-      fieldusage=usage;
+      int matchbrace=0;         /* preset */
+      short fieldusage=usage;
       if (field!=NULL) {
         if (matchtoken('['))
           matchbrace=']';
@@ -3227,7 +3227,7 @@ static cell initvector(int ident,int usage,int tag,cell size,int fillzero,
           matchbrace='}';
         fieldusage=field->usage;
       } /* if */
-      ftag=-1;
+      int ftag=-1;
       for ( ;; ) {
         prev2=prev1;
         prev1=init(ident,fieldusage,&ctag,errorfound,&packcount,&packitem);
@@ -3797,7 +3797,17 @@ static int operatorname(char *name)
   return opertok;
 }
 
-static int operatoradjust(int opertok,symbol *sym,char *opername,int resulttag)
+/** operatoradjust() changes the name of the function based on the operator
+ *  and the tag names of its parameters. It is used for operator overloading.
+ *
+ *  \param opertok      The token (typically a character) for the operator.
+ *  \param sym          [in/out] The symbol that has been created for the
+ *                      function (but without its symbol name set).
+ *  \param opername     [in] The current (dummy) name of the function.
+ *  \param resulttag    The tag of the function result. It is only used for the
+ *                      '=' operator.
+ */
+static int operatoradjust(int opertok,symbol *sym,const char *opername,int resulttag)
 {
   if (opertok==0)
     return true;
@@ -3858,7 +3868,7 @@ static int operatoradjust(int opertok,symbol *sym,char *opername,int resulttag)
     error(64);        /* cannot change predefined operators */
 
   /* change the operator name */
-  assert(strlen(opername)>0);
+  assert(opername!=NULL && strlen(opername)>0);
   char tmpname[sNAMEMAX+1];
   operator_symname(tmpname,countof(tmpname),opername,tags[0],tags[1],count,resulttag);
   symbol *oldsym=findglb(tmpname,sGLOBAL);
@@ -4110,7 +4120,7 @@ static void funcstub(int fnative)
   } /* if */
   sym->usage|=uFORWARD;
 
-  declargs(sym,false);
+  declparams(sym,false);
   /* "declargs()" found the ")" */
   sc_attachdocumentation(sym,true);  /* attach any documenation to the function */
   if (!operatoradjust(opertok,sym,symbolname,tag))
@@ -4197,19 +4207,18 @@ static void funcstub(int fnative)
 static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,int stock)
 {
   symbol *sym;
-  int argcnt,tag;
-  int opertok,opererror;
+  int tag;
   char symbolname[sNAMEMAX+1];
   char *str;
-  cell val,cidx,glbdecl;
+  cell val;
   short filenum;
 
   assert(litidx==0);    /* literal queue should be empty */
   litidx=0;             /* clear the literal pool (should already be empty) */
-  opertok=0;
+  int opertok=0;
   lastst=0;             /* no statement yet */
-  cidx=0;               /* just to avoid compiler warnings */
-  glbdecl=0;
+  cell cidx=0;
+  cell glbdecl=0;
   assert(loctab.next==NULL);    /* local symbol table should be empty */
   filenum=fcurrent;     /* save file number at the start of the declaration */
 
@@ -4292,13 +4301,15 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     if (fpublic && (sym->usage & uFORWARD)==0)
       error(235,symbolname);
   }
-  /* declare all arguments */
-  argcnt=declargs(sym,true);
-  opererror=!operatoradjust(opertok,sym,symbolname,tag);
+  /* declare all parameters */
+  int paramcnt=declparams(sym,true);
+  /* for functions with a variable argument list, create intrinsic local variables */
+  vararg_locals(sym);
+  int opererror=!operatoradjust(opertok,sym,symbolname,tag);
   if ((sym->flags & flgENTRYPOINT)!=0
       || strcmp(symbolname,_ENTRYFUNC)==0 || strcmp(symbolname,_EXITFUNC)==0)
   {
-    if (argcnt>0)
+    if (paramcnt>0)
       error(5);         /* main(), @start(), entry() and exit() functions may not have any parameters */
     sym->usage|=uREAD;  /* these entry & exit points for programs or states are implicitly "used" */
   } /* if */
@@ -4506,8 +4517,8 @@ static bool argcompare(arginfo *a1,arginfo *a2)
 # undef UMASK
 }
 
-/** declargs() adds an entry in the local symbol table for each argument in the
- *  argument list.
+/** declparams() adds an entry in the local symbol table for each argument in
+ *  the argument list.
  *
  *  \param sym          [in, modified] The symbol for the function.
  *  \param chkshadow    Whether the routine should check (and warn) for argument
@@ -4515,13 +4526,12 @@ static bool argcompare(arginfo *a1,arginfo *a2)
  *
  *  \return The number of arguments.
  */
-static int declargs(symbol *sym,int chkshadow)
+static int declparams(symbol *sym,int chkshadow)
 {
 # define MAXTAGS 16
   char *ptr;
   int argcnt,oldargcnt,numtags;
   cell val;
-  arginfo arg = { 0 };
   arginfo *arglist;
   int ident,fpublic,fconst;
   int idx;
@@ -4544,6 +4554,7 @@ static int declargs(symbol *sym,int chkshadow)
     char name[sNAMEMAX+1];
     int tags[MAXTAGS];
     int tok;
+    arginfo arg = { 0 };
     do {                                /* there are arguments; process them */
       /* any legal name increases argument count (and stack offset) */
       tok=lex(&val,&ptr);
@@ -4553,23 +4564,25 @@ static int declargs(symbol *sym,int chkshadow)
         break;
       case '&':
         if (ident!=iVARIABLE || numtags>0)
-          error(1,"-identifier-","&");
+          error(1,"<identifier>","&");          /* expected -identifier- */
+        else if (fconst)
+          error(240);                           /* '&' is superfluous (pass by value) */
         ident=iREFERENCE;
         break;
       case tCONST:
         if (ident!=iVARIABLE || numtags>0)
-          error(1,"-identifier-","const");
+          error(1,"<identifier>","const");      /* expected -identifier- */
         fconst=true;
         break;
       case tLABEL:
         if (numtags>0)
-          error(1,"-identifier-","-tagname-");
+          error(1,"<identifier>","<tagname>");  /* expected -identifier- */
         tags[0]=pc_addtag(ptr);
         numtags=1;
         break;
       case '{':
         if (numtags>0)
-          error(1,"-identifier-","-tagname-");
+          error(1,"<identifier>","{");          /* expected -identifier- */
         numtags=0;
         while (numtags<MAXTAGS) {
           if (!matchtoken('_') && !needtoken(tSYMBOL))
@@ -4585,20 +4598,20 @@ static int declargs(symbol *sym,int chkshadow)
         break;
       case tSYMBOL:
         if (argcnt>=sMAXARGS)
-          error(45);                    /* too many function arguments */
-        strcpy(name,ptr);               /* save symbol name */
+          error(45);                    /* too many function parameters */
+        strcpy(name,ptr);               /* save parameter name */
         if (name[0]==PUBLIC_CHAR)
           error(56,name);               /* function parameters cannot be public */
         if (numtags==0)
           tags[numtags++]=0;            /* default tag */
-        /* Stack layout:
-         *   base + 0*pc_cellsize  == previous "base"
+        /* Stack layout: (#STACKLAYOUT)
+         *   base + 0*pc_cellsize  == previous "frame base"
          *   base + 1*pc_cellsize  == function return address
          *   base + 2*pc_cellsize  == number of arguments
          *   base + 3*pc_cellsize  == first argument of the function
          * So the offset of each argument is "(argcnt+3) * pc_cellsize".
          */
-        doarg(name,ident,(argcnt+3)*pc_cellsize,tags,numtags,fpublic,fconst,chkshadow,&arg);
+        param2symbol(name,ident,(argcnt+3)*pc_cellsize,tags,numtags,fpublic,fconst,chkshadow,&arg);
         if (fpublic && arg.hasdefault)
           error(59,name);       /* parameters of a public function may not have a default value */
         if ((sym->usage & uPROTOTYPED)==0) {
@@ -4669,8 +4682,12 @@ static int declargs(symbol *sym,int chkshadow)
       } /* switch */
     } while (tok=='&' || tok==tLABEL || tok==tCONST
              || tok!=tELLIPS && matchtoken(',')); /* more? */
-    /* if the next token is not ",", it should be ")" */
-    needtoken(')');
+    if (tok==tELLIPS && matchtoken(',')) {
+      error(99);  /* ... must appear last */
+      skiptotoken(')',false);
+    } else {
+      needtoken(')');
+    }
   } /* if */
   if ((sym->usage & uPROTOTYPED)!=0 && argcnt!=oldargcnt)
     error(25);                  /* function definition does not match prototype */
@@ -4728,21 +4745,28 @@ static int declargs(symbol *sym,int chkshadow)
   return argcnt;
 }
 
-/*  doarg       - declare one argument type
+/** param2symbol() creates a local variable for a function parameter. This
+ *  routine is called from `declparams()`.
  *
- *  this routine is called from "declargs()" and adds an entry in the local
- *  symbol table for one argument.
- *
- *  "fpublic" indicates whether the function for this argument list is public.
- *  The arguments themselves are never public.
+ *  \param name         [in] The parameter name.
+ *  \param ident        The type of variable, iVARIABLE, iREFERENCE, iREFARRAY.
+ *  \param offset       The variable (base) address relative to `FRM`.
+ *  \param tags         [in] An array with tag IDs (a function parameter may
+ *                      accept multiple tags.
+ *  \param numtags      The number of tag IDs in the `tags` array.
+ *  \param fpublic      `true` if the *function* to which this parameter applies
+ *                      is public. The parameters themselves are never public.
+ *  \param fconst       `true` if the parameter is declared `const`.
+ *  \param chkshadow    If `true`, the function checks for parameters that
+ *                      shadow global variables/functions.
+ *  \param arg          [out] The structure with argument information, which is
+ *                      completed with collected data.
  */
-static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
-                  int fpublic,int fconst,int chkshadow,arginfo *arg)
+static void param2symbol(const char *name,int ident,int offset,
+                         const int tags[],int numtags,bool fpublic,bool fconst,
+                         bool chkshadow,arginfo *arg)
 {
-  symbol *argsym;
-  cell size;
-
-  strcpy(arg->name,name);
+  strlcpy(arg->name,name,countof(arg->name));
   arg->hasdefault=false;        /* preset (most common case) */
   arg->defvalue.val=0;          /* clear */
   arg->defvalue_tag=0;
@@ -4763,7 +4787,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
           error(53);              /* exceeding maximum number of dimensions */
           return;
         } /* if */
-        size=needsub(']',&arg->dimnames[arg->numdim]);/* may be zero here, it is a pointer anyway */
+        cell size=needsub(']',&arg->dimnames[arg->numdim]);/* may be zero here, it is a pointer anyway */
 #       if INT_MAX < LONG_MAX
           if (size>INT_MAX)
             error(105);           /* overflow, exceeding capacity */
@@ -4780,7 +4804,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
         return;
       } /* if */
       usage=uPACKED;
-      size=needsub('}',&arg->dimnames[arg->numdim]);/* may be zero here, it is a pointer anyway */
+      cell size=needsub('}',&arg->dimnames[arg->numdim]);/* may be zero here, it is a pointer anyway */
       size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
 #     if INT_MAX < LONG_MAX
         if (size>INT_MAX)
@@ -4797,6 +4821,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       lexpush();                /* initials() needs the "=" token again */
       assert(litidx==0);        /* at the start of a function, this is reset */
       assert(numtags>0);
+      cell size;
       initials(ident,usage,tags[0],&size,arg->dim,arg->numdim,arg->dimnames);
       assert(size>=0 && (unsigned)size>=litidx);
       /* allocate memory to hold the initial values */
@@ -4865,7 +4890,7 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
   if (arg->tags==NULL)
     error(103);                 /* insufficient memory */
   memcpy(arg->tags,tags,numtags*sizeof tags[0]);
-  argsym=findloc(name);
+  symbol *argsym=findlcl(name);
   if (argsym!=NULL) {
     error(21,name);             /* symbol already defined */
   } else {
@@ -4892,6 +4917,46 @@ static void doarg(char *name,int ident,int offset,const int tags[],int numtags,
       sub->flags|=flgARGUMENT;
     } /* for */
   } /* if */
+}
+
+static bool vararg_locals(symbol *sym)
+{
+  int argidx;
+  for (argidx=0; sym->dim.arglist[argidx].ident!=iVARARGS && sym->dim.arglist[argidx].ident!=0; argidx++)
+    /* nothing */;
+  if (sym->dim.arglist[argidx].ident==0)
+    return false; /* this function does not have a variable argument list */
+  /* 'arg' now holds the number of fixed arguments before the '...' */
+
+  /* create the 'argc' special variable; for the 'addr' argument of addvariable(),
+   * see the comment #STACKLAYOUT in declparams()
+   */
+  if (findlcl("argc")==NULL) {
+    symbol *argsym=addvariable("argc",2*pc_cellsize,iVARIABLE,sLOCAL,1,0,NULL,NULL,0,0);
+    argsym->usage|=uREAD|uWRITTEN|uCONST|uARGC;
+    argsym->index=argidx;       /* number of fixed arguments */
+  } else {
+    error(241,"argc");          /* function parameter shadows intrinsic variable  */
+  } /* if */
+
+  /* create the 'argv' variable; use the first tag of the variable argument list;
+   * see the comment #STACKLAYOUT in declparams() for 'addr' argument of
+   * addvariable()
+   */
+  if (findlcl("argv")==NULL) {
+    int tag= (sym->dim.arglist[argidx].numtags>0) ? sym->dim.arglist[argidx].tags[0] : 0;
+    int dim[sDIMEN_MAX]={0};
+    constvalue *dimnames[sDIMEN_MAX]={0};
+    symbol *argsym=addvariable("argv",(3+argidx)*pc_cellsize,iARRAY,sLOCAL,1,tag,dim,dimnames,1,0);
+    argsym->usage|=uREAD|uWRITTEN|uARGC;
+    if (sym->dim.arglist[argidx].usage & uCONST)
+      argsym->usage|=uCONST;
+    argsym->index=argidx;       /* number of fixed arguments */
+  } else {
+    error(241,"argc");          /* function parameter shadows intrinsic variable  */
+  } /* if */
+
+  return true;
 }
 
 static int count_referrers(const symbol *entry)
@@ -6064,7 +6129,7 @@ SC_FUNC symbol *add_constant(const char *name,cell val,int scope,int tag)
    * defind constants. */
   sym=findglb(name,sSTATEVAR);
   if (!sym)
-    sym=findloc(name);
+    sym=findlcl(name);
   if (sym) {
     if (sym->ident!=iCONSTEXPR || sym->tag!=tag) {
       /* redefinition a function/variable to a constant is not allowed;
@@ -6222,7 +6287,7 @@ static void statement(int *lastindent,bool allow_decl)
   default:          /* non-empty expression */
     sc_allowproccall=true;
     lexpush();      /* analyze token later */
-    doexpr(true,true,true,true,NULL,NULL,false,false);
+    doexpr(true,true,true,true,NULL,NULL,false,0);
     if (matchtoken('}'))
       lexpush();    /* a closing brace terminates the expression, but must be re-analysed */
     else
@@ -6295,7 +6360,7 @@ static void compound(bool stmt_sameline)
  *  Global references: stgidx   (read-only)
  */
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
-                  int *tag,symbol **symptr,bool chkfuncresult,bool in_test)
+                  int *tag,symbol **symptr,bool chkfuncresult,int in_test)
 {
   unsigned index;
   int ident;
@@ -6355,7 +6420,7 @@ SC_FUNC bool constexpression(cell *val,int *tag,symbol **symptr)
   cell cidx;
   stgget(&index,&cidx); /* mark position in code generator */
   errorset(sEXPRMARK);
-  int ident=expression(val,tag,symptr,NULL,false,false);
+  int ident=expression(val,tag,symptr,NULL,false,0);
   stgdel(index,cidx);   /* scratch generated code */
   stgset(false);        /* stop stage-buffering */
   if (ident!=iCONSTEXPR) {
@@ -6381,7 +6446,7 @@ SC_FUNC bool constexpression(cell *val,int *tag,symbol **symptr)
  *                        constant. This is for the special case of `while true`
  *                        which is accepted without warning.
  *  \param parenthesized  [out, optional] This parameter is set to `true` if the
- *                        test expression appears between parentheses. This
+ *                        test expression is enclosed with parentheses. This
  *                        parameter may be set to `NULL`.
  *
  *  \return
@@ -6415,7 +6480,7 @@ static int test(int label,bool invert,bool test_true,bool *parenthesized)
     bool subparens;
     stgget(&index,&cidx);       /* mark position (of last expression) in
                                  * code generator */
-    ident=expression(&constval,&tag,&sym,&subparens,true,true);
+    ident=expression(&constval,&tag,&sym,&subparens,true,sTEST_EXPR);
     parens=parens && subparens;
     if (simple_true==NOT_SET)
       simple_true= (ident==iCONSTEXPR && sym!=NULL && strcmp(sym->name,"true")==0);
@@ -6584,7 +6649,7 @@ static int dofor(void)
       pc_blocklevel++;
       declloc(false);           /* declare local variable */
     } else {
-      doexpr(true,true,true,true,NULL,NULL,false,false);  /* expression 1 */
+      doexpr(true,true,true,true,NULL,NULL,false,0);  /* expression 1 */
       needtoken(';');
     } /* if */
   } /* if */
@@ -6619,14 +6684,14 @@ static int dofor(void)
   stgmark((unsigned char)(sEXPRSTART+1));    /* mark start of 3th expression in stage */
   if (parens) {
     if (!matchtoken(')')) {
-      doexpr(true,true,true,true,NULL,NULL,false,false);  /* expression 3 */
+      doexpr(true,true,true,true,NULL,NULL,false,sFOR_POST);  /* expression 3 */
       needtoken(')');
     } /* if */
   } else {
     if (matchtoken('{')==1) {
       lexpush();                /* analyzed again in statement() */
     } else {
-      doexpr(true,true,true,true,NULL,NULL,false,false);  /* expression 3 */
+      doexpr(true,true,true,true,NULL,NULL,false,sFOR_POST);  /* expression 3 */
       if (lexpeek()!='{')
         needtoken(tTERM);       /* if expression is not parenthesized and not followed by '{', must end with newline */
     } /* if */
@@ -6680,7 +6745,7 @@ static void doswitch(void)
   int label;
 
   int parens=matchtoken('(');
-  doexpr(true,false,false,false,NULL,NULL,true,true);/* evaluate switch expression */
+  doexpr(true,false,false,false,NULL,NULL,true,sTEST_EXPR);/* evaluate switch expression */
   if (parens)
     needtoken(')');
   /* generate the code for the switch statement, the label is the address
@@ -6817,7 +6882,7 @@ static void doassert(void)
     stgset(true);               /* start staging */
     stgget(&index,&cidx);       /* mark position in code generator */
     do {
-      expression(NULL,NULL,NULL,NULL,false,true);
+      expression(NULL,NULL,NULL,NULL,false,sTEST_EXPR);
       stgdel(index,cidx);       /* just scrap the code */
     } while (matchtoken(','));
     stgset(false);              /* stop staging */
@@ -6892,7 +6957,7 @@ static symbol *fetchlab(const char *name)
 {
   symbol *sym;
 
-  sym=findloc(name);            /* labels are local in scope */
+  sym=findlcl(name);            /* labels are local in scope */
   if (sym) {
     if (sym->ident!=iLABEL)
       error_suggest(19,sym->name,iLABEL);  /* not a label: ... */
@@ -6920,8 +6985,9 @@ static void doreturn(void)
     int ident;
     if ((rettype & uRETNONE)!=0)
       error(78);                        /* mix "return;" and "return value;" */
-    ident=doexpr(true,false,true,false,&tag,&sym,true,false);
+    ident=doexpr(true,false,true,false,&tag,&sym,true,0);
     needtoken(tTERM);
+    markexpr(sEXPR,NULL,0);
     if (ident==iARRAY && sym==NULL) {
       /* returning a literal string is not supported (it must be a variable) */
       error(96,curfunc->name);
@@ -7098,7 +7164,7 @@ static void doexit(void)
   int tag=0;
 
   if (matchtoken(tTERM)==0){
-    doexpr(true,false,false,false,&tag,NULL,true,false);
+    doexpr(true,false,false,false,&tag,NULL,true,0);
     needtoken(tTERM);
   } else {
     ldconst(0,sPRI);
@@ -7114,7 +7180,7 @@ static void dosleep(void)
   int tag=0;
 
   if (matchtoken(tTERM)==0){
-    doexpr(true,false,false,false,&tag,NULL,true,false);
+    doexpr(true,false,false,false,&tag,NULL,true,0);
     needtoken(tTERM);
   } else {
     ldconst(0,sPRI);
@@ -7140,7 +7206,7 @@ static void dostate(void)
 
   /* check for an optional condition */
   if (matchtoken('(')) {
-    label_failcond=getlabel();          /* get label number for "false" branch */
+    label_failcond=getlabel();  /* get label number for "false" branch */
     pc_docexpr=true;            /* attach expression as a documentation string */
     test(label_failcond,false,false,NULL);  /* get expression, branch to flabel if false */
     pc_docexpr=false;

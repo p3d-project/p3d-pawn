@@ -439,7 +439,7 @@ typedef struct s_arraymerge {
 #define tSEPARATOR  329         /**< comma or newline */
 #define tENDEXPR    330         /**< forced end of expression */
 /* other recognized tokens */
-#define tNUMBER     321         /**< integer number */
+#define tNUMBER     331         /**< integer number */
 #define tRATIONAL   332         /**< rational number */
 #define tSYMBOL     333
 #define tLABEL      334

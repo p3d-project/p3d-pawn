@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7708 2026-10-07 18:58:58Z thiadmer $
+ *  Version: $Id: sc4.c 7709 2026-10-10 19:44:52Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -411,14 +411,14 @@ SC_FUNC void markexpr(optmark type,const char *name,cell offset)
 {
   switch (type) {
   case sEXPR:
-    stgwrite("\t;$exp\n");
+    stgwrite("\t;;expr\n");
     break;
   case sPARM:
-    stgwrite("\t;$par\n");
+    stgwrite("\t;;arg\n");
     break;
   case sLDECL:
     assert(name!=NULL);
-    stgwrite("\t;$lcl ");
+    stgwrite("\t;;lcl ");
     stgwrite(name);
     stgwrite(" ");
     outval(offset,true,true);
@@ -1203,7 +1203,7 @@ SC_FUNC void addconst(cell value)
 }
 
 /*
- *  signed multiply of primary and secundairy registers (result in primary)
+ *  signed multiply of primary and secondary registers (result in primary)
  */
 SC_FUNC void os_mult(void)
 {
@@ -1302,7 +1302,7 @@ SC_FUNC void ob_xor(void)
   code_idx+=opcodes(1);
 }
 
-/** ob_and() bitwise "and" of primary and secundairy registers (result in
+/** ob_and() bitwise "and" of primary and secondary registers (result in
  *  primary).
  */
 SC_FUNC void ob_and(void)
@@ -1311,7 +1311,7 @@ SC_FUNC void ob_and(void)
   code_idx+=opcodes(1);
 }
 
-/** ob_andnot() bitwise "and" of the "inverted" primary and secundairy registers
+/** ob_andnot() bitwise "and" of the "inverted" primary and secondary registers
  *  (result in primary).
  */
 SC_FUNC void ob_andnot(void)

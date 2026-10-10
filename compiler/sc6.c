@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc6.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: sc6.c 7709 2026-10-10 19:44:52Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -46,8 +46,11 @@ typedef struct {
   char *name;
   int segment;          /* sIN_CSEG=parse in cseg, sIN_DSEG=parse in dseg */
   OPCODE_PROC func;
-  int opt_level;        /* optimization level for this instruction set */
+  short opt_level;      /* optimization level for this instruction set */
+  short seqpoint;       /* registers for which the instruction is a sequence point (bit field) */
 } OPCODE;
+
+#define SEQPOINT(reg)   (1u << (reg))
 
 static cell *lbltab;    /* label table */
 static int writeerror;
@@ -232,7 +235,7 @@ static cell noop(FILE *fbin,const char *params,cell opcode,cell cip)
   return 0;
 }
 
-static cell set_currentfile(FILE *fbin,const char *params,cell opcode,cell cip)
+static cell set_curfile(FILE *fbin,const char *params,cell opcode,cell cip)
 {
   (void)fbin;
   (void)opcode;
@@ -408,212 +411,206 @@ static cell do_caseovl(FILE *fbin,const char *params,cell opcode,cell cip)
 }
 
 static OPCODE opcodelist[] = {
-  /* node for "invalid instruction" */
-  {  0, NULL,          0,        noop,     0 },
   /* opcodes in alphapetically sorted order */
-  { 44, "add",         sIN_CSEG, parm0,    1 },
-  {100, "add.c",       sIN_CSEG, parm1,    2 },
-  {160, "add.p.c",     sIN_CSEG, parm1_p,  3 },
-  { 12, "addr.alt",    sIN_CSEG, parm1,    1 },
-  {134, "addr.p.alt",  sIN_CSEG, parm1_p,  3 },
-  {133, "addr.p.pri",  sIN_CSEG, parm1_p,  3 },
-  { 11, "addr.pri",    sIN_CSEG, parm1,    1 },
-  {141, "align.p.pri", sIN_CSEG, parm1_p,  3 },
-  { 18, "align.pri",   sIN_CSEG, parm1,    1 },
-  { 46, "and",         sIN_CSEG, parm0,    1 },
-  { 68, "bounds",      sIN_CSEG, parm1,    1 },
-  {174, "bounds.p",    sIN_CSEG, parm1_p,  3 },
-  { 73, "break",       sIN_CSEG, parm0,    1 },
-  { 33, "call",        sIN_CSEG, do_call,  1 },
-  { 77, "call.ovl",    sIN_CSEG, parm1,    1 },
-  {  0, "case",        sIN_CSEG, do_case,  1 },
-  {  0, "case.ovl",    sIN_CSEG, do_caseovl, 1 },
-  { 74, "casetbl",     sIN_CSEG, parm0,    1 },
-  { 80, "casetbl.ovl", sIN_CSEG, parm0,    1 },
-  { 65, "cmps",        sIN_CSEG, parm1,    1 },
-  {171, "cmps.p",      sIN_CSEG, parm1_p,  3 },
-  {  0, "code",        sIN_CSEG, set_currentfile, 1 },
-  {122, "const",       sIN_CSEG, parm2,    2 },
-  { 10, "const.alt",   sIN_CSEG, parm1,    1 },
-  {132, "const.p.alt", sIN_CSEG, parm1_p,  3 },
-  {131, "const.p.pri", sIN_CSEG, parm1_p,  3 },
-  {  9, "const.pri",   sIN_CSEG, parm1,    1 },
-  {123, "const.s",     sIN_CSEG, parm2,    2 },
-  {  0, "data",        sIN_DSEG, set_currentfile, 1 },
-  {110, "dec",         sIN_CSEG, parm1,    2 },
-  { 62, "dec.alt",     sIN_CSEG, parm0,    1 },
-  { 63, "dec.i",       sIN_CSEG, parm0,    1 },
-  {168, "dec.p",       sIN_CSEG, parm1_p,  3 },
-  {169, "dec.p.s",     sIN_CSEG, parm1_p,  3 },
-  { 61, "dec.pri",     sIN_CSEG, parm0,    1 },
-  {111, "dec.s",       sIN_CSEG, parm1,    2 },
-  {  0, "dump",        sIN_DSEG, do_dump,  1 },
-  { 52, "eq",          sIN_CSEG, parm0,    1 },
-  {107, "eq.c.alt",    sIN_CSEG, parm1,    2 },
-  {106, "eq.c.pri",    sIN_CSEG, parm1,    2 },
-  {165, "eq.p.c.alt",  sIN_CSEG, parm1_p,  3 },
-  {164, "eq.p.c.pri",  sIN_CSEG, parm1_p,  3 },
-  { 66, "fill",        sIN_CSEG, parm1,    1 },
-  {172, "fill.p",      sIN_CSEG, parm1_p,  3 },
-  { 67, "halt",        sIN_CSEG, parm1,    1 },
-  {173, "halt.p",      sIN_CSEG, parm1_p,  3 },
-  { 29, "heap",        sIN_CSEG, parm1,    1 },
-  {157, "heap.p",      sIN_CSEG, parm1_p,  3 },
-  { 83, "idxaddr",     sIN_CSEG, parm0,    2 },
-  { 84, "idxaddr.b",   sIN_CSEG, parm1,    2 },
-  {140, "idxaddr.p.b", sIN_CSEG, parm1_p,  3 },
-  {108, "inc",         sIN_CSEG, parm1,    2 },
-  { 59, "inc.alt",     sIN_CSEG, parm0,    1 },
-  { 60, "inc.i",       sIN_CSEG, parm0,    1 },
-  {166, "inc.p",       sIN_CSEG, parm1_p,  3 },
-  {167, "inc.p.s",     sIN_CSEG, parm1_p,  3 },
-  { 58, "inc.pri",     sIN_CSEG, parm0,    1 },
-  {109, "inc.s",       sIN_CSEG, parm1,    2 },
-  { 51, "invert",      sIN_CSEG, parm0,    1 },
-  { 92, "jeq",         sIN_CSEG, do_jump,  2 },
-  { 93, "jneq",        sIN_CSEG, do_jump,  2 },
-  { 36, "jnz",         sIN_CSEG, do_jump,  1 },
-  { 97, "jsgeq",       sIN_CSEG, do_jump,  2 },
-  { 96, "jsgrtr",      sIN_CSEG, do_jump,  2 },
-  { 95, "jsleq",       sIN_CSEG, do_jump,  2 },
-  { 94, "jsless",      sIN_CSEG, do_jump,  2 },
-  { 34, "jump",        sIN_CSEG, do_jump,  1 },
-  { 35, "jzer",        sIN_CSEG, do_jump,  1 },
-  { 19, "lctrl",       sIN_CSEG, parm1,    1 },
-  { 81, "lidx",        sIN_CSEG, parm0,    2 },
-  { 82, "lidx.b",      sIN_CSEG, parm1,    2 },
-  {139, "lidx.p.b",    sIN_CSEG, parm1_p,  3 },
-  {  2, "load.alt",    sIN_CSEG, parm1,    1 },
-  {  7, "load.i",      sIN_CSEG, parm0,    1 },
-  {125, "load.p.alt",  sIN_CSEG, parm1_p,  3 },
-  {124, "load.p.pri",  sIN_CSEG, parm1_p,  3 },
-  {127, "load.p.s.alt",sIN_CSEG, parm1_p,  3 },
-  {126, "load.p.s.pri",sIN_CSEG, parm1_p,  3 },
-  {  1, "load.pri",    sIN_CSEG, parm1,    1 },
-  {  4, "load.s.alt",  sIN_CSEG, parm1,    1 },
-  {  3, "load.s.pri",  sIN_CSEG, parm1,    1 },
-  {120, "load2",       sIN_CSEG, parm2,    2 },
-  {121, "load2.s",     sIN_CSEG, parm2,    2 },
-  {  8, "lodb.i",      sIN_CSEG, parm1,    1 },
-  {130, "lodb.p.i",    sIN_CSEG, parm1_p,  3 },
-  {129, "lref.p.s.alt",sIN_CSEG, parm1_p,  3 },
-  {128, "lref.p.s.pri",sIN_CSEG, parm1_p,  3 },
-  {  6, "lref.s.alt",  sIN_CSEG, parm1,    1 },
-  {  5, "lref.s.pri",  sIN_CSEG, parm1,    1 },
-  { 64, "movs",        sIN_CSEG, parm1,    1 },
-  {170, "movs.p",      sIN_CSEG, parm1_p,  3 },
-  { 50, "neg",         sIN_CSEG, parm0,    1 },
-  { 53, "neq",         sIN_CSEG, parm0,    1 },
-  {  0, "nop",         sIN_CSEG, parm0,    1 },
-  { 49, "not",         sIN_CSEG, parm0,    1 },
-  { 47, "or",          sIN_CSEG, parm0,    1 },
-  { 27, "pick",        sIN_CSEG, parm1,    1 },
-  { 26, "pop.alt",     sIN_CSEG, parm0,    1 },
-  { 25, "pop.pri",     sIN_CSEG, parm0,    1 },
-  { 30, "proc",        sIN_CSEG, parm0,    1 },
-  { 86, "push",        sIN_CSEG, parm1,    2 },
-  { 88, "push.adr",    sIN_CSEG, parm1,    2 },
-  { 23, "push.alt",    sIN_CSEG, parm0,    1 },
-  { 85, "push.c",      sIN_CSEG, parm1,    2 },
-  {143, "push.p",      sIN_CSEG, parm1_p,  3 },
-  {145, "push.p.adr",  sIN_CSEG, parm1_p,  3 },
-  {142, "push.p.c",    sIN_CSEG, parm1_p,  3 },
-  {144, "push.p.s",    sIN_CSEG, parm1_p,  3 },
-  { 22, "push.pri",    sIN_CSEG, parm0,    1 },
-  { 87, "push.s",      sIN_CSEG, parm1,    2 },
-  {114, "pushm",       sIN_CSEG, parmx,    2 },
-  {116, "pushm.adr",   sIN_CSEG, parmx,    2 },
-  {113, "pushm.c",     sIN_CSEG, parmx,    2 },
-  {150, "pushm.p",     sIN_CSEG, parmx_p,  3 },
-  {152, "pushm.p.adr", sIN_CSEG, parmx_p,  3 },
-  {149, "pushm.p.c",   sIN_CSEG, parmx_p,  3 },
-  {151, "pushm.p.s",   sIN_CSEG, parmx_p,  3 },
-  {115, "pushm.s",     sIN_CSEG, parmx,    2 },
-  { 91, "pushr.adr",   sIN_CSEG, parm1,    2 },
-  { 89, "pushr.c",     sIN_CSEG, parm1,    2 },
-  {148, "pushr.p.adr", sIN_CSEG, parm1_p,  3 },
-  {146, "pushr.p.c",   sIN_CSEG, parm1_p,  3 },
-  {147, "pushr.p.s",   sIN_CSEG, parm1_p,  3 },
-  { 24, "pushr.pri",   sIN_CSEG, parm0,    1 },
-  { 90, "pushr.s",     sIN_CSEG, parm1,    2 },
-  {119, "pushrm.adr",  sIN_CSEG, parmx,    2 },
-  {117, "pushrm.c",    sIN_CSEG, parmx,    2 },
-  {155, "pushrm.p.adr",sIN_CSEG, parmx_p,  3 },
-  {153, "pushrm.p.c",  sIN_CSEG, parmx_p,  3 },
-  {154, "pushrm.p.s",  sIN_CSEG, parmx_p,  3 },
-  {118, "pushrm.s",    sIN_CSEG, parmx,    2 },
-  { 31, "ret",         sIN_CSEG, parm0,    1 },
-  { 32, "retn",        sIN_CSEG, parm0,    1 },
-  { 78, "retn.ovl",    sIN_CSEG, parm0,    1 },
-  { 20, "sctrl",       sIN_CSEG, parm1,    1 },
-  { 43, "sdiv",        sIN_CSEG, parm0,    1 },
-  { 98, "sdiv.inv",    sIN_CSEG, parm0,    2 },
-  { 57, "sgeq",        sIN_CSEG, parm0,    1 },
-  { 56, "sgrtr",       sIN_CSEG, parm0,    1 },
-  { 37, "shl",         sIN_CSEG, parm0,    1 },
-  { 41, "shl.c.alt",   sIN_CSEG, parm1,    1 },
-  { 40, "shl.c.pri",   sIN_CSEG, parm1,    1 },
-  {159, "shl.p.c.alt", sIN_CSEG, parm1_p,  3 },
-  {158, "shl.p.c.pri", sIN_CSEG, parm1_p,  3 },
-  { 38, "shr",         sIN_CSEG, parm0,    1 },
-  { 55, "sleq",        sIN_CSEG, parm0,    1 },
-  { 54, "sless",       sIN_CSEG, parm0,    1 },
-  { 42, "smul",        sIN_CSEG, parm0,    1 },
-  {101, "smul.c",      sIN_CSEG, parm1,    2 },
-  {161, "smul.p.c",    sIN_CSEG, parm1_p,  3 },
-  {137, "sref.p.s",    sIN_CSEG, parm1_p,  3 },
-  { 15, "sref.s",      sIN_CSEG, parm1,    1 },
-  { 39, "sshr",        sIN_CSEG, parm0,    1 },
-  { 28, "stack",       sIN_CSEG, parm1,    1 },
-  {156, "stack.p",     sIN_CSEG, parm1_p,  3 },
-  {  0, "stksize",     0,        noop,     1 },
-  { 13, "stor",        sIN_CSEG, parm1,    1 },
-  { 16, "stor.i",      sIN_CSEG, parm0,    1 },
-  {135, "stor.p",      sIN_CSEG, parm1_p,  3 },
-  {136, "stor.p.s",    sIN_CSEG, parm1_p,  3 },
-  { 14, "stor.s",      sIN_CSEG, parm1,    1 },
-  { 17, "strb.i",      sIN_CSEG, parm1,    1 },
-  {138, "strb.p.i",    sIN_CSEG, parm1_p,  3 },
-  { 45, "sub",         sIN_CSEG, parm0,    1 },
-  { 99, "sub.inv",     sIN_CSEG, parm0,    2 },
-  { 72, "swap.alt",    sIN_CSEG, parm0,    1 },
-  { 71, "swap.pri",    sIN_CSEG, parm0,    1 },
-  { 70, "switch",      sIN_CSEG, do_switch,1 },
-  { 79, "switch.ovl",  sIN_CSEG, do_switch,1 },
-  { 69, "sysreq",      sIN_CSEG, parm1,    1 },
-/*{ 75, "sysreq.d",    sIN_CSEG, parm1,    1 }, not generated by the compiler */
-  {112, "sysreq.n",    sIN_CSEG, parm2,    2 },
-/*{ 76, "sysreq.nd",   sIN_CSEG, parm2,    1 }, not generated by the compiler */
-  { 21, "xchg",        sIN_CSEG, parm0,    1 },
-  { 48, "xor",         sIN_CSEG, parm0,    1 },
-  {104, "zero",        sIN_CSEG, parm1,    2 },
-  {103, "zero.alt",    sIN_CSEG, parm0,    2 },
-  {162, "zero.p",      sIN_CSEG, parm1_p,  3 },
-  {163, "zero.p.s",    sIN_CSEG, parm1_p,  3 },
-  {102, "zero.pri",    sIN_CSEG, parm0,    2 },
-  {105, "zero.s",      sIN_CSEG, parm1,    2 },
+  {  0, "CODE",        sIN_CSEG, set_curfile, 1, 0 },
+  {  0, "DATA",        sIN_DSEG, set_curfile, 1, 0 },
+  {  0, "STKSIZE",     0,        noop,        1, 0 },
+  { 44, "add",         sIN_CSEG, parm0,       1, 0 },
+  {100, "add.c",       sIN_CSEG, parm1,       2, 0 },
+  {160, "add.p.c",     sIN_CSEG, parm1_p,     3, 0 },
+  { 12, "addr.alt",    sIN_CSEG, parm1,       1, SEQPOINT(sALT) },
+  {134, "addr.p.alt",  sIN_CSEG, parm1_p,     3, SEQPOINT(sALT) },
+  {133, "addr.p.pri",  sIN_CSEG, parm1_p,     3, SEQPOINT(sPRI) },
+  { 11, "addr.pri",    sIN_CSEG, parm1,       1, SEQPOINT(sPRI) },
+  {141, "align.p.pri", sIN_CSEG, parm1_p,     3, 0 },
+  { 18, "align.pri",   sIN_CSEG, parm1,       1, 0 },
+  { 46, "and",         sIN_CSEG, parm0,       1, 0 },
+  { 68, "bounds",      sIN_CSEG, parm1,       1, 0 },
+  {174, "bounds.p",    sIN_CSEG, parm1_p,     3, 0 },
+  { 73, "break",       sIN_CSEG, parm0,       1, 0 },
+  { 33, "call",        sIN_CSEG, do_call,     1, 0 },
+  { 77, "call.ovl",    sIN_CSEG, parm1,       1, 0 },
+  {  0, "case",        sIN_CSEG, do_case,     1, 0 },
+  {  0, "case.ovl",    sIN_CSEG, do_caseovl,  1, 0 },
+  { 74, "casetbl",     sIN_CSEG, parm0,       1, 0 },
+  { 80, "casetbl.ovl", sIN_CSEG, parm0,       1, 0 },
+  { 65, "cmps",        sIN_CSEG, parm1,       1, 0 },
+  {171, "cmps.p",      sIN_CSEG, parm1_p,     3, 0 },
+  {122, "const",       sIN_CSEG, parm2,       2, 0 },
+  { 10, "const.alt",   sIN_CSEG, parm1,       1, SEQPOINT(sALT) },
+  {132, "const.p.alt", sIN_CSEG, parm1_p,     3, SEQPOINT(sALT) },
+  {131, "const.p.pri", sIN_CSEG, parm1_p,     3, SEQPOINT(sPRI) },
+  {  9, "const.pri",   sIN_CSEG, parm1,       1, SEQPOINT(sPRI) },
+  {123, "const.s",     sIN_CSEG, parm2,       2, 0 },
+  {110, "dec",         sIN_CSEG, parm1,       2, 0 },
+  { 62, "dec.alt",     sIN_CSEG, parm0,       1, 0 },
+  { 63, "dec.i",       sIN_CSEG, parm0,       1, 0 },
+  {168, "dec.p",       sIN_CSEG, parm1_p,     3, 0 },
+  {169, "dec.p.s",     sIN_CSEG, parm1_p,     3, 0 },
+  { 61, "dec.pri",     sIN_CSEG, parm0,       1, 0 },
+  {111, "dec.s",       sIN_CSEG, parm1,       2, 0 },
+  {  0, "dump",        sIN_DSEG, do_dump,     1, 0 },
+  { 52, "eq",          sIN_CSEG, parm0,       1, 0 },
+  {107, "eq.c.alt",    sIN_CSEG, parm1,       2, SEQPOINT(sPRI) },
+  {106, "eq.c.pri",    sIN_CSEG, parm1,       2, 0 },
+  {165, "eq.p.c.alt",  sIN_CSEG, parm1_p,     3, SEQPOINT(sPRI) },
+  {164, "eq.p.c.pri",  sIN_CSEG, parm1_p,     3, 0 },
+  { 66, "fill",        sIN_CSEG, parm1,       1, 0 },
+  {172, "fill.p",      sIN_CSEG, parm1_p,     3, 0 },
+  { 67, "halt",        sIN_CSEG, parm1,       1, 0 },
+  {173, "halt.p",      sIN_CSEG, parm1_p,     3, 0 },
+  { 29, "heap",        sIN_CSEG, parm1,       1, SEQPOINT(sALT) },
+  {157, "heap.p",      sIN_CSEG, parm1_p,     3, SEQPOINT(sALT) },
+  { 83, "idxaddr",     sIN_CSEG, parm0,       2, 0 },
+  { 84, "idxaddr.b",   sIN_CSEG, parm1,       2, 0 },
+  {140, "idxaddr.p.b", sIN_CSEG, parm1_p,     3, 0 },
+  {108, "inc",         sIN_CSEG, parm1,       2, 0 },
+  { 59, "inc.alt",     sIN_CSEG, parm0,       1, 0 },
+  { 60, "inc.i",       sIN_CSEG, parm0,       1, 0 },
+  {166, "inc.p",       sIN_CSEG, parm1_p,     3, 0 },
+  {167, "inc.p.s",     sIN_CSEG, parm1_p,     3, 0 },
+  { 58, "inc.pri",     sIN_CSEG, parm0,       1, 0 },
+  {109, "inc.s",       sIN_CSEG, parm1,       2, 0 },
+  { 51, "invert",      sIN_CSEG, parm0,       1, 0 },
+  { 92, "jeq",         sIN_CSEG, do_jump,     2, 0 },
+  { 93, "jneq",        sIN_CSEG, do_jump,     2, 0 },
+  { 36, "jnz",         sIN_CSEG, do_jump,     1, 0 },
+  { 97, "jsgeq",       sIN_CSEG, do_jump,     2, 0 },
+  { 96, "jsgrtr",      sIN_CSEG, do_jump,     2, 0 },
+  { 95, "jsleq",       sIN_CSEG, do_jump,     2, 0 },
+  { 94, "jsless",      sIN_CSEG, do_jump,     2, 0 },
+  { 34, "jump",        sIN_CSEG, do_jump,     1, 0 },
+  { 35, "jzer",        sIN_CSEG, do_jump,     1, 0 },
+  { 19, "lctrl",       sIN_CSEG, parm1,       1, SEQPOINT(sPRI) },
+  { 81, "lidx",        sIN_CSEG, parm0,       2, 0 },
+  { 82, "lidx.b",      sIN_CSEG, parm1,       2, 0 },
+  {139, "lidx.p.b",    sIN_CSEG, parm1_p,     3, 0 },
+  {  2, "load.alt",    sIN_CSEG, parm1,       1, SEQPOINT(sALT) },
+  {  7, "load.i",      sIN_CSEG, parm0,       1, 0 },
+  {125, "load.p.alt",  sIN_CSEG, parm1_p,     3, SEQPOINT(sALT) },
+  {124, "load.p.pri",  sIN_CSEG, parm1_p,     3, SEQPOINT(sPRI) },
+  {127, "load.p.s.alt",sIN_CSEG, parm1_p,     3, SEQPOINT(sALT) },
+  {126, "load.p.s.pri",sIN_CSEG, parm1_p,     3, SEQPOINT(sPRI) },
+  {  1, "load.pri",    sIN_CSEG, parm1,       1, SEQPOINT(sPRI) },
+  {  4, "load.s.alt",  sIN_CSEG, parm1,       1, SEQPOINT(sALT) },
+  {  3, "load.s.pri",  sIN_CSEG, parm1,       1, SEQPOINT(sPRI) },
+  {120, "load2",       sIN_CSEG, parm2,       2, SEQPOINT(sPRI) | SEQPOINT(sALT) },
+  {121, "load2.s",     sIN_CSEG, parm2,       2, SEQPOINT(sPRI) | SEQPOINT(sALT) },
+  {  8, "lodb.i",      sIN_CSEG, parm1,       1, 0 },
+  {130, "lodb.p.i",    sIN_CSEG, parm1_p,     3, 0 },
+  {129, "lref.p.s.alt",sIN_CSEG, parm1_p,     3, SEQPOINT(sALT) },
+  {128, "lref.p.s.pri",sIN_CSEG, parm1_p,     3, SEQPOINT(sPRI) },
+  {  6, "lref.s.alt",  sIN_CSEG, parm1,       1, SEQPOINT(sALT) },
+  {  5, "lref.s.pri",  sIN_CSEG, parm1,       1, SEQPOINT(sPRI) },
+  { 64, "movs",        sIN_CSEG, parm1,       1, 0 },
+  {170, "movs.p",      sIN_CSEG, parm1_p,     3, 0 },
+  { 50, "neg",         sIN_CSEG, parm0,       1, 0 },
+  { 53, "neq",         sIN_CSEG, parm0,       1, 0 },
+  {  0, "nop",         sIN_CSEG, parm0,       1, 0 },
+  { 49, "not",         sIN_CSEG, parm0,       1, 0 },
+  { 47, "or",          sIN_CSEG, parm0,       1, 0 },
+  { 27, "pick",        sIN_CSEG, parm1,       1, SEQPOINT(sPRI) },
+  { 26, "pop.alt",     sIN_CSEG, parm0,       1, SEQPOINT(sALT) },
+  { 25, "pop.pri",     sIN_CSEG, parm0,       1, SEQPOINT(sPRI) },
+  { 30, "proc",        sIN_CSEG, parm0,       1, 0 },
+  { 86, "push",        sIN_CSEG, parm1,       2, 0 },
+  { 88, "push.adr",    sIN_CSEG, parm1,       2, 0 },
+  { 23, "push.alt",    sIN_CSEG, parm0,       1, 0 },
+  { 85, "push.c",      sIN_CSEG, parm1,       2, 0 },
+  {143, "push.p",      sIN_CSEG, parm1_p,     3, 0 },
+  {145, "push.p.adr",  sIN_CSEG, parm1_p,     3, 0 },
+  {142, "push.p.c",    sIN_CSEG, parm1_p,     3, 0 },
+  {144, "push.p.s",    sIN_CSEG, parm1_p,     3, 0 },
+  { 22, "push.pri",    sIN_CSEG, parm0,       1, 0 },
+  { 87, "push.s",      sIN_CSEG, parm1,       2, 0 },
+  {114, "pushm",       sIN_CSEG, parmx,       2, 0 },
+  {116, "pushm.adr",   sIN_CSEG, parmx,       2, 0 },
+  {113, "pushm.c",     sIN_CSEG, parmx,       2, 0 },
+  {150, "pushm.p",     sIN_CSEG, parmx_p,     3, 0 },
+  {152, "pushm.p.adr", sIN_CSEG, parmx_p,     3, 0 },
+  {149, "pushm.p.c",   sIN_CSEG, parmx_p,     3, 0 },
+  {151, "pushm.p.s",   sIN_CSEG, parmx_p,     3, 0 },
+  {115, "pushm.s",     sIN_CSEG, parmx,       2, 0 },
+  { 91, "pushr.adr",   sIN_CSEG, parm1,       2, 0 },
+  { 89, "pushr.c",     sIN_CSEG, parm1,       2, 0 },
+  {148, "pushr.p.adr", sIN_CSEG, parm1_p,     3, 0 },
+  {146, "pushr.p.c",   sIN_CSEG, parm1_p,     3, 0 },
+  {147, "pushr.p.s",   sIN_CSEG, parm1_p,     3, 0 },
+  { 24, "pushr.pri",   sIN_CSEG, parm0,       1, 0 },
+  { 90, "pushr.s",     sIN_CSEG, parm1,       2, 0 },
+  {119, "pushrm.adr",  sIN_CSEG, parmx,       2, 0 },
+  {117, "pushrm.c",    sIN_CSEG, parmx,       2, 0 },
+  {155, "pushrm.p.adr",sIN_CSEG, parmx_p,     3, 0 },
+  {153, "pushrm.p.c",  sIN_CSEG, parmx_p,     3, 0 },
+  {154, "pushrm.p.s",  sIN_CSEG, parmx_p,     3, 0 },
+  {118, "pushrm.s",    sIN_CSEG, parmx,       2, 0 },
+  { 31, "ret",         sIN_CSEG, parm0,       1, 0 },
+  { 32, "retn",        sIN_CSEG, parm0,       1, 0 },
+  { 78, "retn.ovl",    sIN_CSEG, parm0,       1, 0 },
+  { 20, "sctrl",       sIN_CSEG, parm1,       1, 0 },
+  { 43, "sdiv",        sIN_CSEG, parm0,       1, 0 },
+  { 98, "sdiv.inv",    sIN_CSEG, parm0,       2, 0 },
+  { 57, "sgeq",        sIN_CSEG, parm0,       1, 0 },
+  { 56, "sgrtr",       sIN_CSEG, parm0,       1, 0 },
+  { 37, "shl",         sIN_CSEG, parm0,       1, 0 },
+  { 41, "shl.c.alt",   sIN_CSEG, parm1,       1, 0 },
+  { 40, "shl.c.pri",   sIN_CSEG, parm1,       1, 0 },
+  {159, "shl.p.c.alt", sIN_CSEG, parm1_p,     3, 0 },
+  {158, "shl.p.c.pri", sIN_CSEG, parm1_p,     3, 0 },
+  { 38, "shr",         sIN_CSEG, parm0,       1, 0 },
+  { 55, "sleq",        sIN_CSEG, parm0,       1, 0 },
+  { 54, "sless",       sIN_CSEG, parm0,       1, 0 },
+  { 42, "smul",        sIN_CSEG, parm0,       1, 0 },
+  {101, "smul.c",      sIN_CSEG, parm1,       2, 0 },
+  {161, "smul.p.c",    sIN_CSEG, parm1_p,     3, 0 },
+  {137, "sref.p.s",    sIN_CSEG, parm1_p,     3, 0 },
+  { 15, "sref.s",      sIN_CSEG, parm1,       1, 0 },
+  { 39, "sshr",        sIN_CSEG, parm0,       1, 0 },
+  { 28, "stack",       sIN_CSEG, parm1,       1, SEQPOINT(sALT) },
+  {156, "stack.p",     sIN_CSEG, parm1_p,     3, SEQPOINT(sALT) },
+  { 13, "stor",        sIN_CSEG, parm1,       1, 0 },
+  { 16, "stor.i",      sIN_CSEG, parm0,       1, 0 },
+  {135, "stor.p",      sIN_CSEG, parm1_p,     3, 0 },
+  {136, "stor.p.s",    sIN_CSEG, parm1_p,     3, 0 },
+  { 14, "stor.s",      sIN_CSEG, parm1,       1, 0 },
+  { 17, "strb.i",      sIN_CSEG, parm1,       1, 0 },
+  {138, "strb.p.i",    sIN_CSEG, parm1_p,     3, 0 },
+  { 45, "sub",         sIN_CSEG, parm0,       1, 0 },
+  { 99, "sub.inv",     sIN_CSEG, parm0,       2, 0 },
+  { 72, "swap.alt",    sIN_CSEG, parm0,       1, 0 },
+  { 71, "swap.pri",    sIN_CSEG, parm0,       1, 0 },
+  { 70, "switch",      sIN_CSEG, do_switch,   1, 0 },
+  { 79, "switch.ovl",  sIN_CSEG, do_switch,   1, 0 },
+  { 69, "sysreq",      sIN_CSEG, parm1,       1, 0 },
+/*{ 75, "sysreq.d",    sIN_CSEG, parm1,       1, 0 }, not generated by the compiler */
+  {112, "sysreq.n",    sIN_CSEG, parm2,       2, 0 },
+/*{ 76, "sysreq.nd",   sIN_CSEG, parm2,       1, 0 }, not generated by the compiler */
+  { 21, "xchg",        sIN_CSEG, parm0,       1, 0 },
+  { 48, "xor",         sIN_CSEG, parm0,       1, 0 },
+  {104, "zero",        sIN_CSEG, parm1,       2, 0 },
+  {103, "zero.alt",    sIN_CSEG, parm0,       2, SEQPOINT(sALT) },
+  {162, "zero.p",      sIN_CSEG, parm1_p,     3, 0 },
+  {163, "zero.p.s",    sIN_CSEG, parm1_p,     3, 0 },
+  {102, "zero.pri",    sIN_CSEG, parm0,       2, SEQPOINT(sPRI) },
+  {105, "zero.s",      sIN_CSEG, parm1,       2, 0 },
 };
 
 #define MAX_INSTR_LEN   30
-static int findopcode(const char *instr,int maxlen)
+static unsigned findopcode(const char *instr,int instr_len)
 {
-  int low,high;
+  assert(instr_len<MAX_INSTR_LEN);
   char str[MAX_INSTR_LEN];
+  strlcpy(str,instr,MAX_INSTR_LEN);
+  if (instr_len<MAX_INSTR_LEN)
+    str[instr_len]='\0';
 
-  if (maxlen>=MAX_INSTR_LEN)
-    return 0;
-  strlcpy(str,instr,maxlen+1);
-  /* look up the instruction with a binary search
-   * the assembler is case insensitive to instructions (but case sensitive
-   * to symbols)
-   */
-  low=1;                /* entry 0 is reserved (for "not found") */
-  high=(sizeof opcodelist / sizeof opcodelist[0])-1;
+  /* look up the instruction with a binary search; this look-up is case sensitive */
+  unsigned low=0;
+  unsigned high=countof(opcodelist)-1;
   while (low<high) {
-    int cmp;
     int mid=(low+high)/2;
     assert(opcodelist[mid].name!=NULL);
-    cmp=stricmp(str,opcodelist[mid].name);
+    int cmp=strcmp(str,opcodelist[mid].name);
     if (cmp>0)
       low=mid+1;
     else
@@ -621,22 +618,21 @@ static int findopcode(const char *instr,int maxlen)
   } /* while */
 
   assert(low==high);
-  if (stricmp(str,opcodelist[low].name)==0)
-    return low;         /* found */
-  return 0;             /* not found, return special index */
+  assert(strcmp(str,opcodelist[low].name)==0);
+  return low;
 }
 
 SC_FUNC int assemble(FILE *fout,FILE *fin)
 {
   AMX_HEADER hdr;
   AMX_FUNCSTUB func;
-  int numpublics,numnatives,numoverlays,numlibraries,numpubvars,numtags;
+  unsigned numpublics,numnatives,numoverlays,numlibraries,numpubvars,numtags;
   int padding;
   long nametablesize,nameofs;
   char line[512];
   char *instr,*params;
-  int i,pass,size;
-  int16_t count;
+  int pass,size;
+  uint16_t count;
   symbol *sym;
   symbol **nativelist;
   constvalue *constptr;
@@ -644,17 +640,15 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
   char nullchar;
 
 # if !defined NDEBUG
-    /* verify that the opcode list is sorted (skip entry 1; it is reserved
-     * for a non-existant opcode)
-     */
+    /* verify that the opcode list is sorted */
     {
 #     define MAX_OPCODE 176
       unsigned char opcodearray[MAX_OPCODE+1];
       assert(opcodelist[1].name!=NULL);
       memset(opcodearray,0,sizeof opcodearray);
-      for (i=2; i<(int)countof(opcodelist); i++) {
+      for (unsigned i=1; i<countof(opcodelist); i++) {
         assert(opcodelist[i].name!=NULL);
-        assert(stricmp(opcodelist[i].name,opcodelist[i-1].name)>0);
+        assert(strcmp(opcodelist[i].name,opcodelist[i-1].name)>0);
         /* also verify that no opcode number appears twice */
         assert((int)opcodelist[i].opcode<=MAX_OPCODE);
         assert(opcodelist[i].opcode==0 || opcodearray[(int)opcodelist[i].opcode]==0);
@@ -734,7 +728,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
 
   /* adjust the number of overlays by the special overlays */
   if (pc_overlays>0)
-    for (i=0; i<ovlFIRST; i++)
+    for (unsigned i=0; i<ovlFIRST; i++)
       if (pc_ovl0size[i][1]!=0)
         numoverlays++;
 
@@ -832,12 +826,12 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
 #   endif
     for (sym=glbtab.next; sym!=NULL; sym=sym->next) {
       if (sym->ident==iFUNCTN && (sym->usage & uNATIVE)!=0 && (sym->usage & uREAD)!=0 && sym->index>=0) {
-        assert(sym->index < numnatives);
-        nativelist[(int)sym->index]=sym;
+        assert(sym->index<(int)numnatives);
+        nativelist[sym->index]=sym;
       } /* if */
     } /* for */
     count=0;
-    for (i=0; i<numnatives; i++) {
+    for (unsigned i=0; i<numnatives; i++) {
       char alias[sNAMEMAX+1];
       sym=nativelist[i];
       assert(sym!=NULL);
@@ -942,7 +936,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
 #   endif
     pc_resetbin(fout,hdr.overlays);
     /* first the special overlay(s) for the return point(s) */
-    for (i=0; i<ovlFIRST; i++) {
+    for (int i=0; i<ovlFIRST; i++) {
       if (pc_ovl0size[i][1]!=0) {
         info.offset=pc_ovl0size[i][0];
         info.size=pc_ovl0size[i][1];
@@ -1022,14 +1016,12 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
         assert(lbltab[lindex]==0);  /* should not already be declared */
         lbltab[lindex]=codeindex;
       } else {
-        /* get to the end of the instruction (make use of the '\n' that fgets()
-         * added at the end of the line; this way we will *always* drop on a
-         * whitespace character) */
+        /* get to the end of the opcode */
         for (params=instr; *params!='\0' && !isspace(*params); params++)
           /* nothing */;
         assert(params>instr);
-        i=findopcode(instr,(int)(params-instr));
-        assert(opcodelist[i].name!=NULL);
+        unsigned i=findopcode(instr,(int)(params-instr));
+        assert(i<countof(opcodelist));
         assert(opcodelist[i].opt_level<=pc_optimize || pc_optimize==0 && opcodelist[i].opt_level<=1);
         if (opcodelist[i].segment==sIN_CSEG)
           codeindex+=opcodelist[i].func(NULL,skipwhitespace(params),opcodelist[i].opcode,codeindex);
@@ -1052,7 +1044,8 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
       for (params=instr; *params!='\0' && !isspace(*params); params++)
         /* nothing */;
       assert(params>instr);
-      i=findopcode(instr,(int)(params-instr));
+      unsigned i=findopcode(instr,(int)(params-instr));
+      assert(i<countof(opcodelist));
       assert(opcodelist[i].name!=NULL);
       assert(opcodelist[i].opt_level<=pc_optimize || pc_optimize==0 && opcodelist[i].opt_level<=1);
       if (opcodelist[i].segment==pass)
@@ -1363,3 +1356,40 @@ static void append_dbginfo(FILE *fout)
 
   delete_dbgstringtable();
 }
+
+/** is_sequence_point() checks whether a pseudo-assembly instruction is a
+ *  sequence point for a register.
+ *
+ *  \param instr        [in] A pointer to the instruction (or special comment).
+ *  \param reg          A bit field for the register(s) to test for the sequence
+ *                      point: `1<<sPRI` or `1<<sALT`, or both.
+ *
+ *  \return `true` for a seuqnce point, `false` otherwise.
+ *
+ *  \note A sequence point is a point in the code where the value of a register
+ *        will not be used. An instruction changing the register just before a
+ *        sequence point is therefore redundant.
+ *
+ *  \note If an instruction is a sequence point for *both* `sPRI` and `sALT`, it
+ *        is also a sequence point for either `sPRI` or `sALT`.
+ */
+SC_FUNC bool is_sequence_point(const char *instr,unsigned reg)
+{
+  assert(instr!=NULL);
+  assert(reg!=0);
+  const char *params;
+  for (params=instr; *params!='\0' && !isspace(*params); params++)
+    /* nothing */;
+  assert(params>instr);
+  int len=(params-instr);
+  /* The Pawn compiler does not carry over code or information on registers from
+   * one expression to the next, so the comments that mark the end of an
+   * expression are always sequence points for the optimizer
+   */
+  if (len==6 && strncmp(instr,";;expr",len)==0 || len==5 && strncmp(instr,";;arg",len)==0)
+    return true;
+  unsigned idx=findopcode(instr,len);
+  assert(idx<countof(opcodelist));
+  return ((opcodelist[idx].seqpoint & reg)==reg);
+}
+

@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scvars.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: scvars.c 7709 2026-10-10 19:44:52Z thiadmer $
  */
 #include <stdio.h>
 #include <stdlib.h>     /* for _MAX_PATH */
@@ -49,7 +49,7 @@ SC_VDEFINE bool staging=false;              /**< true if staging output */
 SC_VDEFINE cell lcl_declared=0;             /**< number of local cells declared */
 SC_VDEFINE cell glb_declared=0;             /**< number of global cells declared */
 SC_VDEFINE cell code_idx=0;                 /**< number of bytes with generated code */
-SC_VDEFINE int ntv_funcid=0;                /**< incremental number of native function */
+SC_VDEFINE unsigned ntv_funcid=0;           /**< incremental number of native function */
 SC_VDEFINE int sc_debug=sCHKBOUNDS;         /**< by default: bounds checking+assertions */
 SC_VDEFINE bool pc_asmfile=false;           /**< create .ASM file? */
 SC_VDEFINE bool pc_listing=false;           /**< create .LST file? */

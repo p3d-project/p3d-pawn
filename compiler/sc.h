@@ -23,7 +23,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7708 2026-10-07 18:58:58Z thiadmer $
+ *  Version: $Id: sc.h 7709 2026-10-10 19:44:52Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -499,7 +499,7 @@ enum {
 
 typedef enum s_regid {
   sPRI,                         /**< indicates the primary register */
-  sALT,                         /**< indicates the secundary register */
+  sALT,                         /**< indicates the secondary register */
 } regid;
 
 typedef enum s_optmark {
@@ -777,6 +777,7 @@ SC_FUNC symbol *find_closestsymbol(const char *name,int symboltype);
 /* function prototypes in SC6.C */
 SC_FUNC ucell getparamvalue(const char *s,const char **n);
 SC_FUNC int assemble(FILE *fout,FILE *fin);
+SC_FUNC bool is_sequence_point(const char *instr,unsigned reg);
 
 /* function prototypes in SC7.C */
 SC_FUNC ucell hex2ucell(const char *s,const char **n);
@@ -900,7 +901,7 @@ SC_VDECL bool staging;          /**< true if staging output */
 SC_VDECL cell lcl_declared;     /**< number of local cells declared */
 SC_VDECL cell glb_declared;     /**< number of global cells declared */
 SC_VDECL cell code_idx;         /**< number of bytes with generated code */
-SC_VDECL int ntv_funcid;        /**< incremental number of native function */
+SC_VDECL unsigned ntv_funcid;   /**< incremental number of native function */
 SC_VDECL int sc_debug;          /**< debug/optimization options (bit field) */
 SC_VDECL bool pc_asmfile;       /**< create .ASM file? */
 SC_VDECL bool pc_listing;       /**< create .LST file? */

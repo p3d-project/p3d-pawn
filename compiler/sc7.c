@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: sc7.c 7709 2026-10-10 19:44:52Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -465,37 +465,75 @@ SC_FUNC int phopt_cleanup(void)
 #else
 # define MAX_ALIAS       (PAWN_CELL_SIZE/4) * MAX_OPT_CAT
 #endif
+#define MAX_ASM_INSTR   128     /* max. length of a full assembler instruction line */
 
-static int matchsequence(char *start,const char *end,const char *pattern,
-                         char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1],
-                         size_t *match_length)
+/** matchsequence() checks whether the pseudo-assembly code between `start` and
+ *  `end`  matches a pattern; it collects the parameters of the instructions in
+ *  the process.
+ *
+ *  \param start        [in] The start of the assembly code.
+ *  \param end          [in] Points just behind the end of the assembly code.
+ *  \param pattern      [in] The 'match' pattern to test against.
+ *  \param symbols      [out] Set the to collected parameters of the assembly
+ *                      instructions.
+ *
+ *  \return The length of the section in the source code, starting from `start`
+ *          that matches the pattern, or 0 on no match.
+ */
+static size_t matchsequence(const char *start,const char *end,const char *pattern,
+                            char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1])
 {
-  int var,i,start_sym;
-  char str[MAX_ALIAS+1];
-  char *start_org=start;
-  cell value;
-  char *ptr;
+  assert(start!=NULL && end!=NULL);
 # if !defined NDEBUG
-    int optsym=false;
+    int optsym=false; /* set to true if a parameter may optionally be present (macro instructions) */
 # endif
 
-  *match_length=0;
-  start_sym=true;
-  for (var=0; var<=MAX_OPT_VARS; var++)
+  char str[MAX_ALIAS+1];
+  cell value;
+  char *ptr;
+
+  bool chk_seqpoint=true;
+  bool start_sym=true;
+  const char *start_reset=NULL;
+  assert(symbols!=NULL);
+  for (int var=0; var<=MAX_OPT_VARS; var++)
     symbols[var][0]='\0';
 
+  const char *start_org=start;
   while (*start=='\t' || *start==' ')
     start++;
   while (*pattern) {
     if (start>=end)
-      return false;
+      return 0;
+    if (chk_seqpoint && (strcmp(pattern,"%seq!")==0 || strcmp(pattern,"%pri!")==0 || strcmp(pattern,"%alt!")==0)) {
+      /* check the source line for a sequence point (instruction or comment) */
+      const char *sptr=start;
+      while (sptr<end && (*sptr=='\t' || *sptr==' '))
+        sptr++; /* skip leading whitespace (likely already skipped) */
+      unsigned reg=0;
+      if (strcmp(pattern,"%pri!")==0)
+        reg=(1<<sPRI);
+      else if (strcmp(pattern,"%alt!")==0)
+        reg=(1<<sALT);
+      else
+        reg=(1<<sPRI) | (1<<sALT);  /* %seq! */
+      if (!is_sequence_point(sptr,reg))
+        return 0;
+      /* unskip whitespace skipped by the last '!' */
+      if (start_reset!=NULL)
+        start=start_reset;
+      break;    /* the pattern ended, the squence point is not included in the match length */
+    } else {
+      chk_seqpoint=false;
+    } /* if */
     switch (*pattern) {
     case '%':   /* new "symbol" */
       pattern++;
       assert(isdigit(*pattern));
-      var=atoi(pattern);
+      int var=atoi(pattern);
       assert(var>=0 && var<=MAX_OPT_VARS);
       assert(*start=='-' || alphanum(*start) || optsym);
+      int i;
       for (i=0; start<end && (*start=='-' || *start=='+' || alphanum(*start)); i++,start++) {
         assert(i<=MAX_ALIAS);
         str[i]=*start;
@@ -513,7 +551,7 @@ static int matchsequence(char *start,const char *end,const char *pattern,
         if ((v2 & ((ucell)1<<pc_cellsize*8-1))!=0 && (size_t)pc_cellsize<sizeof(ucell))
           v2|=~(ucell)0U<<pc_cellsize*8;
         if (*varptr>' ' || v2>=((ucell)1<<((pc_cellsize*4)-1)) && v2<=~((ucell)1<<((pc_cellsize*4)-1)))
-          return false;
+          return 0;
         /* reconvert the value to a string (without signs or expressions) */
         varptr=celltohex(v);
 #       if !defined NDEBUG
@@ -535,7 +573,7 @@ static int matchsequence(char *start,const char *end,const char *pattern,
       } /* if */
       if (symbols[var][0]!='\0') {
         if (strcmp(symbols[var],str)!=0)
-          return false; /* symbols should be identical */
+          return 0; /* symbols should be identical */
       } else {
         strcpy(symbols[var],str);
       } /* if */
@@ -549,7 +587,7 @@ static int matchsequence(char *start,const char *end,const char *pattern,
       ptr=celltohex((ucell)value);
       while (*ptr!='\0') {
         if (tolower(*start) != tolower(*ptr))
-          return false;
+          return 0;
         start++;
         ptr++;
       } /* while */
@@ -561,7 +599,7 @@ static int matchsequence(char *start,const char *end,const char *pattern,
       ptr=celltohex((ucell)value);
       while (*ptr!='\0') {
         if (tolower(*start) != tolower(*ptr))
-          return false;
+          return 0;
         start++;
         ptr++;
       } /* while */
@@ -569,7 +607,7 @@ static int matchsequence(char *start,const char *end,const char *pattern,
       break;
     case ' ':     /* required whitespace */
       if (*start!='\t' && *start!=' ')
-        return false;
+        return 0;
       while (start<end && (*start=='\t' || *start==' '))
         start++;
       start_sym=true;
@@ -589,13 +627,15 @@ static int matchsequence(char *start,const char *end,const char *pattern,
         while (start<end && *start!='\n')
           start++;              /* skip trailing comment */
       if (*start!='\n')
-        return false;
+        return 0;
       assert(*(start+1)=='\0');
       start+=2;                 /* skip '\n' and '\0' */
+      start_reset=start;        /* keep reset point (for sequence points) */
       if (*(pattern+1)!='\0')
         while (start<end && *start=='\t' || *start==' ')
           start++;              /* skip leading white space of next instruction */
       start_sym=true;
+      chk_seqpoint=true;
       break;
     default:
       if (start_sym && isdigit(*pattern) && *start=='0') {
@@ -606,18 +646,30 @@ static int matchsequence(char *start,const char *end,const char *pattern,
           start++;
       }
       if (tolower(*start) != tolower(*pattern))
-        return false;
+        return 0;
       start++;
       start_sym=false;
     } /* switch */
     pattern++;
   } /* while */
 
-  *match_length=(int)(start-start_org);
-  return true;
+  return (size_t)(start-start_org);
 }
 
-static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1],size_t *repl_length,size_t maxlength)
+/** replacesequence() creates a set of pseudo-assembly instructions from a
+ *  pattern and an array of symbols (for the parameters of the assembly
+ *  instructions).
+ *
+ *  \param pattern      [in] The 'replacement' pattern.
+ *  \param symbols      [in] An array of symbols to use in replacement.
+ *  \param repl_length  [out] The total length of the replacement after
+ *                      substituting the symbols.
+ *  \param maxlength    The maximum length that is allowed for the replacement.
+ *
+ *  \return The data for the replacement, or `NULL` on failure.
+ */
+static char *replacesequence(const char *pattern,const char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1],
+                             size_t *repl_length,size_t maxlength)
 {
 # if !defined NDEBUG
     int optsym=false;
@@ -630,26 +682,26 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
    */
   assert(repl_length!=NULL);
   *repl_length=0;
-  for (const char *sptr=pattern; *sptr; sptr++) {
+  for (const char *pptr=pattern; *pptr; pptr++) {
     /* for the special characters/operators, see sc7.scp */
-    switch (*sptr) {
+    switch (*pptr) {
     case '%': {         /* parameter prefix */
-      sptr++;           /* skip '%' */
-      assert(isdigit(*sptr));
-      int var=atoi(sptr);
+      pptr++;           /* skip '%' */
+      assert(isdigit(*pptr));
+      int var=atoi(pptr);
       assert(var>=0 && var<=MAX_OPT_VARS);
       assert(symbols[var][0]!='\0' || optsym);  /* variable should be defined */
       assert(var!=0 || strlen(symbols[var])==(size_t)pc_cellsize || (symbols[var][0]=='-' && strlen(symbols[var])==(size_t)pc_cellsize+1) || atoi(symbols[var])==0);
-      *repl_length+=(int)strlen(symbols[var]);
+      *repl_length+=strlen(symbols[var]);
 #     if !defined NDEBUG
         optsym=false;
 #     endif
       break;
     } /* case */
     case '~': {         /* optional space followed by optional symbol */
-      assert(sptr[1]=='%');
-      assert(isdigit(sptr[2]));
-      int var=atoi(sptr+2);
+      assert(pptr[1]=='%');
+      assert(isdigit(pptr[2]));
+      int var=atoi(pptr+2);
       assert(var>=0 && var<=MAX_OPT_VARS);
       if (symbols[var][0]!='\0')
         *repl_length+=1;  /* copy space if following symbol is valid */
@@ -659,21 +711,21 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
       break;
     } /* case */
     case '#':           /* literal number, to be expanded to full cell size */
-      sptr++;           /* skip '#' */
-      assert(alphanum(*sptr) || *sptr=='-');
-      if (*sptr=='-')
-        sptr++;
-      while (alphanum(sptr[1]))
-        sptr++;
+      pptr++;           /* skip '#' */
+      assert(alphanum(*pptr) || *pptr=='-');
+      if (*pptr=='-')
+        pptr++;
+      while (alphanum(pptr[1]))
+        pptr++;
       *repl_length+=pc_cellsize*2;
       break;
     case '!':           /* line terminator */
       *repl_length+=3;  /* '\n', '\0' & '\t' */
       break;
     case ';':           /* ';!' is fully empty replacement */
-      if (*(sptr+1)=='!') {
-        assert(sptr==pattern);
-        sptr++;         /* skip ';' and skip '!' at the bottom of the loop */
+      if (*(pptr+1)=='!') {
+        assert(pptr==pattern);
+        pptr++;         /* skip ';' and skip '!' at the bottom of the loop */
         *repl_length+=1;/* add '\0' */
       } else {
         *repl_length+=1;/* keep ';' as a literal */
@@ -743,7 +795,7 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
           *repl_length-=1;
           len-=1;
         } /* while */
-      }
+      } /* if */
       strcpy(sptr,ptr);
       sptr+=len;
       assert(alphanum(pattern[1]) || pattern[1]=='-');
@@ -756,10 +808,10 @@ static char *replacesequence(const char *pattern,char symbols[MAX_OPT_VARS+1][MA
     case ';':
       if (*(pattern+1)=='!') {
         *sptr++='\0';
-        pattern++;        /* skip ';' and skip '!' at the bottom of the loop */
+        pattern++;        /* skip ';', '!' is skipped at the bottom of the loop */
       } else {
         *sptr++=*pattern; /* keep ';' as a literal */
-      }
+      } /* if */
       break;
     case '!':
       /* finish the line, optionally start the next line with an indent */
@@ -830,9 +882,10 @@ static void stgopt(char *start,char *end,int packed_opc,bool (*outputfunc)(char 
         int seq=top_seq;
         assert(seq>=0);
         while (sequences[seq].find!=NULL && *sequences[seq].find>sOPTIMIZE_NUMBER) {
-          size_t match_length,repl_length;
           char symbols[MAX_OPT_VARS+1][MAX_ALIAS+1];
-          if (matchsequence(head,end,sequences[seq].find,symbols,&match_length)) {
+          size_t match_length=matchsequence(head,end,sequences[seq].find,symbols);
+          if (match_length>0) {
+            size_t repl_length;
             char *replace=replacesequence(sequences[seq].replace,symbols,&repl_length,match_length);
             /* REPLACEMENT_RULE_FIT: If the replacement is bigger than the
              * original section, we would need to "grow" the staging buffer.

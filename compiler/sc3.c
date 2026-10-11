@@ -39,6 +39,7 @@ static void plnge2(void (*oper)(void),void (*arrayoper)(cell),
                    value *lval1,value *lval2);
 static cell calc(cell left,void (*oper)(),cell right,bool *boolresult);
 static int hier14(value *lval);
+static int hier14_nested(value *lval);
 static int hier13(value *lval);
 static int hier12(value *lval);
 static int hier11(value *lval);
@@ -51,6 +52,7 @@ static int hier5(value *lval);
 static int hier4(value *lval);
 static int hier3(value *lval);
 static int hier2(value *lval);
+static int hier2_nested(value *lval);
 static int hier1(value *lval1);
 static int primary(value *lval,int *symtok);
 static void clear_value(value *lval);
@@ -1118,7 +1120,21 @@ static cell array_levelsize(symbol *sym,int level)
  *
  *  \note Global references: sc_allowproccall (modified)
  */
+/* hier14() and hier2() are entered once for every level of nesting in an
+ * expression (parentheses, function arguments, assignments, unary operators);
+ * the depth is limited, because the recursion would otherwise overrun the
+ * stack of the compiler
+ */
 static int hier14(value *lval1)
+{
+  if (++pc_exprnesting>sNESTING_MAX)
+    error(302,"expression nesting");    /* table overflow (fatal error) */
+  int lvalue=hier14_nested(lval1);
+  pc_exprnesting--;
+  return lvalue;
+}
+
+static int hier14_nested(value *lval1)
 {
   value lval2={0};
   void (*oper)(void);
@@ -1578,6 +1594,15 @@ static int hier3(value *lval)
 }
 
 static int hier2(value *lval)
+{
+  if (++pc_exprnesting>sNESTING_MAX)
+    error(302,"expression nesting");    /* table overflow (fatal error) */
+  int lvalue=hier2_nested(lval);
+  pc_exprnesting--;
+  return lvalue;
+}
+
+static int hier2_nested(value *lval)
 {
   int lvalue,tok;
   int tag,paranthese;

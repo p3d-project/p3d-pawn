@@ -57,6 +57,7 @@
 #define sDIMEN_MAX    3     /**< maximum number of array dimensions */
 #define sLINEMAX      1023  /**< input line length (in characters) */
 #define sCOMP_STACK   32    /**< maximum nesting of #if .. #endif sections */
+#define sNESTING_MAX  512   /**< maximum nesting of expressions, and of statements (recursion depth of the parser) */
 #define sDEF_LITMAX   32    /**< initial size of the literal pool, in "cells" */
 #define sDEF_AMXSTACK 4096  /**< default stack size for AMX files */
 #define PREPROC_TERM  '\x7f'/**< termination character for preprocessor expressions (the "DEL" code) */
@@ -920,6 +921,8 @@ SC_VDECL short fcurrent;        /**< current file being processed */
 SC_VDECL short pc_blocklevel;   /**< level of active (nested) compound statements (0 = global) */
 SC_VDECL bool pc_sideeffect;    /**< true if an expression causes a side-effect */
 SC_VDECL int pc_stmtindent;     /**< current indent of the statement */
+SC_VDECL int pc_exprnesting;    /**< current nesting of (sub-)expressions */
+SC_VDECL int pc_stmtnesting;    /**< current nesting of statements */
 SC_VDECL int indent_nowarn;     /**< skip warning "217 loose indentation" */
 SC_VDECL int pc_tabsize;        /**< number of spaces that a TAB represents */
 SC_VDECL int pc_matchedtabsize; /**< if no tabsize explicitly set, try to detect the tab size */

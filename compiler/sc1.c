@@ -144,6 +144,7 @@ static constvalue *find_constval_byval(constvalue *table,cell val);
 static constvalue *clone_consttable(const constvalue *table);
 static symbol *fetchlab(const char *name);
 static void statement(int *lastindent,bool allow_decl);
+static void statement_nested(int *lastindent,bool allow_decl);
 static void compound(const unsigned char *stmt_sameline);
 static int test(int label,bool invert,bool test_true,bool *parenthesized);
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
@@ -1180,6 +1181,8 @@ static void resetglobals(void)
   pc_blocklevel=0;      /* level of active (nested) compound statements */
   pc_sideeffect=false;  /* true if an expression causes a side-effect */
   pc_stmtindent=0;      /* current indent of the statement */
+  pc_exprnesting=0;     /* nesting of the parser, also after a fatal error */
+  pc_stmtnesting=0;
   indent_nowarn=false;  /* do not skip warning "217 loose indentation" */
   sc_allowtags=true;    /* allow/detect tagnames */
   sc_status=statIDLE;   /* browse/write/skip status */
@@ -2253,11 +2256,10 @@ static void parse(void)
       error(55);                /* start of function body without function header */
       break;
     default:
-      if (freading) {
+      if (freading)             /* a token that ends the input is not an error by itself */
         error(10);              /* illegal function or declaration */
-        lexclr(true);           /* drop the rest of the line */
-        litidx=0;               /* drop any literal arrays (strings) */
-      } /* if */
+      lexclr(true);             /* drop the rest of the line */
+      litidx=0;                 /* drop any literal arrays (strings) */
     } /* switch */
   } /* while */
   sc_attachdocumentation(NULL,false);  /* attach any trailing comment to the main documentation */
@@ -6183,7 +6185,19 @@ SC_FUNC symbol *add_constant(const char *name,cell val,int scope,int tag)
  *        statements, `lastindent` should be `NULL` and `allow_decl` should be
  *        `false`.
  */
+/* statement() is entered once for every level of nesting of statements; the
+ * depth is limited, because the recursion would otherwise overrun the stack of
+ * the compiler
+ */
 static void statement(int *lastindent,bool allow_decl)
+{
+  if (++pc_stmtnesting>sNESTING_MAX)
+    error(302,"statement nesting");     /* table overflow (fatal error) */
+  statement_nested(lastindent,allow_decl);
+  pc_stmtnesting--;
+}
+
+static void statement_nested(int *lastindent,bool allow_decl)
 {
   if (!freading) {
     error(36);                  /* empty statement */

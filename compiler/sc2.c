@@ -980,11 +980,14 @@ static bool preproc_expr(cell *val,int *tag,bool clear_lex)
   /* save the position in the literal queue too */
   unsigned cur_lit=litidx;
   assert(lexptr!=NULL && srcline!=NULL);
-  assert(lexptr>=srcline && (lexptr-srcline)<(int)strlen((char*)srcline));   /* lexptr must point inside the string */
+  /* lexptr must point inside the string, or at its end when the directive has no expression
+   * and is on the last line of a file, without a line break
+   */
+  assert(lexptr>=srcline && (lexptr-srcline)<=(int)strlen((char*)srcline));
 # if !defined NO_DEFINE
-    /* preprocess the string */
-    substallpatterns(srcline,sLINEMAX);
-    assert(lexptr>=srcline && (lexptr-srcline)<(int)strlen((char*)srcline)); /* lexptr must STILL point inside the string */
+    /* preprocess the string, leaving room for the terminator appended below */
+    substallpatterns(srcline,sLINEMAX-1);
+    assert(lexptr>=srcline && (lexptr-srcline)<=(int)strlen((char*)srcline)); /* lexptr must STILL point inside the string (or at its end) */
 # endif
   /* append a special symbol to the string, so the expression
    * analyzer won't try to read a next line when it encounters
@@ -1900,6 +1903,7 @@ static bool substpattern(unsigned char *line,size_t buffersize,char *pattern,cha
     /* check length of the string after substitution */
     if (strlen((char*)line) + len - (int)(s-line) > buffersize) {
       error(75);      /* line too long */
+      match=false;    /* nothing was substituted, the caller must move past this prefix */
     } else {
       /* substitute pattern */
       instring=0;
@@ -2503,13 +2507,12 @@ SC_FUNC int lex(cell *lexvalue,char **lexstr)
       } /* while */
       assert(freading && lexptr[0]=='.' && lexptr[1]=='.' && lexptr[2]=='.');
       lexptr+=3;
-      while (*lexptr<=' ') {
-        if (*lexptr=='\0') {
+      /* the input may end after the ellipsis; the test below reports it */
+      while (*lexptr<=' ' && freading) {
+        if (*lexptr=='\0')
           preprocess();     /* preprocess resets "lexptr" */
-          assert(freading && lexptr!=term_expr);
-        } else {
+        else
           lexptr++;
-        } /* if */
       } /* while */
       if (!freading || !(*lexptr=='\"'
                          || *lexptr==ESCAPE_CHAR && *(lexptr+1)=='\"'

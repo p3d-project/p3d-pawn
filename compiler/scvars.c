@@ -68,6 +68,8 @@ SC_VDEFINE short fcurrent=0;                /**< current file being processed (d
 SC_VDEFINE short pc_blocklevel=0;           /**< level of active (nested) compound statements (0 = global) */
 SC_VDEFINE bool pc_sideeffect=false;        /**< true if an expression causes a side-effect */
 SC_VDEFINE int pc_stmtindent=0;             /**< current indent of the statement */
+SC_VDEFINE int pc_exprnesting=0;            /**< current nesting of (sub-)expressions */
+SC_VDEFINE int pc_stmtnesting=0;            /**< current nesting of statements */
 SC_VDEFINE int indent_nowarn=false;         /**< skip warning "217 loose indentation" */
 SC_VDEFINE int pc_tabsize=8;                /**< number of spaces that a TAB represents */
 SC_VDEFINE int pc_matchedtabsize=0;         /**< if no tabsize explicitly set, try to detect the tab size */

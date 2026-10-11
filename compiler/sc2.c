@@ -1117,6 +1117,11 @@ static int command(void)
   } /* if */
   cell lexval;
   char *lexstr;
+  /* a directive has no literal data, but lex() stores any string that it reads
+   * (in error) in the literal queue, which may hold the data of the statement
+   * that the directive interrupts; restore the queue at the end
+   */
+  unsigned cur_lit=litidx;
   int tok=lex(&lexval,&lexstr);
   int ret=SKIPPING ? CMD_CONDFALSE : CMD_DIRECTIVE;  /* preset 'ret' to CMD_DIRECTIVE (most common case) */
   switch (tok) {
@@ -1618,6 +1623,7 @@ static int command(void)
     error(31);          /* unknown compiler directive */
     ret=SKIPPING ? CMD_CONDFALSE : CMD_NONE;  /* process as normal line */
   } /* switch */
+  litidx=cur_lit;
   return ret;
 }
 
@@ -2715,7 +2721,6 @@ SC_FUNC int needtoken(int token)
   if (t!=1 && !(t==2 && token==tTERM)) {
     char s1[sNAMEMAX+1],s2[sNAMEMAX+1];
     assert(is_cached);                    /* token already pushed back */
-    litidx=0;                             /* force clear literal pool on error */
     tokenname(s1,countof(s1),token,false);
     if (!freading)
       strlcpy(s2,"<end of file>",countof(s2));

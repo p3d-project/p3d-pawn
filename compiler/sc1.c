@@ -2957,8 +2957,11 @@ static int base;
     base=startlit;
   if (cur==numdim-1)
     return 0;
-  /* 2 or more dimensions left, fill in an indirection vector */
-  assert(dim[cur]>0);
+  /* 2 or more dimensions left, fill in an indirection vector; an array with an empty
+   * dimension (as from an empty initializer, "new a[][] = []") has none to fill
+   */
+  if (dim[cur]==0)
+    return 0;
   if (dim[cur+1]>0) {
     for (int d=0; d<dim[cur]; d++)
       litq[base++]=(dim[cur]+d*(dim[cur+1]-1)+increment)*pc_cellsize;
@@ -3100,6 +3103,16 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
        */
       if (!errorfound)
         adjust_indirectiontables(dim,numdim,0,0,curlit,&lastdim,&skipdim);
+      else if (dim[numdim-1]==0) {
+        /* the size is taken from the literal pool below, but after an error, the
+         * pool may hold less than the indirection vectors that the dimensions
+         * call for; reserve these, as for an array without initializer
+         */
+        cell tablesize=calc_arraysize(dim,numdim-1,0);
+        if (tablesize<CELLMAX)
+          while (litidx-curlit<(size_t)tablesize)
+            litadd(0);
+      } /* if */
       delete_consttable(&lastdim);  /* clear list of minor dimension sizes */
     } /* if */
   } /* if */
@@ -3130,7 +3143,6 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
       errorset(sRESET);     /* force additional error, because this is the likely cause */
       error(52);            /* array is not fully initialized */
     }
-    startlit=0;             /* because literal pool is cleared on a mismatch in needtoken() */
   }
   for (idx=0,abortparse=false; !abortparse; idx++) {
     /* We need to store the offset to the newly detected sub-array into the
@@ -3146,11 +3158,6 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
                       lastdim,dimnames,errorfound);
     } else {
       dsize=initvector(ident,usage,tag,dim[cur+1],true,dimnames[cur+1],errorfound);
-      /* The final dimension may be variable length. We need to save the
-       * lengths of the final dimensions in order to set the indirection
-       * vectors for the next-to-last dimension.
-       */
-      append_constval(lastdim,celltohex(idx),dsize,0);
     } /* if */
     /* In a declaration like:
      *    new a[2][2] = [
@@ -3168,6 +3175,14 @@ static cell initarray(int ident,int usage,int tag,int dim[],int numdim,int cur,
       litremove(startlit);
       break;
     }
+    if (cur+2>=numdim) {
+      /* The final dimension may be variable length. We need to save the
+       * lengths of the final dimensions in order to set the indirection
+       * vectors for the next-to-last dimension. This is done only for an
+       * entry that is kept: one that was undone above is not counted either.
+       */
+      append_constval(lastdim,celltohex(idx),dsize,0);
+    } /* if */
     if (dim[cur]!=0 && idx>=dim[cur]) {
       assert(dsize>0 || *errorfound);
       error(18);            /* initialization data exceeds array size */
@@ -3409,6 +3424,7 @@ static cell needsub(char match,constvalue **namelist)
 
   if (namelist!=NULL)
     *namelist=NULL;
+  unsigned cur_lit=litidx;  /* an array size holds no literal data, see the end */
   if (matchtoken(match))    /* we have already seen "[" (or "{") */
     return 0;               /* zero size (like "char msg[]") */
   int tag=pc_addtag(NULL);
@@ -3423,6 +3439,7 @@ static cell needsub(char match,constvalue **namelist)
       do {
         lex(&val,&str);
       } while (freading && !matchtoken(match));
+      litidx=cur_lit;
       return 0;
     } /* if */
     if ((*namelist=(constvalue*)malloc(sizeof(constvalue)))==NULL)
@@ -3480,7 +3497,16 @@ static cell needsub(char match,constvalue **namelist)
       val=1;                  /* assume a valid array size */
     } /* if */
   } /* if */
-  needtoken(match);
+  /* strings read for the size (an error) stored literals that are no data; drop
+   * them, unless the token pending after a missing closing bracket is a string,
+   * whose literals are still to be read
+   */
+  if (!needtoken(match)) {
+    int tok=lexpeek();
+    if (tok==tSTRING || tok==tPACKSTRING)
+      return val;
+  } /* if */
+  litidx=cur_lit;
 
   return val;               /* return array size */
 }
@@ -3533,8 +3559,15 @@ static void decl_const(int scope)
       } /* if */
       if (enumerate==0 || (tag=pc_addtag(NULL))==0)
         tag=defaulttag;
-      if (lex(&val,&str)!=tSYMBOL)      /* read in (new) token */
+      int tok=lex(&val,&str);           /* read in (new) token */
+      if (tok!=tSYMBOL) {
         error_symbolname(20,str);       /* invalid symbol name */
+        /* a string in the place of the name stored its characters in the literal
+         * queue, from the position in "val"; these are no data, drop them
+         */
+        if (tok==tSTRING || tok==tPACKSTRING)
+          litidx=(unsigned)val;
+      } /* if */
       symbolline=pc_curline;            /* save line where symbol was found */
       strcpy(constname,str);            /* save symbol name */
       val=defaultval+1;                 /* set default value and tag for next enumeration field */
@@ -6434,12 +6467,14 @@ SC_FUNC bool constexpression(cell *val,int *tag,symbol **symptr)
   cell cidx;
   stgget(&index,&cidx); /* mark position in code generator */
   errorset(sEXPRMARK);
+  unsigned cur_lit=litidx;
   int ident=expression(val,tag,symptr,NULL,false,0);
   stgdel(index,cidx);   /* scratch generated code */
   stgset(false);        /* stop stage-buffering */
   if (ident!=iCONSTEXPR) {
     error(8);           /* must be constant expression */
-    litidx=0;           /* clear the literal pool */
+    litidx=cur_lit;     /* drop the literals of this expression (only: the queue may
+                         * hold the data of the declaration that it is part of) */
     if (val!=NULL)
       *val=0;
     if (tag!=NULL)

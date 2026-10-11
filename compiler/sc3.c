@@ -1248,7 +1248,10 @@ static int hier14(value *lval1)
     if (lval2.ident==iARRAY || lval2.ident==iREFARRAY)
       error(6);         /* must be assigned to an array */
   } /* if */
-  if (leftarray) {
+  /* copy the array only from an array: when the right operand is not one,
+   * checkarrays() has reported the error
+   */
+  if (leftarray && (IS_ARRAY(lval2) || IS_PSEUDO_ARRAY(lval2))) {
     /* If the arrays are single-dimensional, we can simply copy the data; if
      * both arrays are at their roots (like "a = b", where "a" and "b" are
      * arrays), a copy of the full array (including the indirection vectors)
@@ -1448,7 +1451,13 @@ static int hier13(value *lval)
                               * max. heap usage will be wrong for the upper
                               * expression */
     } /* if */
-    assert(sc_status!=statWRITE || heap1==heap2);
+    /* in the write pass, the padding computed in the browse pass makes both
+     * branches use the same heap space; that holds when both passes parsed the
+     * same expression, which is certain only without errors (after an error,
+     * recovery may take another path in each pass, for example when a symbol
+     * is declared further on)
+     */
+    assert(sc_status!=statWRITE || heap1==heap2 || errorcount(NULL,NULL)>=2);
     if (lval->ident==iARRAY)
       lval->ident=iREFARRAY;    /* iARRAY becomes iREFARRAY */
     else if (lval->ident!=iREFARRAY)
@@ -2210,8 +2219,9 @@ static int primary(value *lval,int *symtok)
     do
       lvalue=hier14(lval);
     while (matchtoken(','));
-    if (!needtoken(')'))
-      skiptotoken(')',false);   /* skip all until ')' or end of expression */
+    bool closed=needtoken(')');
+    if (!closed)
+      closed=skiptotoken(')',false);  /* skip all until ')' or end of expression */
     if (lvalue && in_test_expr==sTEST_EXPR) {
       rvalue(lval);
       lval->ident=iEXPRESSION;
@@ -2220,9 +2230,10 @@ static int primary(value *lval,int *symtok)
     sc_allowtags=save_allowtags;
     if (parenthesized_level>=0) {
       parenthesized_level--;
-      if (parenthesized_level==0) {
+      if (parenthesized_level==0 && closed) {
         /* for a fully parenthesized test expression, the closing parenthesis
-         * also terminates the expression
+         * also terminates the expression (but without that parenthesis, the
+         * token that was found instead is still pending)
          */
         assert(in_test_expr==sTEST_EXPR);
         lexsettoken(tTERM,"");

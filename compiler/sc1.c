@@ -143,7 +143,7 @@ static constvalue *find_constval_byval(constvalue *table,cell val);
 static constvalue *clone_consttable(const constvalue *table);
 static symbol *fetchlab(const char *name);
 static void statement(int *lastindent,bool allow_decl);
-static void compound(bool stmt_sameline);
+static void compound(bool stmt_sameline,const unsigned char *body);
 static int test(int label,bool invert,bool test_true,bool *parenthesized);
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
                   int *tag,symbol **symptr,bool chkfuncresult,int in_test);
@@ -1178,6 +1178,7 @@ static void resetglobals(void)
   pc_pendingflags=0;    /* operations to perform on next function/data declaration (bit set) */
   sc_reparse=false;     /* assume no extra pass needed */
   pc_docexpr=false;
+  free(pc_deprecate);   /* a message that no declaration followed */
   pc_deprecate=NULL;
   sc_curstates=0;
   pc_memflags=0;
@@ -4391,7 +4392,16 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     } /* if */
 # endif
   sc_curstates=state_id;/* set state id, for accessing global state variables */
+  /* a function body without braces is a single statement at the block level of
+   * the statements in a compound block (where the '{' raises it to 1)
+   */
+  bool braced=matchtoken('{');
+  if (braced)
+    lexpush();
+  else
+    pc_blocklevel=1;
   statement(NULL,false);
+  pc_blocklevel=0;
   sc_curstates=0;
   if ((rettype & uRETVALUE)!=0)
     sym->usage|=uRETVALUE;
@@ -4825,7 +4835,8 @@ static void param2symbol(const char *name,int ident,int offset,
       initials(ident,usage,tags[0],&size,arg->dim,arg->numdim,arg->dimnames);
       assert(size>=0 && (unsigned)size>=litidx);
       /* allocate memory to hold the initial values */
-      arg->defvalue.array.data=(cell *)malloc(litidx*sizeof(cell));
+      /* after an error in the initializer there is no data, and no default value */
+      arg->defvalue.array.data=(litidx>0) ? (cell *)malloc(litidx*sizeof(cell)) : NULL;
       if (arg->defvalue.array.data!=NULL) {
         int i;
         memcpy(arg->defvalue.array.data,litq,litidx*sizeof(cell));
@@ -6146,7 +6157,7 @@ SC_FUNC symbol *add_constant(const char *name,cell val,int scope,int tag)
   } /* if */
 
   /* constant doesn't exist yet */
-  sym=addsym(name,val,iCONSTEXPR,scope,pc_blocklevel,tag,uDEFINE);
+  sym=addsym(name,val,iCONSTEXPR,scope,(scope==sGLOBAL) ? 0 : pc_blocklevel,tag,uDEFINE);
   assert(sym!=NULL);            /* fatal error 103 must be given on error */
   if (sc_status == statIDLE)
     sym->usage |= uPREDEF;
@@ -6215,9 +6226,10 @@ static void statement(int *lastindent,bool allow_decl)
   case '{': {
     int orgline=pc_curline;
     short orglevel=pc_blocklevel;
+    const unsigned char *body=lexptr; /* the text behind the '{', before matchtoken() reads on */
     pc_blocklevel+=1;           /* increase compound statement level */
     if (!matchtoken('}'))       /* {} is the empty statement */
-      compound(orgline==pc_curline && freading);
+      compound(orgline==pc_curline && freading,body);
     /* lastst (for "last statement") does not change */
     pc_blocklevel=orglevel;     /* restore compound statement level */
     break;
@@ -6305,7 +6317,7 @@ static void statement(int *lastindent,bool allow_decl)
  *
  *  \note The '{' that starts a compound statement is already matched.
  */
-static void compound(bool stmt_sameline)
+static void compound(bool stmt_sameline,const unsigned char *body)
 {
   int indent=-1;
   cell save_decl=lcl_declared;
@@ -6313,20 +6325,12 @@ static void compound(bool stmt_sameline)
   int block_start=pc_curline; /* save line where the compound block started */
 
   /* if there is more text on this line, we should adjust the statement indent;
-     note that when 'stmt_sameline' is true, we know that 'srcline' holds at
-     least two tokens (one of which is '{') and that 'lexptr' points behind
-     the '{' ]*/
+     when 'stmt_sameline' is true, 'srcline' holds at least two tokens (one of
+     which is '{'), and 'body' points behind that '{' */
   if (stmt_sameline) {
-    assert(lexptr>srcline);   /* must be true, because '{' was parsed */
-    const unsigned char *p=lexptr-1;
-    /* go back to the opening brace */
-    while (*p!='{') {
-      assert(p>srcline);
-      p--;
-    } /* while */
-    assert(*p=='{');          /* must be found, because it was already parsed earlier */
+    assert(body!=NULL && body>srcline && *(body-1)=='{');
+    const unsigned char *p=body;
     /* go forward, skipping white-space */
-    p++;
     while (*p<=' ' && *p!='\0')
       p++;
     assert(*p!='\0');         /* a token must be found, because 'stmt_sameline' is

@@ -124,28 +124,24 @@ SC_FUNC void clearstk(void)
 SC_FUNC bool plungequalifiedfile(const char *name)
 {
 static const char *extensions[] = { ".i", ".inc", ".p", ".pawn" };
+  char path[_MAX_PATH];         /* the name that is tried, with or without extension */
   FILE *fp;
-  char *ext;
-  unsigned ext_idx;
 
   assert(name!=NULL);
-  ext_idx=0;
-  do {
-    fp=(FILE*)pc_opensrc(name);
-    ext=strchr(name,'\0');      /* save position */
-    if (fp==NULL) {
-      /* try to append an extension */
-      strcpy(ext,extensions[ext_idx]);
-      fp=(FILE*)pc_opensrc(name);
-      if (fp==NULL)
-        *ext='\0';              /* on failure, restore filename */
-    } /* if */
-    ext_idx++;
-  } while (fp==NULL && ext_idx<countof(extensions));
-  if (fp==NULL) {
-    *ext='\0';                  /* restore filename */
+  if (strlen(name)>=countof(path))
     return false;
-  } /* if */
+  strcpy(path,name);
+  fp=(FILE*)pc_opensrc(path);
+  for (unsigned ext_idx=0; fp==NULL && ext_idx<countof(extensions); ext_idx++) {
+    /* try to append an extension, if it fits */
+    if (strlen(name)+strlen(extensions[ext_idx])<countof(path)) {
+      strcpy(path,name);
+      strcat(path,extensions[ext_idx]);
+      fp=(FILE*)pc_opensrc(path);
+    } /* if */
+  } /* for */
+  if (fp==NULL)
+    return false;
   PUSHSTK_P(inpf);
   PUSHSTK_P(inpfname);          /* pointer to current file name */
   PUSHSTK_P(curlibrary);
@@ -156,7 +152,7 @@ static const char *extensions[] = { ".i", ".inc", ".p", ".pawn" };
   PUSHSTK_I(icomment);
   PUSHSTK_I(fcurrent);
   PUSHSTK_I(pc_curline);
-  inpfname=duplicatestring(name);/* set name of include file */
+  inpfname=duplicatestring(path);/* set name of include file */
   if (inpfname==NULL)
     error(103);                 /* insufficient memory */
   inpf=fp;                      /* set input file pointer to include file */
@@ -169,7 +165,7 @@ static const char *extensions[] = { ".i", ".inc", ".p", ".pawn" };
   assert(sc_status==statBROWSE || strcmp(get_inputfile(fcurrent),inpfname)==0);
   setfiledirect(inpfname);      /* (optionally) set in the list file */
   listline=-1;                  /* force a #line directive when changing the file */
-  sc_is_utf8=(short)scan_utf8(inpf,name);
+  sc_is_utf8=(short)scan_utf8(inpf,path);
   return true;
 }
 
@@ -203,10 +199,13 @@ SC_FUNC bool plungefile(char *name,int try_currentpath,int try_includepaths)
     int i;
     const char *ptr;
     for (i=0; !result && (ptr=get_path(i))!=NULL; i++) {
-      char path[_MAX_PATH];
-      strlcpy(path,ptr,countof(path));
-      strlcat(path,name,countof(path));
-      result=plungequalifiedfile(path);
+      /* a path that does not fit would be cut short, and could name another file */
+      if (strlen(ptr)+strlen(name)<_MAX_PATH) {
+        char path[_MAX_PATH];
+        strlcpy(path,ptr,countof(path));
+        strlcat(path,name,countof(path));
+        result=plungequalifiedfile(path);
+      } /* if */
     } /* while */
   } /* if */
 
@@ -1093,7 +1092,10 @@ static int command(void)
       preproc_expr(&val,NULL,true);     /* get value (or 0 on error) */
       ifstack[iflevel-1]=(char)(val ? PARSEMODE : SKIPMODE);
     } else {
-      int symtok=lex(&lexval,&lexstr);
+      while (*lexptr<=' ' && *lexptr!='\0')
+        lexptr++;
+      /* at the end of the line, lex() would read on into the next one */
+      int symtok= (*lexptr!='\0') ? lex(&lexval,&lexstr) : 0;
       bool found=false;
       if (symtok==tSYMBOL) {
         const symbol *sym=findlcl(lexstr);
@@ -1219,8 +1221,8 @@ static int command(void)
       if (lex(&lexval,&lexstr)!=tNUMBER)
         error(8);                   /* invalid/non-constant expression */
       pc_curline=(int)lexval;
+      check_empty(lexptr);
     } /* if */
-    check_empty(lexptr);
     break;
   case tpASSERT:
     if (!SKIPPING && (sc_debug & sCHKBOUNDS)!=0) {
@@ -1263,9 +1265,13 @@ static int command(void)
         } else if (strcmp(lexstr,"deprecated")==0) {
           while (*lexptr<=' ' && *lexptr!='\0')
             lexptr++;
-          pc_deprecate=(char*)malloc(strlen((char*)lexptr)+1);
+          size_t len=strlen((char*)lexptr);
+          while (len>0 && lexptr[len-1]<=' ')
+            len--;                /* strip the line break and trailing whitespace */
+          free(pc_deprecate);     /* a message not yet attached to a declaration is replaced */
+          pc_deprecate=(char*)malloc(len+1);
           if (pc_deprecate!=NULL)
-            strcpy(pc_deprecate,(char*)lexptr);
+            strlcpy(pc_deprecate,(char*)lexptr,len+1);
           lexptr=(unsigned char*)strchr((char*)lexptr,'\0'); /* skip to end (ignore "extra characters on line") */
         } else if (strcmp(lexstr,"dynamic")==0) {
           preproc_expr(&pc_stksize,NULL,true);
@@ -1550,7 +1556,12 @@ static int command(void)
       lexptr++;
     if (!SKIPPING) {
       int errcode=(tok==tpERROR) ? 111 : 220;
-      error(errcode,lexptr);  /* user error or user warning */
+      char message[sLINEMAX+1];
+      strlcpy(message,(const char*)lexptr,countof(message));
+      size_t len=strlen(message);
+      while (len>0 && (unsigned char)message[len-1]<=' ')
+        message[--len]='\0';       /* strip the line break and trailing whitespace */
+      error(errcode,message);       /* user error or user warning */
     } /* if */
     break;
   default:

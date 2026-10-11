@@ -3249,10 +3249,12 @@ static symbol *find_symbol(const symbol *root,const char *name,int fnumber,int s
        * 3) we search for variables with automaton scope and this variable has
        *    states and in a matching automaton; now we also need to verify
        *    whether there is an intersection between the symbol's state-list
-       *    and the state-list for the `stateid` parameter
+       *    and the state-list for the `stateid` parameter;
+       * 4) we search for the name whatever states it has (`stateid` < 0)
        */
       assert(sym->states==NULL || sym->states->next!=NULL);     /* first element of the state list is the "root" */
-      if (sym->ident==iFUNCTN                                   /* function with or without states (because a stub is generated) */
+      if (stateid<0                                             /* any symbol with this name */
+          || sym->ident==iFUNCTN                                /* function with or without states (because a stub is generated) */
           || automaton<0 && sym->states==NULL                   /* global variable (without states, not part of an automaton) */
           || automaton>=0 && sym->states!=NULL && state_getfsa(sym->states->next->id)==automaton && state_conflict_id(stateid,sym->states->next->id))
         return sym;   /* return first match (for local variables which may shadow thos at a higher level)*/
@@ -3368,6 +3370,15 @@ SC_FUNC symbol *findglb(const char *name,int filter)
   if (sym==NULL)
     sym=find_symbol(&glbtab,name,fcurrent,0);
   return sym;
+}
+
+/** findglb_anystate() returns a global symbol with the given name, whatever
+ *  states it has; a function and a variable may not share a name, in any
+ *  automaton
+ */
+SC_FUNC symbol *findglb_anystate(const char *name)
+{
+  return find_symbol(&glbtab,name,fcurrent,-1);
 }
 
 /** findlcl() returns a pointer to the local symbol (if found) or `NULL` (if not

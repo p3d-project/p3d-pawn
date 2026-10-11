@@ -649,6 +649,7 @@ SC_FUNC int refer_symbol(symbol *entry,symbol *bywhom);
 SC_FUNC void markusage(symbol *sym,short usage);
 SC_FUNC uint32_t namehash(const char *name);
 SC_FUNC symbol *findglb(const char *name,int filter);
+SC_FUNC symbol *findglb_anystate(const char *name);
 SC_FUNC symbol *findlcl(const char *name);
 SC_FUNC symbol *findconst(const char *name);
 SC_FUNC symbol *finddepend(const symbol *parent);

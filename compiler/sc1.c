@@ -2500,13 +2500,19 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
     symbol *sym=findconst(name);
     if (sym==NULL) {
       sym=findglb(name,sSTATEVAR);
-      /* if a global variable without states is found and this declaration has
-       * states, the declaration is okay
-       */
-      if (sym!=NULL && sym->states==NULL && sc_curstates>0)
-        sym=NULL;               /* set to NULL, we found the global variable */
-      if (sc_curstates>0 && findglb(name,sGLOBAL)!=NULL)
-        error(233,name);        /* state variable shadows a global variable */
+      if (sym!=NULL && sym->ident==iFUNCTN && (sym->usage & (uDEFINE | uPROTOTYPED | uNATIVE))!=0) {
+        error(21,name);         /* symbol already defined, as a function */
+        sym=NULL;               /* make sure the function is not damaged: */
+        name[0]='\0';           /* parse the declaration, but define no symbol */
+      } else {
+        /* if a global variable without states is found and this declaration
+         * has states, the declaration is okay
+         */
+        if (sym!=NULL && sym->states==NULL && sc_curstates>0)
+          sym=NULL;             /* set to NULL, we found the global variable */
+        if (sc_curstates>0 && findglb(name,sGLOBAL)!=NULL)
+          error(233,name);      /* state variable shadows a global variable */
+      } /* if */
     } /* if */
     /* we have either:
      * a) not found a matching variable (or rejected it, because it was a shadow)
@@ -2656,8 +2662,10 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
       dumpzero((int)size-litidx,(litidx==0) ? name : NULL);
     } /* if */
     litidx=0;
-    if (strlen(name)==0)
+    if (strlen(name)==0) {
+      sc_curstates=0;   /* no symbol is defined (after an error), the declaration is done */
       continue;
+    } /* if */
     if (sym==NULL) {    /* define only if not yet defined */
       sym=addvariable(name,address,ident,sGLOBAL,0,tag,dim,dimnames,numdim,usage);
       sc_attachdocumentation(sym,true);/* attach any documenation to the variable */
@@ -3022,12 +3030,14 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
            * sense in the case of a iREFARRAY, which is a function parameter)
            */
           error(9);         /* array has zero length -> invalid size */
+          *size=0;          /* no array: the caller drops the declaration */
           return;
         }
       } /* if */
       *size=calc_arraysize(dim,numdim,0);
       if (*size==CELLMAX) {
         error(9);       /* array is too big -> invalid size */
+        *size=0;        /* no array: the caller drops the declaration */
         return;
       } /* if */
       /* first reserve space for the indirection vectors of the array, then
@@ -3691,7 +3701,12 @@ SC_FUNC symbol *fetchfunc(const char *name,int tag)
   symbol *sym;
 
   assert(name!=NULL);
-  if ((sym=findglb(name,sGLOBAL))!=NULL) {/* already in symbol table? */
+  sym=findglb(name,sGLOBAL);
+  if (sym==NULL && (sym=findglb_anystate(name))!=NULL) {
+    error(21,name);                       /* a state variable has this name */
+    return NULL;                          /* make sure the old symbol is not damaged */
+  } /* if */
+  if (sym!=NULL) {                        /* already in symbol table? */
     if (sym->ident!=iFUNCTN) {
       error(21,name);                     /* yes, but not as a function */
       return NULL;                        /* make sure the old symbol is not damaged */
@@ -5802,11 +5817,13 @@ static bool testsymbols(const symbol *root,short level,bool testfunclvl,bool tes
       assert(curfunc!=NULL);  /* must be inside a function to have block>0 */
       arginfo *arglist=curfunc->dim.arglist;
       assert(arglist!=NULL);
+      /* after a mismatch with an earlier prototype (error 25), the argument list
+       * is still the prototype's, while the symbols follow the definition; an
+       * argument of another kind than the symbol does not describe it
+       */
       for (int arg=0; arglist[arg].ident!=0 && argptr==NULL; arg++) {
-        if (strcmp(sym->name,arglist[arg].name)==0) {
-          assert(arglist[arg].ident==sym->ident);
+        if (strcmp(sym->name,arglist[arg].name)==0 && arglist[arg].ident==sym->ident)
           argptr=&arglist[arg];
-        } /* if */
       } /* for */
     } /* if */
     switch (sym->ident) {
@@ -7042,6 +7059,11 @@ static void doreturn(void)
           for (numdim=0; numdim<=level; numdim++) {
             dim[numdim]=(int)sub->dim.array.length;
             dimnames[numdim]=sub->dim.array.names;
+            /* the array was attached in an earlier pass, whose errors are not
+             * reported; so check here too that all dimensions are known
+             */
+            if (dim[numdim]<=0)
+              error(46,sym->name);
             if (sym->dim.array.length!=dim[numdim])
               error(47);    /* array sizes must match */
             if (!compare_consttable(sym->dim.array.names,dimnames[numdim]))
@@ -7364,12 +7386,29 @@ static void dostate(void)
   /* find the optional entry() function for the state */
   sym=findglb(_ENTRYFUNC,sGLOBAL);
   if (sc_status==statWRITE && sym!=NULL && sym->ident==iFUNCTN && sym->states!=NULL) {
+    /* the fall-back entry() handles all states of its automaton that have no
+     * entry() of their own; it belongs to the automaton of the other entry()
+     * implementations (a fall-back without any is error 85)
+     */
+    statelist *fallback=NULL;
+    bool fsa_has_entry=false;
     for (stlist=sym->states->next; stlist!=NULL; stlist=stlist->next) {
+      if (stlist->id==FALLBACK) {
+        fallback=stlist;
+        continue;
+      } /* if */
       assert(stlist->label>0);
-      if (state_getfsa(stlist->id)==automaton->index && state_inlist(stlist->id,(int)state->value))
-        break;      /* found! */
+      if (state_getfsa(stlist->id)==automaton->index) {
+        if (state_inlist(stlist->id,(int)state->value))
+          break;    /* found! */
+        fsa_has_entry=true;
+      } /* if */
     } /* for */
     assert(stlist==NULL || state_inlist(stlist->id,(int)state->value));
+    if (stlist==NULL && fallback!=NULL && fsa_has_entry) {
+      assert(fallback->label>0);
+      stlist=fallback;
+    } /* if */
     if (stlist!=NULL) {
       /* when generating overlays, make sure to push in a zero for the number
        * of arguments (when not using overlays, the compiler generates a RET

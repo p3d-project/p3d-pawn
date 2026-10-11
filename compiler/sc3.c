@@ -2128,7 +2128,7 @@ restart:
       /* the indexed item may be another array (multi-dimensional arrays) */
       assert(cursym==sym && sym!=NULL); /* should still be set */
       if (sym->dim.array.level>0) {
-        assert(close==']');               /* checked earlier */
+        /* a major dimension takes "[ ]" or a named index ("{ }" got error 51 above) */
         assert(lval1->ident==iARRAY || lval1->ident==iREFARRAY || lval1->ident==iARRAYCELL);
         assert(cursym==lval1->sym);
         /* read the offset to the subarray (from the indirection table) and add
@@ -2514,8 +2514,7 @@ static int nesting=0;
     /* allocate space on the heap for the array, and pass the pointer to the
      * reserved memory block as a hidden parameter
      */
-    retsize=(int)array_totalsize(symret);
-    assert(retsize>0);
+    retsize=(int)array_totalsize(symret); /* zero only for an array of unknown size, which is error 46 */
     modheap(retsize*pc_cellsize); /* address is in ALT */
     pushreg(sALT);                /* pass ALT as the last (hidden) parameter */
     if ((sym->usage & uNATIVE)!=0) {

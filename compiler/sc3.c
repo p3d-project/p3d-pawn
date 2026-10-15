@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc3.c 7708 2026-10-07 18:58:58Z thiadmer $
+ *  Version: $Id: sc3.c 7715 2026-10-15 07:35:24Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -545,8 +545,8 @@ static cell checkarrays(value *lval1,value *lval2)
     error(229);                 /* mixing packed and unpacked arrays */
   if (level>0) {
     /* check the sizes of all sublevels too */
-    symbol *sym1 = lval1->sym;
-    symbol *sym2 = lval2->sym;
+    const symbol *sym1=lval1->sym;
+    const symbol *sym2=lval2->sym;
     int i;
     assert(sym1!=NULL && sym2!=NULL);
     /* ^^^ sym2 must be valid, because only variables can be
@@ -819,17 +819,37 @@ static void plnge2(void (*oper)(void),void (*arrayoper)(cell),
 #define IABS(a)       ((a)>=0 ? (a) : (-a))
 static cell flooreddiv(cell a,cell b,int return_remainder)
 {
-  cell q,r;
-
   if (b==0) {
-    error(29);
+    error(100);         /* division by zero */
     return 0;
   } /* if */
-  /* first implement truncated division in a portable way */
-  q=IABS(a)/IABS(b);
-  if ((cell)(a ^ b)<0)
-    q=-q;               /* swap sign if either "a" or "b" is negative (but not both) */
-  r=a-q*b;              /* calculate the matching remainder */
+  if (b==-1 && a==CELLMIN) {
+    error(101);         /* numeric overflow ('cellmin / -1' would be -cellmin) */
+    return 0;
+  }
+
+  /* first implement truncated division (in a portable way) */
+  cell q;
+# if __STDC_VERSION__ >= 199901L
+    q=a/b;              /* C99 and later standardize 'trucated' integer division */
+# else
+    if (b==1) {
+      q=a;
+    } else if (b==-1) {
+      q=a;
+    } else if (a==CELLMIN && b==CELLMIN) {
+      q=1;
+    } else if (b==CELLMIN) {
+      q=0;
+    } else {
+      cell a2= (a==CELLMIN) ? a+1 : a;  /* we know that b<=-2 or b>=2, so the +1 is harmless */
+      q=IABS(a2)/IABS(b);
+      if ((cell)(a ^ b)<0)
+        q=-q;           /* swap sign if either "a" or "b" is negative (but not both) */
+    }
+# endif
+
+  cell r=a-q*b;         /* calculate the matching remainder */
   /* now "fiddle" with the values to get floored division */
   if (r!=0 && (cell)(r ^ b)<0) {
     q--;
@@ -840,50 +860,67 @@ static cell flooreddiv(cell a,cell b,int return_remainder)
 
 static cell calc(cell left,void (*oper)(),cell right,bool *boolresult)
 {
+  cell result=0;
   if (oper==ob_or) {
-    return (left | right);
+    result=(left | right);
   } else if (oper==ob_xor) {
-    return (left ^ right);
+    result=(left ^ right);
   } else if (oper==ob_and) {
-    return (left & right);
+    result=(left & right);
   } else if (oper==ob_andnot) {
-    return (left & ~right);
+    result=(left & ~right);
   } else if (oper==ob_eq) {
-    return (left == right);
+    result=(left == right);
   } else if (oper==ob_ne) {
-    return (left != right);
+    result=(left != right);
   } else if (oper==os_le) {
     *boolresult= *boolresult && (left <= right);
-    return  right;
+    result= right;
   } else if (oper==os_ge) {
     *boolresult= *boolresult && (left >= right);
-    return  right;
+    result= right;
   } else if (oper==os_lt) {
     *boolresult= *boolresult && (left < right);
-    return right;
+    result=right;
   } else if (oper==os_gt) {
     *boolresult= *boolresult && (left > right);
-    return right;
+    result=right;
   } else if (oper==os_sar) {
-    return (left >> (int)right);
+    if (right<0 || right>=8*pc_cellsize)
+      error(101); /* numeric overflow */
+    result=(left >> (int)right);
   } else if (oper==ou_sar) {
-    return ((ucell)(left & (~(~(ucell)0 << pc_cellsize*8))) >> (ucell)right);
+    if (right<0 || right>=8*pc_cellsize)
+      error(101); /* numeric overflow */
+    result=((ucell)(left & CELL_MASK) >> (ucell)right);
   } else if (oper==ob_sal) {
-    return ((ucell)left << (int)right);
+    if (right<0 || right>=8*pc_cellsize)
+      error(101); /* numeric overflow */
+    result=(((ucell)left<<(int)right) & CELL_MASK); /* mask off overflowing bits */
   } else if (oper==ob_add) {
-    return (left + right);
+    if (left>=0 && right>(CELLMAX-left) || left<0 && right<(CELLMIN-left))
+      error(101); /* numeric overflow */
+    else
+      result=(left+right);
   } else if (oper==ob_sub) {
-    return (left - right);
+    if (left>=0 && right<(left-CELLMAX) || left<0 && right>(left-CELLMIN))
+      error(101); /* numeric overflow */
+    else
+      result=(left-right);
   } else if (oper==os_mult) {
-    return (left * right);
+    result=(left*right);
+    if (left!=0 && IABS(result)/IABS(left)!=IABS(right)) {
+      error(101); /* numeric overflow */
+      result=0;
+    } /* if */
   } else if (oper==os_div) {
-    return flooreddiv(left,right,0);
+    result=flooreddiv(left,right,0);
   } else if (oper==os_mod) {
-    return flooreddiv(left,right,1);
+    result=flooreddiv(left,right,1);
   } else {
-    error(29);  /* invalid expression, assumed 0 (this should never occur) */
+    error(76);  /* syntax error in expression (this should never occur) */
   } /* if */
-  return 0;
+  return result;
 }
 
 /** expression() starts the recursive descent parser, generating code in the
@@ -1027,13 +1064,13 @@ SC_FUNC int sc_getstateid(constvalue **automaton,constvalue **state,char *fsanam
 
   *state=state_find(name,fsa_id,closestmatch);
   if (*state==NULL) {
-    char *fsaname=(*automaton)->name;
-    if (*fsaname=='\0')
-      fsaname="<main>";
+    char *fsa=(*automaton)->name;
+    if (*fsa=='\0')
+      fsa="<main>";
     if (*closestmatch!='\0')
-      error(makelong(87,1),name,fsaname,closestmatch);
+      error(makelong(87,1),name,fsa,closestmatch);
     else
-      error(87,name,fsaname); /* unknown state for automaton */
+      error(87,name,fsa);   /* unknown state for automaton */
     return false;
   } /* if */
 
@@ -1945,8 +1982,11 @@ restart:
        * undefined symbol)
        */
       lexpush();                /* push token back for later analysis, before testing for line break */
-      if ((tok!='{' && tok!='(') || !matchtoken(tTERM))
-        error(29);              /* expression error, assumed 0 */
+      if ((tok!='{' && tok!='(') || !matchtoken(tTERM)) {
+        char str[sNAMEMAX+1];
+        tokenname(str,countof(str),tok,false);
+        error(29,"variable name",str);  /* expression error */
+      } /* if */
       return false;
     } /* if */
     optbrackets=(sym!=NULL && (sym->ident==iARRAY || sym->ident==iREFARRAY));
@@ -2078,9 +2118,11 @@ restart:
       assert(cursym==sym && sym!=NULL); /* should still be set */
       if (sym->dim.array.level>0) {
         assert(close==']');               /* checked earlier */
-        assert(lval1->ident=iARRAYCELL);  /* set earlier */
+        assert(lval1->ident==iARRAY || lval1->ident==iREFARRAY || lval1->ident==iARRAYCELL);
         assert(cursym==lval1->sym);
-        /* read the offset to the subarray and add it to the current address */
+        /* read the offset to the subarray (from the indirection table) and add
+         * it to the current address */
+        lval1->ident=iARRAYCELL;/* temporary switch to type to array cell */
         pushreg(sPRI);          /* the optimizer makes this to a LOAD.alt */
         rvalue(lval1);
         popreg(sALT);
@@ -2150,7 +2192,7 @@ restart:
            */
           sym=fetchfunc(lastsymbol,0);
           if (sym==NULL)
-            error(103); /* insufficient memory */
+            error(303); /* insufficient memory */
           markusage(sym,uREAD);
         } else {
           return error(12);           /* invalid function call */
@@ -2199,7 +2241,7 @@ static int primary(value *lval,int *symtok)
   assert(lval!=NULL);
   assert(symtok!=NULL);
   *symtok=0;
-  if (matchtoken('(')){         /* sub-expression - (expression,...) */
+  if (matchtoken('(')) {        /* sub-expression - (expression,...) */
     bool save_allowtags=sc_allowtags;
     int lvalue;
 
@@ -2244,8 +2286,7 @@ static int primary(value *lval,int *symtok)
     /* first look for a local variable */
     if ((sym=findlcl(lexstr))!=0) {
       if (sym->ident==iLABEL) {
-        error(29);          /* expression error, assumed 0 */
-        ldconst(0,sPRI);    /* load 0 */
+        error(29,"variable name","label name"); /* expression error */
         return false;       /* return false for labels (expression error) */
       } /* if */
       lval->sym=sym;
@@ -2297,7 +2338,7 @@ static int primary(value *lval,int *symtok)
        */
       sym=fetchfunc(symbolname,0);
       if (sym==NULL)
-        error(103);     /* insufficient memory */
+        error(303);     /* insufficient memory */
     } /* if */
     assert(sym!=NULL);
     assert(sym->ident==iFUNCTN);
@@ -2307,9 +2348,10 @@ static int primary(value *lval,int *symtok)
     return false;       /* return 0 for function (not an lvalue) */
   } /* if */
   lexpush();            /* push the token, it is analyzed by constant() */
-  if (constant(lval)==0) {
-    error(29);          /* expression error, assumed 0 */
-    ldconst(0,sPRI);    /* load 0 */
+  if (!constant(lval)) {
+    char str[sNAMEMAX+1];
+    tokenname(str,countof(str),*symtok,false);
+    error(29,"number, string or variable",str); /* expression syntax error */
     /* Normally, gobble up unrecognized symbols, but make an exception for '}',
      * because it closes compound statements.
      */
@@ -2706,7 +2748,7 @@ static int nesting=0;
               append_constval(&arrayszlst,arg[argidx].name,array_sz,0);
             } /* if */
           } else {
-            symbol *rsym=lval.sym;
+            const symbol *rsym=lval.sym;
             short level=0;
             assert(rsym!=NULL);
             if (rsym->dim.array.level+1!=arg[argidx].numdim)
@@ -3026,7 +3068,7 @@ static bool constant(value *lval)
     lval->sym=findconst(lexstr);
 
   if (tok==tSYMBOL && lval->sym!=NULL) {
-    symbol *sym=lval->sym;
+    const symbol *sym=lval->sym;
     lval->constval=sym->addr;
     ldconst(lval->constval,sPRI);
     lval->ident=iCONSTEXPR;

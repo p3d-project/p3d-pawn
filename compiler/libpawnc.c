@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: libpawnc.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: libpawnc.c 7712 2026-10-12 08:59:39Z thiadmer $
  */
 #include <assert.h>
 #include <stdbool.h>
@@ -115,29 +115,35 @@ int pc_printf(const char *message,...)
 
 /** pc_error()
  *  Called for producing error output.
- *  \param number       The error number (as documented in the manual).
+ *
+ *  \param number       The error number (as documented in the manual). If set
+ *                      to zero, the parameters for the error location are not
+ *                      relevant.
+ *  \param prefix       [in] The message prefix, one of "error", "fatal error"
+ *                      or "warning". Ignored if `number` is zero.
  *  \param message      [in] A string describing the error, with embedded '%d'
  *                      and '%s' tokens if applicable.
  *  \param filename     [in] The name of the file currently being parsed.
+ *                      Ignored if `number` is zero.
  *  \param firstline    The line number at which the expression started on which
  *                      the error was found, or -1 if there is no "starting
- *                      line".
+ *                      line". Ignored if `number` is zero.
  *  \param lastline     The line number at which the error was detected.
+ *                      Ignored if `number` is zero.
  *  \param argptr       a pointer to the first of a series of arguments (for
  *                      macro "va_arg").
- *  \return If the function returns 0, the parser attempts to
- *          continuecompilation. On a non-zero return value, the parser aborts.
+ *
+ *  \return If the function returns 0, the parser attempts to continue
+ *          compilation. On a non-zero return value, the parser aborts.
  */
-int pc_error(int number,const char *message,const char *filename,int firstline,int lastline,va_list argptr)
+int pc_error(int number,const char *prefix,const char *message,
+             const char *filename,int firstline,int lastline,va_list argptr)
 {
-static const char *prefix[3]={ "error", "fatal error", "warning" };
-
   if (number!=0) {
-    const char *pre=prefix[number/100];
     if (firstline>=0)
-      fprintf(stderr,"%s(%d -- %d) : %s %03d: ",filename,firstline,lastline,pre,number);
+      fprintf(stderr,"%s(%d -- %d) : %s %03d: ",filename,firstline,lastline,prefix,number);
     else
-      fprintf(stderr,"%s(%d) : %s %03d: ",filename,lastline,pre,number);
+      fprintf(stderr,"%s(%d) : %s %03d: ",filename,lastline,prefix,number);
   } /* if */
   vfprintf(stderr,message,argptr);
   fflush(stderr);

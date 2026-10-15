@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc6.c 7709 2026-10-10 19:44:52Z thiadmer $
+ *  Version: $Id: sc6.c 7714 2026-10-14 13:30:08Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -249,7 +249,7 @@ static cell parm0(FILE *fbin,const char *params,cell opcode,cell cip)
   (void)params;
   (void)cip;
   write_cell(fbin,opcode);
-  return opcodes(1);
+  return (cell)opcodes(1);
 }
 
 static cell parm1(FILE *fbin,const char *params,cell opcode,cell cip)
@@ -258,7 +258,7 @@ static cell parm1(FILE *fbin,const char *params,cell opcode,cell cip)
   (void)cip;
   write_cell(fbin,opcode);
   write_cell(fbin,p);
-  return opcodes(1)+opargs(1);
+  return (cell)(opcodes(1)+opargs(1));
 }
 
 static cell parm1_p(FILE *fbin,const char *params,cell opcode,cell cip)
@@ -269,7 +269,7 @@ static cell parm1_p(FILE *fbin,const char *params,cell opcode,cell cip)
   assert(opcode>=0 && opcode<=255);
   p=(p<<pc_cellsize*4) | opcode;
   write_cell(fbin,p);
-  return opcodes(1);
+  return (cell)opcodes(1);
 }
 
 static cell parm2(FILE *fbin,const char *params,cell opcode,cell cip)
@@ -280,7 +280,7 @@ static cell parm2(FILE *fbin,const char *params,cell opcode,cell cip)
   write_cell(fbin,opcode);
   write_cell(fbin,p1);
   write_cell(fbin,p2);
-  return opcodes(1)+opargs(2);
+  return (cell)(opcodes(1)+opargs(2));
 }
 
 static cell parmx(FILE *fbin,const char *params,cell opcode,cell cip)
@@ -294,7 +294,7 @@ static cell parmx(FILE *fbin,const char *params,cell opcode,cell cip)
     ucell p=getparamvalue(params,&params);
     write_cell(fbin,p);
   } /* for */
-  return opcodes(1)+opargs(count+1);
+  return (cell)(opcodes(1)+opargs(count+1));
 }
 
 static cell parmx_p(FILE *fbin,const char *params,cell opcode,cell cip)
@@ -311,7 +311,7 @@ static cell parmx_p(FILE *fbin,const char *params,cell opcode,cell cip)
     p=getparamvalue(params,&params);
     write_cell(fbin,p);
   } /* for */
-  return opcodes(1)+opargs(count);
+  return (cell)(opcodes(1)+opargs(count));
 }
 
 static cell do_dump(FILE *fbin,const char *params,cell opcode,cell cip)
@@ -327,7 +327,7 @@ static cell do_dump(FILE *fbin,const char *params,cell opcode,cell cip)
     while (isspace(*params))
       params++;
   } /* while */
-  return num*pc_cellsize;
+  return (cell)(num*pc_cellsize);
 }
 
 static cell do_call(FILE *fbin,const char *params,cell opcode,cell cip)
@@ -820,7 +820,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
   if (numnatives>0) {
     nativelist=(symbol **)malloc(numnatives*sizeof(symbol *));
     if (nativelist==NULL)
-      error(103);               /* insufficient memory */
+      error(303);               /* insufficient memory */
 #   if !defined NDEBUG
       memset(nativelist,0,numnatives*sizeof(symbol *)); /* for NULL checking */
 #   endif
@@ -1001,7 +1001,7 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
      * if there are no labels */
     lbltab=(cell *)malloc(sc_labnum*sizeof(cell));
     if (lbltab==NULL)
-      error(103);               /* insufficient memory */
+      error(303);               /* insufficient memory */
     memset(lbltab,0,sc_labnum*sizeof(cell));
     pc_resetasm(fin);
     while (pc_readasm(fin,line,sizeof line)!=NULL) {
@@ -1061,12 +1061,12 @@ SC_FUNC int assemble(FILE *fout,FILE *fin)
   } /* if */
 
   if (hdr.size<pc_lengthbin(fout))
-    error(114,"file exceeds 2GB limit");  /* capacity exceeded */
+    error(314,"file exceeds 2GB limit");  /* capacity exceeded */
   if (!writeerror && (sc_debug & sSYMBOLIC)!=0)
     append_dbginfo(fout);       /* optionally append debug file */
 
   if (writeerror)
-    error(114,"disk full");     /* capacity exceeded */
+    error(314,"disk full");     /* capacity exceeded */
 
   /* adjust the header (for Big Endian architectures) */
   size=(int)hdr.cod;    /* save, the value in the header may need to be swapped */

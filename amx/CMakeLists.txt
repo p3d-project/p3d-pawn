@@ -39,8 +39,9 @@ IF(Dyncall_FOUND)
   INCLUDE_DIRECTORIES(${Dyncall_INCLUDE_DIR} ${DYNLOAD_INCLUDE_DIR})
 ENDIF(Dyncall_FOUND)
 
+SET(PAWN_CELL_SIZE "32" CACHE STRING "Size of the Pawn 'cell': 16, 32 or 64")
 
-ADD_DEFINITIONS(-DFLOATPOINT -DFIXEDPOINT)
+ADD_DEFINITIONS(-DFLOATPOINT -DFIXEDPOINT -DPAWN_CELL_SIZE=${PAWN_CELL_SIZE})
 IF (UNIX)
   INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../linux)
   ADD_DEFINITIONS(-D_GNU_SOURCE)
@@ -73,7 +74,7 @@ IF(WIN32)
     SET_TARGET_PROPERTIES(amxArgs PROPERTIES LINK_FLAGS "/export:amx_ArgsInit /export:amx_ArgsCleanup /export:amx_ArgsSetCmdLine")
   ENDIF(BORLAND)
   IF(MINGW)
-    # MinGW linker uses a DEF file 
+    # MinGW linker uses a DEF file
     set_target_properties(amxArgs PROPERTIES LINK_FLAGS "-Wl,--output-def,${CMAKE_CURRENT_SOURCE_DIR}/amxargs.def")
   ENDIF(MINGW)
 ENDIF(WIN32)
@@ -318,7 +319,7 @@ INSTALL(TARGETS pawndbg RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # libamx
 
 SET(AMXLIB_MAJOR "4")
-SET(AMXLIB_VER "4.1.0")
+SET(AMXLIB_VER "4.2.0")
 SET(AMXLIB_SRCS amx.c amxaux.c amxcore.c amxcons.c amxpool.c amxdbg.c amxstring.c)
 IF (UNIX)
   SET(AMXLIB_SRCS ${AMXLIB_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/../linux/binreloc.c

@@ -2,18 +2,18 @@
  * (https://www.compuphase.com/svnrev.htm).
  * You should not modify it manually, as it may be re-generated.
  * 
- * $Revision: 7709$
- * $Date: 2026-10-10$
+ * $Revision: 7714$
+ * $Date: 2026-10-14$
  */
 
 #ifndef _SVNREV_H_
 #define _SVNREV_H_
 
-#define SVNREV_NUM	7709
-#define SVNREV_STR	"7709"
-#define SVNREV_RCS	"$Revision: 7709 $"
-#define SVNREV_DATE	"2026-10-10"
-#define SVNREV_STAMP	20261010L
+#define SVNREV_NUM	7714
+#define SVNREV_STR	"7714"
+#define SVNREV_RCS	"$Revision: 7714 $"
+#define SVNREV_DATE	"2026-10-14"
+#define SVNREV_STAMP	20261014L
 #define SVNREV_MODIFIED	0
 
 #endif /* _SVNREV_H_ */

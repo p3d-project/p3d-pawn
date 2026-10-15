@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: pawndisasm.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: pawndisasm.c 7713 2026-10-13 08:15:44Z thiadmer $
  */
 #include <assert.h>
 #include <inttypes.h>
@@ -809,7 +809,7 @@ static bool disassemble(FILE *fpamx,FILE *fplist,uint32_t addr_from,uint32_t add
   } /* while */
 
   /* dump the data section by default, but not if a code range was requested */
-  if (addr_to==ULONG_MAX) {
+  if (addr_to==0xffffffffU) {
     fprintf(fplist,"\n\nDATA");
     cip=code+(amxhdr.dat-amxhdr.cod);
     codesize=amxhdr.hea-amxhdr.cod;

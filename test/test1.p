@@ -689,6 +689,11 @@ main()
       skip:
         abc -= 1
     #endif
+
+    #if defined NUMERIC_OVERFLOW
+        var a = cellmin / -1
+        #pragma unused a
+    #endif
     }
 
 #if defined LOCAL_SHADOWS

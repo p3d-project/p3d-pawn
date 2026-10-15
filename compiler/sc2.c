@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7708 2026-10-07 18:58:58Z thiadmer $
+ *  Version: $Id: sc2.c 7714 2026-10-14 13:30:08Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -84,7 +84,7 @@ SC_FUNC void pushstk(stkitem val)
     assert(newsize>stktop);
     newstack=(stkitem*)malloc(newsize*sizeof(stkitem));
     if (newstack==NULL)
-      error(102,"parser stack");  /* stack overflow (recursive include?) */
+      error(302,"parser stack");  /* stack overflow (recursive include?) */
     /* swap the stacks */
     if (stack!=NULL) {
       memcpy(newstack,stack,stkidx*sizeof(stkitem));
@@ -158,7 +158,7 @@ static const char *extensions[] = { ".i", ".inc", ".p", ".pawn" };
   PUSHSTK_I(pc_curline);
   inpfname=duplicatestring(name);/* set name of include file */
   if (inpfname==NULL)
-    error(103);                 /* insufficient memory */
+    error(303);                 /* insufficient memory */
   inpf=fp;                      /* set input file pointer to include file */
   fnumber++;
   pc_curline=0;                 /* set current line number to 0 */
@@ -173,7 +173,7 @@ static const char *extensions[] = { ".i", ".inc", ".p", ".pawn" };
   return true;
 }
 
-SC_FUNC bool plungefile(char *name,int try_currentpath,int try_includepaths)
+SC_FUNC bool plungefile(const char *name,int try_currentpath,int try_includepaths)
 {
   bool result=false;
 
@@ -234,7 +234,6 @@ static void doinclude(bool silent)
 {
   char name[_MAX_PATH];
   char symname[sNAMEMAX];
-  char *ptr;
 
   while (*lexptr<=' ' && *lexptr!='\0')     /* skip leading whitespace */
     lexptr++;
@@ -265,7 +264,8 @@ static void doinclude(bool silent)
    * to test for multiple inclusions
    */
   strcpy(symname,"_inc_");
-  if ((ptr=strrchr(name,DIRSEP_CHAR))!=NULL)
+  const char *ptr=strrchr(name,DIRSEP_CHAR);
+  if (ptr!=NULL)
     strlcat(symname,ptr+1,countof(symname));
   else
     strlcat(symname,name,countof(symname));
@@ -293,7 +293,7 @@ static void doinclude(bool silent)
     if (result)
       add_constant(symname,1,sGLOBAL,0);
     else if (!silent)
-      error(100,name);            /* cannot read from ... (fatal error) */
+      error(300,name);            /* cannot read from ... (fatal error) */
   } /* if */
 }
 
@@ -476,7 +476,7 @@ static int isquotednumber(const unsigned char *line,const unsigned char *head)
  */
 static void stripcom(unsigned char *line)
 {
-  unsigned char *head=line;
+  const unsigned char *head=line;
 # if !defined PAWN_LIGHT
 #   define COMMENT_LIMIT 100
 #   define COMMENT_MARGIN 40   /* length of the longest word */
@@ -830,15 +830,16 @@ static int ftoi(cell *val,const unsigned char *curptr)
          * anyway.
          * Note: problems have been reported with GCC 3.2.x, version 3.3.x works.
          */
-        { float test1 = 0.0, test2 = 50.0, test3 = -50.0;
-          uint32_t bit = 1;
-          /* test 0.0 == all bits 0 */
-          assert(*(uint32_t*)&test1==0x00000000L);
-          /* test sign & magnitude format */
-          assert(((*(uint32_t*)&test2) ^ (*(uint32_t*)&test3)) == (bit << (8*pc_cellsize-1)));
-          /* test a known value */
-          assert(*(uint32_t*)&test2==0x42480000L);
-        }
+        // cppcheck-suppress-begin [invalidPointerCast]
+        float test1 = 0.0, test2 = 50.0, test3 = -50.0;
+        uint32_t bit = 1;
+        /* test 0.0 == all bits 0 */
+        assert(*(uint32_t*)&test1==0x00000000L);
+        /* test sign & magnitude format */
+        assert(((*(uint32_t*)&test2) ^ (*(uint32_t*)&test3)) == (bit << (8*pc_cellsize-1)));
+        /* test a known value */
+        assert(*(uint32_t*)&test2==0x42480000L);
+        // cppcheck-suppress-end [invalidPointerCast]
 #     endif
     } else {
       uint64_t inum64;
@@ -1083,7 +1084,7 @@ static int command(void)
     ret=CMD_IF;
     assert(iflevel>=0);
     if (iflevel>=sCOMP_STACK)
-      error(102,"Conditional compilation stack"); /* table overflow */
+      error(302,"Conditional compilation stack"); /* table overflow */
     iflevel++;
     if (SKIPPING)
       break;                    /* break out of switch */
@@ -1199,7 +1200,7 @@ static int command(void)
         free(inpfname);
         inpfname=duplicatestring(pathname);
         if (inpfname==NULL)
-          error(103);               /* insufficient memory */
+          error(303);               /* insufficient memory */
         /* adjust fcurrent too, after storing the filename in the file table (if needed) */
         fcurrent=find_inputfile(pathname);
         if (fcurrent<0) {
@@ -1230,7 +1231,7 @@ static int command(void)
       cell val;
       preproc_expr(&val,NULL,true); /* get constant expression (or 0 on error) */
       if (!val)
-        error(110,expr);            /* assertion failed */
+        error(310,expr);            /* assertion failed */
       check_empty(lexptr);
     } /* if */
     break;
@@ -1258,7 +1259,7 @@ static int command(void)
             name[i]='\0';
           } /* if */
           if (!cp_set(name))
-            error(108);         /* codepage mapping file not found */
+            error(308);         /* codepage mapping file not found */
 #endif
         } else if (strcmp(lexstr,"deprecated")==0) {
           while (*lexptr<=' ' && *lexptr!='\0')
@@ -1430,7 +1431,7 @@ static int command(void)
       /* store matched pattern */
       pattern=(char*)malloc(count+1);
       if (pattern==NULL)
-        error(103);     /* insufficient memory */
+        error(303);     /* insufficient memory */
       lexptr=start;
       count=0;
       while (lexptr!=end) {
@@ -1490,7 +1491,7 @@ static int command(void)
       /* store matched substitution */
       substitution=(char*)malloc(count+1);  /* +1 for '\0' */
       if (substitution==NULL)
-        error(103);             /* insufficient memory */
+        error(303);             /* insufficient memory */
       lexptr=start;
       count=0;
       while (lexptr!=end) {
@@ -1549,7 +1550,7 @@ static int command(void)
     while (*lexptr<=' ' && *lexptr!='\0')
       lexptr++;
     if (!SKIPPING) {
-      int errcode=(tok==tpERROR) ? 111 : 220;
+      int errcode=(tok==tpERROR) ? 311 : 220;
       error(errcode,lexptr);  /* user error or user warning */
     } /* if */
     break;
@@ -1698,7 +1699,7 @@ static bool substpattern(unsigned char *line,size_t buffersize,char *pattern,cha
         size_t len=(int)(e-s);
         args[arg]=(unsigned char*)malloc((len+1)*sizeof(unsigned char));
         if (args[arg]==NULL)
-          error(103); /* insufficient memory */
+          error(303); /* insufficient memory */
         strlcpy((char*)args[arg],(char*)s,len+1);
         /* character behind the pattern was matched too */
         if (*e==*p) {
@@ -2557,6 +2558,18 @@ SC_FUNC int tokeninfo(cell *val,char **str)
   return cached_tok;
 }
 
+SC_FUNC char *tokenname(char *descr,size_t descr_sz,int token,bool eof)
+{
+  assert(descr!=NULL && descr_sz>0);
+  if (eof)
+    strlcpy(descr,"<end of file>",descr_sz);
+  else if (token<256)
+    snprintf(descr,descr_sz,"%c",(char)token);        /* single character token */
+  else
+    strlcpy(descr,sc_tokens[token-tFIRST],descr_sz);  /* multi-character symbol */
+  return descr;
+}
+
 /*  needtoken
  *
  *  This routine checks for a required token and gives an error message if
@@ -2564,7 +2577,7 @@ SC_FUNC int tokeninfo(cell *val,char **str)
  *  this function returns 1 for "token found" and 2 for "statement termination
  *  token" found; see function matchtoken() for details.
  *
- *  Global references: cached_tok;
+ *  Global references: cached_tok, cached_val, cached_str
  */
 SC_FUNC int needtoken(int token)
 {
@@ -2573,10 +2586,7 @@ SC_FUNC int needtoken(int token)
     char s1[sNAMEMAX+1],s2[sNAMEMAX+1];
     assert(is_cached);                    /* token already pushed back */
     litidx=0;                             /* force clear literal pool on error */
-    if (token<256)
-      snprintf(s1,countof(s1),"%c",(char)token);        /* single character token */
-    else
-      strlcpy(s1,sc_tokens[token-tFIRST],countof(s1));  /* multi-character symbol */
+    tokenname(s1,countof(s1),token,false);
     if (!freading)
       strlcpy(s2,"<end of file>",countof(s2));
     else if (cached_tok<256)
@@ -2668,7 +2678,7 @@ static void chk_grow_litq(void)
     size_t newsize= (litq_sz==0) ? sDEF_LITMAX : 2*litq_sz;
     cell *p=(cell *)malloc(newsize*sizeof(cell));
     if (p==NULL)
-      error(102,"literal table");   /* literal table overflow (fatal error) */
+      error(302,"literal table");   /* literal table overflow (fatal error) */
     if (litq!=NULL) {
       memcpy(p,litq,litq_sz*sizeof(cell));
       free(litq);
@@ -2873,7 +2883,7 @@ static symbol *add_symbol(symbol *root,const symbol *entry,int sort)
       root=root->next;
 
   if ((newsym=(symbol *)malloc(sizeof(symbol)))==NULL) {
-    error(103);
+    error(303);
     return NULL;
   } /* if */
   memcpy(newsym,entry,sizeof(symbol));
@@ -3278,7 +3288,7 @@ SC_FUNC symbol *addsym(const char *name,cell addr,int ident,int scope,int block,
 
   /* create an empty referrer list */
   if ((refer=(symbol**)malloc(sizeof(symbol*)))==NULL) {
-    error(103);         /* insufficient memory */
+    error(303);         /* insufficient memory */
     return NULL;
   } /* if */
   *refer=NULL;

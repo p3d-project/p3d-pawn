@@ -21,7 +21,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sclist.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: sclist.c 7714 2026-10-14 13:30:08Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -139,9 +139,9 @@ static stringlist *insert_string(stringlist *root,const char *string,int append)
 
   assert(string!=NULL);
   if ((cur=(stringlist*)malloc(sizeof(stringlist)))==NULL)
-    error(103);       /* insufficient memory (fatal error) */
+    error(303);       /* insufficient memory (fatal error) */
   if ((cur->text=duplicatestring(string))==NULL)
-    error(103);       /* insufficient memory (fatal error) */
+    error(303);       /* insufficient memory (fatal error) */
   if (append) {
     /* insert as "last" (append mode) */
     assert(root!=NULL);
@@ -230,7 +230,7 @@ SC_FUNC stringpair *insert_alias(const char *name,const char *alias)
   assert(alias!=NULL);
   assert(strlen(alias)<=sNAMEMAX);
   if ((cur=insert_stringpair(&alias_tab,name,alias,(int)strlen(name)))==NULL)
-    error(103);       /* insufficient memory (fatal error) */
+    error(303);       /* insufficient memory (fatal error) */
   return cur;
 }
 
@@ -293,7 +293,7 @@ SC_FUNC stringpair *insert_subst(const char *pattern,const char *substitution,in
   assert(pattern!=NULL);
   assert(substitution!=NULL);
   if ((cur=insert_stringpair(&substpair,pattern,substitution,prefixlen))==NULL)
-    error(103);       /* insufficient memory (fatal error) */
+    error(303);       /* insufficient memory (fatal error) */
   adjustindex(*pattern);
   return cur;
 }
@@ -459,7 +459,7 @@ SC_FUNC bool insert_undefsymbol(const char *symbolname,short filenr,int linenr)
 
 SC_FUNC const char *get_undefsymbol(int index,short *filenr,int *linenr)
 {
-  symbolref *item=symbolref_get(&undefsymbols,index);
+  const symbolref *item=symbolref_get(&undefsymbols,index);
   if (!item)
     return NULL;
   if (filenr!=NULL)
@@ -503,7 +503,7 @@ SC_FUNC bool add_unusedvar(const char *name,short filenr,short linenr,short bloc
  */
 SC_FUNC const char *get_unusedvar(int index,short *filenr,int *linenr,short *block,bool *handled)
 {
-  symbolref *item=symbolref_get(&unusedvar_root,index);
+  const symbolref *item=symbolref_get(&unusedvar_root,index);
   if (!item)
     return NULL;
   if (filenr!=NULL)
@@ -636,7 +636,7 @@ SC_FUNC valuepair *push_heaplist(long first, long second)
 {
   valuepair *cur, *last;
   if ((cur=(valuepair*)malloc(sizeof(valuepair)))==NULL)
-    error(103);       /* insufficient memory (fatal error) */
+    error(303);       /* insufficient memory (fatal error) */
 
   cur->first=first;
   cur->second=second;

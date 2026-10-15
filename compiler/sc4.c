@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7709 2026-10-10 19:44:52Z thiadmer $
+ *  Version: $Id: sc4.c 7715 2026-10-15 07:35:24Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -1250,8 +1250,8 @@ SC_FUNC void ob_sub(void)
 }
 
 /*
- *  arithmic shift left alternate register the number of bits
- *  given in the primary register (result in primary).
+ *  arithmic shift left ALT register the number of bits
+ *  given in the PRI register (result in PRI).
  *  There is no need for a "logical shift left" routine, since
  *  logical shift left is identical to arithmic shift left.
  */
@@ -1263,8 +1263,8 @@ SC_FUNC void ob_sal(void)
 }
 
 /*
- *  arithmic shift right alternate register the number of bits
- *  given in the primary register (result in primary).
+ *  arithmic shift right ALT register the number of bits
+ *  given in the PRI register (result in PRI).
  */
 SC_FUNC void os_sar(void)
 {
@@ -1274,8 +1274,8 @@ SC_FUNC void os_sar(void)
 }
 
 /*
- *  logical (unsigned) shift right of the alternate register by the
- *  number of bits given in the primary register (result in primary).
+ *  logical (unsigned) shift right of the ALT register by the
+ *  number of bits given in the PRI register (result in PRI).
  */
 SC_FUNC void ou_sar(void)
 {
@@ -1483,7 +1483,7 @@ SC_FUNC void nooperation(void)
 
 /*  increment symbol
  */
-SC_FUNC void inc(value *lval)
+SC_FUNC void inc(const value *lval)
 {
   const symbol *sym=lval->sym;
   if (lval->ident==iARRAYCELL) {
@@ -1531,7 +1531,7 @@ SC_FUNC void inc(value *lval)
  *
  *  in case of an integer pointer, the symbol must be incremented by 2.
  */
-SC_FUNC void dec(value *lval)
+SC_FUNC void dec(const value *lval)
 {
   const symbol *sym=lval->sym;
   if (lval->ident==iARRAYCELL) {

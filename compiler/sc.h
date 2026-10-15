@@ -2,10 +2,11 @@
  *
  *  Pawn is a scripting language system consisting of a compiler and an
  *  abstract machine, for building and running programs in the Pawn language.
- *  The Pawn compiler is drafted after the Small-C compiler Version 2.01,
- *  originally created by Ron Cain, july 1980, and enhanced by James E. Hendrix.
  *
- *  This version comes close to a complete rewrite.
+ *  The Pawn compiler has its origins in the Small-C compiler Version 2.01,
+ *  originally created by Ron Cain, july 1980, and enhanced by James E. Hendrix.
+ *  Although the Pawn compiler comes close to a complete rewrite of Small-C,
+ *  its origins are still clearly visible.
  *
  *  Copyright (c) 1997-2026, CompuPhase and contributors
  *  Copyright (c) 1982, 1983, J.E. Hendrix
@@ -23,7 +24,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7709 2026-10-10 19:44:52Z thiadmer $
+ *  Version: $Id: sc.h 7715 2026-10-15 07:35:24Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -47,7 +48,7 @@
 #include "../amx/osdefs.h"
 #include "../amx/amx.h"
 
-/* Note: the "cell" and "ucell" types are defined in AMX.H */
+/* Note: the "cell" and "ucell" types are defined in amx.h */
 
 #define PUBLIC_CHAR   '@'   /**< character that defines a function "public" */
 #define ESCAPE_CHAR   '\\'  /**< for special characters in strings (escape character) */
@@ -349,7 +350,7 @@ typedef struct s_arraymerge {
 #endif
 #if !defined makelong
 # define makelong(low,high) ((long)(low) | ((long)(high) << (sizeof(long)*4)))
-# define lowword(value)     ((value) & (((unsigned long)~0u) >> (sizeof(long)*4)))
+# define lowword(value)     ((value) & (~0Lu >> (sizeof(long)*4)))
 # define highword(value)    ((unsigned long)(value) >> (sizeof(long)*4))
 #endif
 
@@ -518,30 +519,33 @@ typedef enum s_optmark {
 # define FIXEDTAG    0x40000000Lu
 #endif
 #define TAGMASK       (~PUBLICTAG)
-#define CELL_MAX      (((ucell)1 << (sizeof(cell)*8-1)) - 1)
+
+#define CELLMAX       (cell)(((ucell)1<<(8*pc_cellsize-1))-1)
+#define CELLMIN       (cell)((ucell)-1<<(8*pc_cellsize-1))
+#define CELL_MASK     ((pc_cellsize==PAWN_CELL_SIZE/8) ? (~(ucell)0u) : (~(~(ucell)0u << 8*pc_cellsize)))
 
 
 /* interface functions */
 #if defined __cplusplus
   extern "C" {
 #endif
-#if !defined DLLEXPORT
-# define DLLEXPORT
+#if !defined EXPORT
+# define EXPORT
 #endif
 
 /*
  * Functions you call from the "driver" program
  */
-DLLEXPORT int pc_compile(int argc, char **argv);
-DLLEXPORT int pc_addconstant(const char *name,cell value,int tag);
-DLLEXPORT int pc_addtag(const char *name);
+EXPORT int pc_compile(int argc, char **argv);
+EXPORT int pc_addconstant(const char *name,cell value,int tag);
+EXPORT int pc_addtag(const char *name);
 
 enum {
   wDISABLE=0,
   wENABLE,
   wTOGGLE,
 };
-DLLEXPORT int pc_enablewarning(unsigned number,int enable);
+EXPORT int pc_enablewarning(unsigned number,int enable);
 
 /*
  * Functions called from the compiler (to be implemented by you if you embed
@@ -552,7 +556,8 @@ DLLEXPORT int pc_enablewarning(unsigned number,int enable);
 int pc_printf(const char *message,...);
 
 /* error report function */
-int pc_error(int number,const char *message,const char *filename,int firstline,int lastline,va_list argptr);
+int pc_error(int number,const char *prefix,const char *message,
+             const char *filename,int firstline,int lastline,va_list argptr);
 
 /* input from source file */
 void *pc_opensrc(const char *filename); /* reading only */
@@ -619,7 +624,7 @@ SC_FUNC void pushstk(stkitem val);
 SC_FUNC stkitem popstk(void);
 SC_FUNC void clearstk(void);
 SC_FUNC bool plungequalifiedfile(const char *name);  /* explicit path included */
-SC_FUNC bool plungefile(char *name,int try_currentpath,int try_includepaths);   /* search through "include" paths */
+SC_FUNC bool plungefile(const char *name,int try_currentpath,int try_includepaths);   /* search through "include" paths */
 SC_FUNC char *strdel(char *str,size_t len);
 SC_FUNC char *strins(char *dest,const char *src,size_t srclen);
 SC_FUNC void preprocess(void);
@@ -633,6 +638,7 @@ SC_FUNC void lexclr(int clreol);
 SC_FUNC int lexpeek(void);
 SC_FUNC int matchtoken(int token);
 SC_FUNC int tokeninfo(cell *val,char **str);
+SC_FUNC char *tokenname(char *descr,size_t descr_sz,int token,bool eof);
 SC_FUNC int needtoken(int token);
 SC_FUNC bool skiptotoken(int token,bool pushback);
 SC_FUNC void litq_free(void);
@@ -752,8 +758,8 @@ SC_FUNC void lneg(void);      /**< logical not */
 SC_FUNC void neg(void);       /**< unary minus */
 SC_FUNC void invert(void);    /**< binary not */
 SC_FUNC void nooperation(void);
-SC_FUNC void inc(value *lval);
-SC_FUNC void dec(value *lval);
+SC_FUNC void inc(const value *lval);
+SC_FUNC void dec(const value *lval);
 SC_FUNC void jmp_ne0(int label);
 SC_FUNC void jmp_eq0(int label);
 SC_FUNC void outval(cell val,int fullcell,int newline);
@@ -872,7 +878,7 @@ SC_FUNC int state_getfsa(int listid);
 SC_FUNC int state_count(int listid);
 SC_FUNC int state_inlist(int listid,int state);
 SC_FUNC int state_listitem(int listid,int index);
-SC_FUNC void state_conflict(symbol *root);
+SC_FUNC void state_conflict(const symbol *root);
 SC_FUNC int state_conflict_id(int listid1,int listid2);
 SC_FUNC statelist *append_statelist(statelist *root,int id,int label,cell address);
 SC_FUNC void delete_statelisttable(statelist *root);

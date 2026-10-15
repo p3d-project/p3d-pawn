@@ -39,7 +39,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scstate.c 7703 2026-10-02 06:08:41Z thiadmer $
+ *  Version: $Id: scstate.c 7714 2026-10-14 13:30:08Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -217,7 +217,7 @@ SC_FUNC void state_buildlist(int **list,int *listsize,int *count,int state_id)
     *listsize+=4;
     *list=(int*)realloc(*list,*listsize*sizeof(int));
     if (*list==NULL)
-      error(103);               /* insufficient memory */
+      error(303);               /* insufficient memory */
   } /* if */
 
   /* find the insertion point (the list has to stay sorted) */
@@ -273,10 +273,10 @@ SC_FUNC int state_addlist(const int *list,int count,int fsa_id)
   ptr=state_findlist(list,count,fsa_id,&last);
   if (ptr==NULL) {
     if ((ptr=(statepool*)malloc(sizeof(statepool)))==NULL)
-      error(103);       /* insufficient memory */
+      error(303);       /* insufficient memory */
     if ((ptr->states=(int*)malloc(count*sizeof(int)))==NULL) {
       free(ptr);
-      error(103);       /* insufficient memory */
+      error(303);       /* insufficient memory */
     } /* if */
     memcpy(ptr->states,list,count*sizeof(int));
     ptr->numstates=count;
@@ -379,27 +379,26 @@ static int checkconflict(const statepool *psrc,const statepool *ptgt)
  * of a symbol exists in any other statepool id's of the same function; it also
  * verifies that all definitions of the symbol are in the same automaton.
  */
-SC_FUNC void state_conflict(symbol *root)
+SC_FUNC void state_conflict(const symbol *root)
 {
-  statepool *psrc,*ptgt;
-  statelist *srcptr,*tgtptr;
-  symbol *sym;
-
+  const symbol *sym;
   assert(root!=NULL);
   for (sym=root->next; sym!=NULL; sym=sym->next) {
     if (sym->parent!=NULL || sym->ident!=iFUNCTN)
       continue;                 /* hierarchical data type or no function */
     if (sym->states==NULL)
       continue;                 /* this function has no states */
+    const statelist *srcptr;
     for (srcptr=sym->states->next; srcptr!=NULL; srcptr=srcptr->next) {
       if (srcptr->id==-1)
         continue;               /* state-list id -1 is a special case */
-      psrc=state_getlist_ptr(srcptr->id);
+      const statepool *psrc=state_getlist_ptr(srcptr->id);
       assert(psrc!=NULL);
+      const statelist *tgtptr;
       for (tgtptr=srcptr->next; tgtptr!=NULL; tgtptr=tgtptr->next) {
         if (tgtptr->id==-1)
           continue;             /* state-list id -1 is a special case */
-        ptgt=state_getlist_ptr(tgtptr->id);
+        const statepool *ptgt=state_getlist_ptr(tgtptr->id);
         assert(ptgt!=NULL);
         if (psrc->fsa!=ptgt->fsa && strcmp(sym->name,_ENTRYFUNC)!=0)
           error(83,sym->name);  /* this function is part of another machine */
@@ -416,11 +415,9 @@ SC_FUNC void state_conflict(symbol *root)
  */
 SC_FUNC int state_conflict_id(int listid1,int listid2)
 {
-  statepool *psrc,*ptgt;
-
-  psrc=state_getlist_ptr(listid1);
+  const statepool *psrc=state_getlist_ptr(listid1);
   assert(psrc!=NULL);
-  ptgt=state_getlist_ptr(listid2);
+  const statepool *ptgt=state_getlist_ptr(listid2);
   assert(ptgt!=NULL);
   return checkconflict(psrc,ptgt);
 }
@@ -431,7 +428,7 @@ SC_FUNC statelist *append_statelist(statelist *root,int id,int label,cell addres
   statelist *cur;
 
   if ((cur=(statelist*)malloc(sizeof(statelist)))==NULL)
-    error(103);       /* insufficient memory (fatal error) */
+    error(303);       /* insufficient memory (fatal error) */
   cur->next=NULL;
   cur->id=id;
   cur->label=label;

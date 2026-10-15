@@ -5,7 +5,8 @@
  *
  *  The Pawn compiler has its origins in the Small-C compiler Version 2.01,
  *  originally created by Ron Cain, july 1980, and enhanced by James E. Hendrix.
- *  The modifications in Pawn come close to a complete rewrite, though.
+ *  Although the Pawn compiler comes close to a complete rewrite of Small-C,
+ *  its origins are still clearly visible.
  *
  *  Copyright (c) 1997-2026, CompuPhase and contributors
  *  Copyright (c) 1982, 1983, J.E. Hendrix
@@ -23,7 +24,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7708 2026-10-07 18:58:58Z thiadmer $
+ *  Version: $Id: sc1.c 7715 2026-10-15 07:35:24Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -70,9 +71,9 @@
 #endif
 
 #if defined __WIN32__ || defined _WIN32 || defined WIN32 || defined __NT__
-# define DLLEXPORT __declspec (dllexport)
+# define EXPORT __declspec (dllexport)
 #elif defined HAVE_VISIBILITY
-# define DLLEXPORT __attribute__ ((visibility("default")))
+# define EXPORT __attribute__ ((visibility("default")))
 #endif
 
 #include "lstring.h"
@@ -221,29 +222,35 @@ int pc_printf(const char *message,...)
 
 /** pc_error()
  *  Called for producing error output.
- *  \param number       The error number (as documented in the manual).
+ *
+ *  \param number       The error number (as documented in the manual). If set
+ *                      to zero, the parameters for the error location are not
+ *                      relevant.
+ *  \param prefix       [in] The message prefix, one of "error", "fatal error"
+ *                      or "warning". Ignored if `number` is zero.
  *  \param message      [in] A string describing the error, with embedded '%d'
  *                      and '%s' tokens if applicable.
  *  \param filename     [in] The name of the file currently being parsed.
+ *                      Ignored if `number` is zero.
  *  \param firstline    The line number at which the expression started on which
  *                      the error was found, or -1 if there is no "starting
- *                      line".
+ *                      line". Ignored if `number` is zero.
  *  \param lastline     The line number at which the error was detected.
+ *                      Ignored if `number` is zero.
  *  \param argptr       a pointer to the first of a series of arguments (for
  *                      macro "va_arg").
- *  \return If the function returns 0, the parser attempts to
- *          continuecompilation. On a non-zero return value, the parser aborts.
+ *
+ *  \return If the function returns 0, the parser attempts to continue
+ *          compilation. On a non-zero return value, the parser aborts.
  */
-int pc_error(int number,const char *message,const char *filename,int firstline,int lastline,va_list argptr)
+int pc_error(int number,const char *prefix,const char *message,
+             const char *filename,int firstline,int lastline,va_list argptr)
 {
-static const char *prefix[3]={ "error", "fatal error", "warning" };
-
   if (number!=0) {
-    const char *pre=prefix[number/100];
     if (firstline>=0)
-      fprintf(stderr,"%s(%d -- %d) : %s %03d: ",filename,firstline,lastline,pre,number);
+      fprintf(stderr,"%s(%d -- %d) : %s %03d: ",filename,firstline,lastline,prefix,number);
     else
-      fprintf(stderr,"%s(%d) : %s %03d: ",filename,lastline,pre,number);
+      fprintf(stderr,"%s(%d) : %s %03d: ",filename,lastline,prefix,number);
   } /* if */
   vfprintf(stderr,message,argptr);
   fflush(stderr);
@@ -643,7 +650,7 @@ int posix_spawnl(char *pgm,...)
 #if defined __cplusplus
   extern "C"
 #endif
-DLLEXPORT
+EXPORT
 int pc_compile(int argc, char *argv[])
 {
   int entry,i,jmpcode;
@@ -666,7 +673,7 @@ int pc_compile(int argc, char *argv[])
   errorset(sRESET);
   errorset(sEXPRRELEASE);
   if (!lexinit(false))
-    error(103);         /* insufficient memory */
+    error(303);         /* insufficient memory */
 
   /* make sure that we clean up on a fatal error; do this before the first
    * call to error(). */
@@ -675,10 +682,10 @@ int pc_compile(int argc, char *argv[])
 
   inpfname=(char*)malloc(_MAX_PATH*sizeof(char));
   if (inpfname==NULL)
-    error(103);         /* insufficient memory */
+    error(303);         /* insufficient memory */
   *inpfname='\0';
   if (!phopt_init())
-    error(103);         /* insufficient memory */
+    error(303);         /* insufficient memory */
 
   setconfig(argv[0]);   /* the path to the include and codepage files, plus the root path */
   setopt(argc,argv,outfname,errfname,incfname,reportname,codepage);
@@ -700,7 +707,7 @@ int pc_compile(int argc, char *argv[])
   lcl_tabsize=pc_tabsize;
 # if !defined PAWN_NO_CODEPAGE
     if (!cp_set(codepage))      /* set codepage */
-      error(108);               /* codepage mapping file not found */
+      error(308);               /* codepage mapping file not found */
 # endif
   /* optionally create a temporary input file that is a collection of all
    * input files
@@ -728,13 +735,13 @@ int pc_compile(int argc, char *argv[])
         linkbuf[linklen]='\0';  /* readlink() does not NUL-terminate its output, and may return -1 */
         tmpname=strdup(linkbuf);
       } else {
-        error(113,"multiple sources on the command line");  /* unsupported feature */
+        error(313,"multiple sources on the command line");  /* unsupported feature */
       }
 #   else
-      error(113,"multiple sources on the command line");  /* unsupported feature */
+      error(313,"multiple sources on the command line");  /* unsupported feature */
 #   endif
     if (!tmpname)
-      error(103);       /* insufficient memory */
+      error(303);       /* insufficient memory */
     ftmp=(FILE*)pc_createsrc(tmpname);
     for (fidx=0; (sname=get_sourcefile(fidx))!=NULL; fidx++) {
       unsigned char tstring[128];
@@ -743,7 +750,7 @@ int pc_compile(int argc, char *argv[])
         pc_closesrc(ftmp);
         remove(tmpname);
         strcpy(inpfname,sname); /* avoid invalid filename */
-        error(100,sname);       /* fatal error, aborts program */
+        error(300,sname);       /* fatal error, cannot read from file */
       } /* if */
       pc_writesrc(ftmp,(unsigned char*)"#file \"");
       pc_writesrc(ftmp,(unsigned char*)sname);
@@ -762,19 +769,19 @@ int pc_compile(int argc, char *argv[])
   } /* if */
   inpf_org=(FILE*)pc_opensrc(inpfname);
   if (inpf_org==NULL)
-    error(100,inpfname);
+    error(300,inpfname);        /* cannot read from file */
   freading=true;
   sc_is_utf8=(short)scan_utf8(inpf_org,inpfname);
   outf=(FILE*)pc_openasm(outfname); /* first write to assembler file (may be temporary) */
   if (outf==NULL)
-    error(101,outfname);
+    error(301,outfname);        /* cannot write to file */
   /* immediately open the binary file, for other programs to check */
   if (pc_asmfile || pc_listing) {
     binf=NULL;
   } else {
     binf=(FILE*)pc_openbin(binfname);
     if (binf==NULL)
-      error(101,binfname);
+      error(301,binfname);      /* cannot write to file */
   } /* if */
   setconstants();               /* set predefined constants and tagnames */
   for (i=0; i<skipinput; i++)   /* skip lines in the input file */
@@ -828,7 +835,7 @@ int pc_compile(int argc, char *argv[])
       free(inpfname);
       inpfname=duplicatestring(inpfname_org);
       if (inpfname==NULL)
-        error(103);             /* insufficient memory */
+        error(303);             /* insufficient memory */
     } /* if */
     if (test_skippedundef()>0)
       sc_reparse=true;          /* conditional compiled code sections may have changed */
@@ -898,7 +905,7 @@ int pc_compile(int argc, char *argv[])
     pc_resetsrc(inpf,inpfmark); /* reset file position */
     pc_curline=skipinput;       /* reset line number */
     if (!lexinit(false))        /* clear internal flags of lex() */
-      error(103);               /* insufficient memory */
+      error(303);               /* insufficient memory */
     sc_status=statWRITE;        /* allow to write --this variable was reset by resetglobals() */
     writeleader(&glbtab,&lbl_nostate,&lbl_exitstate);
     reduce_referrers(&glbtab);  /* test for unused functions */
@@ -999,10 +1006,10 @@ cleanup:
         char symname[2*sNAMEMAX+16];  /* allow space for user defined operators */
         assert(max_ovlname!=NULL);
         funcdisplayname(symname,countof(symname),max_ovlname);
-        error(112,symname,(max_ovlsize-pc_overlays)*pc_cellsize);
+        error(312,symname,(max_ovlsize-pc_overlays)*pc_cellsize); /* overlay exceeds limit */
       } /* if */
       if (flag_exceed)
-        error(106,pc_amxlimit+pc_amxram); /* this causes a jump back to label "cleanup" */
+        error(306,pc_amxlimit+pc_amxram); /* this causes a jump back to label "cleanup" */
     } /* if */
 # endif
 
@@ -1101,7 +1108,7 @@ cleanup:
 #if defined __cplusplus
   extern "C"
 #endif
-DLLEXPORT
+EXPORT
 int pc_addconstant(const char *name,cell value,int tag)
 {
   errorset(sFORCESET);  /* make sure error engine is silenced */
@@ -1113,7 +1120,7 @@ int pc_addconstant(const char *name,cell value,int tag)
 #if defined __cplusplus
   extern "C"
 #endif
-DLLEXPORT
+EXPORT
 int pc_addtag(const char *name)
 {
   cell val;
@@ -1261,7 +1268,7 @@ static char *add_path_prefix(char *fullpath,size_t maxsize,const char *path,cons
   assert(maxsize>0);
   if (fullpath!=path)
     strlcpy(fullpath,path,maxsize);
-  len=strlen(fullpath);
+  len=strlen(fullpath); // cppcheck-suppress [uninitvar] ; CppCheck analysis is incorrect
   if (len<maxsize-1) {
     fullpath[len]=DIRSEP_CHAR;
     fullpath[len+1]='\0';
@@ -1609,16 +1616,16 @@ static void parserespf(char *filename,char *oname,char *ename,char *pname,
   long size;
 
   if ((fp=fopen(filename,"r"))==NULL)
-    error(100,filename);        /* error reading input file */
+    error(300,filename);        /* error reading input file */
   /* load the complete file into memory */
   fseek(fp,0L,SEEK_END);
   size=ftell(fp);
   if (size<0)
-    error(100,filename);        /* error reading input file */
+    error(300,filename);        /* error reading input file */
   fseek(fp,0L,SEEK_SET);
   assert(size<INT_MAX);
   if ((string=(char *)malloc(((int)size+1)*sizeof(char)))==NULL)
-    error(103);                 /* insufficient memory */
+    error(303);                 /* insufficient memory */
   /* fill with zeros; in MS-DOS, fread() may collapse CR/LF pairs to
    * a single '\n', so the string size may be smaller than the file
    * size. */
@@ -1634,15 +1641,18 @@ static void parserespf(char *filename,char *oname,char *ename,char *pname,
   /* allocate an initial table for option pointers */
   maxoptions=2;
   if ((argv=(char**)malloc(maxoptions*sizeof(char*)))==NULL)
-    error(103);                 /* insufficient memory */
+    error(303);                 /* insufficient memory */
   /* fill the options table */
   ptr=strtok(string," \t\r\n");
   argc=1; /* note: the routine skips argv[0], for compatibility with main() */
   while (ptr!=NULL) {
     if (argc>=maxoptions) {
       maxoptions*=2;
-      if ((argv=(char**)realloc(argv,maxoptions*sizeof(char*)))==NULL)
-        error(103);             /* insufficient memory */
+      char** newargv=(char**)realloc(argv,maxoptions*sizeof(char*));
+      if (newargv==NULL)
+        error(303);             /* insufficient memory */
+      else
+        argv=newargv;
     } /* if */
     argv[argc++]=ptr;
     ptr=strtok(NULL," \t\r\n");
@@ -1706,7 +1716,7 @@ static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
       if (access(cfgfile,4)==0) {
         parserespf(cfgfile,oname,ename,pname,rname,codepage);
       } else if (found) {
-        error(100,cfgfile);  /* config. file was explicitly specified, but cannot be read */
+          error(300,cfgfile);  /* config. file was explicitly specified, but cannot be read */
       } else if (sc_binpath[0]!='\0') {
         /* for compatibility, try the old name */
         add_path_prefix(cfgfile,countof(cfgfile),sc_binpath,"pawn.cfg");
@@ -1719,7 +1729,7 @@ static void setopt(int argc,char **argv,char *oname,char *ename,char *pname,
   if (get_sourcefile(0)==NULL)
     about();
   if (pc_cryptkey!=0 && pc_cellsize<4)
-    error(104,"-k","cell size < 32-bits");
+    error(304,"-k","cell size < 32-bits");  /* incompatible options */
 }
 
 static void setconfig(const char *root)
@@ -1815,13 +1825,15 @@ static void setconfig(const char *root)
       if (ptr!=NULL) {
         *ptr = '\0';
           if (!cp_path(path,"codepage"))
-            error(109,path);        /* codepage path */
+            error(309,path);        /* codepage path */
       }
 #   endif
     /* also copy the root path (for the XML documentation and target host files) */
 #   if !defined PAWN_LIGHT
-      *ptr='\0';
-      strlcpy(sc_rootpath,path,sizeof sc_rootpath);
+      if ((ptr=strrchr(path,DIRSEP_CHAR))!=NULL) {
+        *ptr='\0';
+        strlcpy(sc_rootpath,path,sizeof sc_rootpath);
+      } /* if */
 #   endif
   } /* if */
 }
@@ -1904,8 +1916,8 @@ static void setconstants(void)
   add_constant("false",0,sGLOBAL,1);
   add_constant("EOS",0,sGLOBAL,0);  /* End Of String, or '\0' */
   add_constant("cellbits",pc_cellsize*8,sGLOBAL,0);
-  add_constant("cellmax",(cell)(((ucell)1<<(8*pc_cellsize-1))-1),sGLOBAL,0);
-  add_constant("cellmin",(cell)((ucell)-1<<(8*pc_cellsize-1)),sGLOBAL,0);
+  add_constant("cellmax",CELLMAX,sGLOBAL,0);
+  add_constant("cellmin",CELLMIN,sGLOBAL,0);
   add_constant("charbits",sCHARBITS,sGLOBAL,0);
   add_constant("charmin",0,sGLOBAL,0);
   add_constant("charmax",~(~0UL<<sCHARBITS),sGLOBAL,0);
@@ -2087,7 +2099,7 @@ static void plungeprefix(char *prefixname)
      * an error on explicit files
      */
     if (!ok && strcmp(prefixname,sDEF_PREFIX)!=0)
-      error(100,prefixname);    /* cannot read from ... (fatal error) */
+      error(300,prefixname);    /* cannot read from ... (fatal error) */
   } /* if */
 }
 
@@ -2443,7 +2455,7 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
       size=needsub(']',&dimnames[numdim]); /* get size; size==0 for "var[]" */
 #     if INT_MAX < LONG_MAX
         if (size>INT_MAX)
-          error(105);                   /* overflow, exceeding capacity */
+          error(305);                   /* overflow, exceeding capacity */
 #     endif
       dim[numdim++]=(int)size;
     } /* while */
@@ -2459,7 +2471,7 @@ static bool declglb(const char *firstname,int firsttag,bool fpublic,bool fstatic
       size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
 #     if INT_MAX < LONG_MAX
         if (size>INT_MAX)
-          error(105);                   /* overflow, exceeding capacity */
+          error(305);                   /* overflow, exceeding capacity */
 #     endif
       dim[numdim++]=(int)size;
     } /* if */
@@ -2747,7 +2759,7 @@ static bool declloc(bool fstatic)
       size=needsub(']',&dimnames[numdim]);/* get size; size==0 for "var[]" */
 #     if INT_MAX < LONG_MAX
         if (size > INT_MAX)
-          error(105);                   /* overflow, exceeding capacity */
+          error(305);                   /* overflow, exceeding capacity */
 #     endif
       dim[numdim++]=(int)size;
     } /* while */
@@ -2763,7 +2775,7 @@ static bool declloc(bool fstatic)
       size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
 #     if INT_MAX < LONG_MAX
         if (size > INT_MAX)
-          error(105);                   /* overflow, exceeding capacity */
+          error(305);                   /* overflow, exceeding capacity */
 #     endif
       dim[numdim++]=(int)size;
     } /* if */
@@ -2857,7 +2869,7 @@ static bool declloc(bool fstatic)
         while (litidx>cur_lit && litq[litidx-1]==0)
           litidx--;
         /* if the array is not completely filled, set all values to zero first */
-        if (litidx-cur_lit<(size_t)size && (ucell)size<CELL_MAX)
+        if (litidx-cur_lit<(size_t)size)
           fillarray(sym,size*pc_cellsize,0);
         if (cur_lit<litidx) {
           /* check whether all elements in the array are set to the same value;
@@ -2910,10 +2922,10 @@ static bool declloc(bool fstatic)
  */
 static cell calc_arraysize(int dim[],int numdim,int cur)
 {
-# if UINT_MAX > 0xffffffffLu
+# if INT_MAX > 0xffffffffLu
 #   define ARRAY_MAX 0xffffffffLu  /* array is max. 4 GiB */
 # else
-#   define ARRAY_MAX UINT_MAX
+#   define ARRAY_MAX INT_MAX
 # endif
   cell subsize;
   ucell newsize;
@@ -2928,7 +2940,7 @@ static cell calc_arraysize(int dim[],int numdim,int cur)
     return 0;
   if ((ucell)subsize>=ARRAY_MAX || newsize>=ARRAY_MAX || newsize<(ucell)subsize
       || newsize*pc_cellsize>=ARRAY_MAX)
-    return CELL_MAX;
+    return INT_MAX;
   return newsize;
 # undef ARRAY_MAX
 }
@@ -2952,7 +2964,7 @@ static int base;
   if (dim[cur+1]>0) {
     for (d=0; d<dim[cur]; d++)
       litq[base++]=(dim[cur]+d*(dim[cur+1]-1)+increment)*pc_cellsize;
-    accum=dim[cur]*(dim[cur+1]-1);
+    accum=(cell)(dim[cur]*(dim[cur+1]-1));
   } else {
     /* final dimension is variable length */
     constvalue *ld;
@@ -3015,7 +3027,7 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
         }
       } /* if */
       *size=calc_arraysize(dim,numdim,0);
-      if (*size==(cell)CELL_MAX) {
+      if (*size==(cell)INT_MAX) {
         error(9);       /* array is too big -> invalid size */
         return;
       } /* if */
@@ -3415,7 +3427,7 @@ static cell needsub(char match,constvalue **namelist)
       return 0;
     } /* if */
     if ((*namelist=(constvalue*)malloc(sizeof(constvalue)))==NULL)
-      error(103);
+      error(303);
     memset(*namelist,0,sizeof(constvalue));
     for ( ;; ) {
       /* add the name that was already parsed */
@@ -3434,7 +3446,7 @@ static cell needsub(char match,constvalue **namelist)
       } /* if */
 #     if INT_MAX < LONG_MAX
         if (size>INT_MAX)
-          error(105);           /* overflow, exceeding capacity */
+          error(305);           /* overflow, exceeding capacity */
 #     endif
       if (matchtoken('[') || matchtoken('{'))
         error(53);              /* exceeding maximum number of dimensions */
@@ -3638,7 +3650,7 @@ static statelist *attachstatelist(symbol *sym,int state_id)
     statelist *stateptr;
     if (sym->states==NULL) {
       if ((sym->states=(statelist*)malloc(sizeof(statelist)))==NULL)
-        error(103);             /* insufficient memory (fatal error) */
+        error(303);             /* insufficient memory (fatal error) */
       memset(sym->states,0,sizeof(statelist));
     } /* if */
     /* see whether the id already exists (add new state only if it does not
@@ -4078,7 +4090,7 @@ static void funcstub(int fnative)
       error(9);                 /* invalid array size */
 #   if INT_MAX < LONG_MAX
       if (size>INT_MAX)
-        error(105);             /* overflow, exceeding capacity */
+        error(305);             /* overflow, exceeding capacity */
 #   endif
     dim[numdim++]=(int)size;
   } /* while */
@@ -4095,7 +4107,7 @@ static void funcstub(int fnative)
     size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
 #   if INT_MAX < LONG_MAX
       if (size>INT_MAX)
-        error(105);             /* overflow, exceeding capacity */
+        error(305);             /* overflow, exceeding capacity */
 #   endif
     dim[numdim++]=(int)size;
   } /* if */
@@ -4618,7 +4630,7 @@ static int declparams(symbol *sym,int chkshadow)
           /* redimension the argument list, add the entry */
           sym->dim.arglist=(arginfo*)realloc(sym->dim.arglist,(argcnt+2)*sizeof(arginfo));
           if (sym->dim.arglist==0)
-            error(103);                 /* insufficient memory */
+            error(303);                 /* insufficient memory */
           memset(&sym->dim.arglist[argcnt+1],0,sizeof(arginfo));  /* keep the list terminated */
           /* clone the named indices (because the generated list is inherited
            * by the local symbol
@@ -4658,7 +4670,7 @@ static int declparams(symbol *sym,int chkshadow)
           /* redimension the argument list, add the entry iVARARGS */
           sym->dim.arglist=(arginfo*)realloc(sym->dim.arglist,(argcnt+2)*sizeof(arginfo));
           if (sym->dim.arglist==0)
-            error(103);                 /* insufficient memory */
+            error(303);                 /* insufficient memory */
           memset(&sym->dim.arglist[argcnt+1],0,sizeof(arginfo));  /* keep the list terminated */
           sym->dim.arglist[argcnt].ident=iVARARGS;
           sym->dim.arglist[argcnt].name[0]='\0';
@@ -4668,7 +4680,7 @@ static int declparams(symbol *sym,int chkshadow)
           sym->dim.arglist[argcnt].numtags=numtags;
           sym->dim.arglist[argcnt].tags=(int*)malloc(numtags*sizeof tags[0]);
           if (sym->dim.arglist[argcnt].tags==NULL)
-            error(103);                 /* insufficient memory */
+            error(303);                 /* insufficient memory */
           memcpy(sym->dim.arglist[argcnt].tags,tags,numtags*sizeof tags[0]);
         } else {
           if (argcnt>oldargcnt || sym->dim.arglist[argcnt].ident!=iVARARGS)
@@ -4790,7 +4802,7 @@ static void param2symbol(const char *name,int ident,int offset,
         cell size=needsub(']',&arg->dimnames[arg->numdim]);/* may be zero here, it is a pointer anyway */
 #       if INT_MAX < LONG_MAX
           if (size>INT_MAX)
-            error(105);           /* overflow, exceeding capacity */
+            error(305);           /* overflow, exceeding capacity */
 #       endif
         arg->dim[arg->numdim]=(int)size;
         arg->numdim+=1;
@@ -4808,7 +4820,7 @@ static void param2symbol(const char *name,int ident,int offset,
       size=((size*sCHARBITS/8)+pc_cellsize-1) / pc_cellsize;
 #     if INT_MAX < LONG_MAX
         if (size>INT_MAX)
-          error(105);           /* overflow, exceeding capacity */
+          error(305);           /* overflow, exceeding capacity */
 #     endif
       arg->dim[arg->numdim]=(int)size;
       arg->numdim+=1;
@@ -4861,7 +4873,7 @@ static void param2symbol(const char *name,int ident,int offset,
           char *symname;
           tokeninfo(NULL,&symname);
           if ((arg->defvalue.size.symname=duplicatestring(symname)) == NULL)
-            error(103);         /* insufficient memory */
+            error(303);         /* insufficient memory */
           arg->defvalue.size.level=0;
           if (size_tag_token==uSIZEOF) {
             while (matchtoken('[')) {
@@ -4888,7 +4900,7 @@ static void param2symbol(const char *name,int ident,int offset,
   arg->numtags=numtags;
   arg->tags=(int*)malloc(numtags*sizeof tags[0]);
   if (arg->tags==NULL)
-    error(103);                 /* insufficient memory */
+    error(303);                 /* insufficient memory */
   memcpy(arg->tags,tags,numtags*sizeof tags[0]);
   symbol *argsym=findlcl(name);
   if (argsym!=NULL) {
@@ -5401,9 +5413,6 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
     /* print parameter list, with tag & const information, plus descriptions */
     assert(sym->dim.arglist!=NULL);
     for (arg=0; sym->dim.arglist[arg].ident!=0; arg++) {
-      int dim,paraminfo;
-      char *outer_start,*inner_start;
-      int outer_length,inner_length;
       if (sym->dim.arglist[arg].ident==iVARARGS)
         fprintf(log,"\t\t\t<param name=\"...\">\n");
       else
@@ -5411,9 +5420,9 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
       /* print the tag name(s) for each parameter */
       assert(sym->dim.arglist[arg].numtags>0);
       assert(sym->dim.arglist[arg].tags!=NULL);
-      paraminfo=(sym->dim.arglist[arg].numtags>1 || sym->dim.arglist[arg].tags[0]!=0)
-                || sym->dim.arglist[arg].ident==iREFERENCE
-                || sym->dim.arglist[arg].ident==iREFARRAY;
+      int paraminfo=(sym->dim.arglist[arg].numtags>1 || sym->dim.arglist[arg].tags[0]!=0)
+                    || sym->dim.arglist[arg].ident==iREFERENCE
+                    || sym->dim.arglist[arg].ident==iREFARRAY;
       if (paraminfo)
         fprintf(log,"\t\t\t\t<paraminfo>");
       if (sym->dim.arglist[arg].numtags>1 || sym->dim.arglist[arg].tags[0]!=0) {
@@ -5462,9 +5471,11 @@ static void make_report(symbol *root,FILE *log,const char *sourcefile,int *makes
       /* print the user description of the parameter (parse through
        * sym->documentation)
        */
+      char *outer_start,*inner_start;
+      int outer_length,inner_length;
       if (sym->documentation!=NULL
-          && find_xmltag(sym->documentation, "param", "name", sym->dim.arglist[arg].name,
-                         &outer_start, &outer_length, &inner_start, &inner_length))
+          && find_xmltag(sym->documentation,"param","name",sym->dim.arglist[arg].name,
+                         &outer_start,&outer_length,&inner_start,&inner_length))
       {
         char *tail;
         fprintf(log,"\t\t\t\t%.*s\n",inner_length,inner_start);
@@ -5521,9 +5532,9 @@ static void reduce_referrers(symbol *root)
         } /* for */
       } else if ((sym->ident==iVARIABLE || sym->ident==iARRAY)
                  && (sym->usage & uPUBLIC)==0
-                 && sym->parent==NULL
                  && count_referrers(sym)==0)
       {
+        assert(sym->parent==NULL);  /* checked near the top of the 'for' loop */
         sym->usage&=~(uREAD | uWRITTEN);  /* erase usage bits if there is no referrer */
       } /* if */
     } /* for */
@@ -5665,7 +5676,7 @@ static long max_stacksize(symbol *root,bool *recursion)
   /* allocate function symbol stack */
   symstack=(symbol **)malloc((numfunctions+1)*sizeof(symbol*));
   if (symstack==NULL)
-    error(103);         /* insufficient memory (fatal error) */
+    error(303);         /* insufficient memory (fatal error) */
   memset(symstack,0,(numfunctions+1)*sizeof(symbol*));
 
   maxsize=0;
@@ -5994,7 +6005,7 @@ static constvalue *insert_constval(constvalue *prev,constvalue *next,const char 
 {
   constvalue *cur=(constvalue*)malloc(sizeof(constvalue));
   if (cur==NULL)
-    error(103);       /* insufficient memory (fatal error) */
+    error(303);       /* insufficient memory (fatal error) */
   memset(cur,0,sizeof(constvalue));
   if (name!=NULL) {
     assert(strlen(name)<=sNAMEMAX);
@@ -6070,7 +6081,7 @@ static constvalue *clone_consttable(const constvalue *table)
 
   /* create new root */
   if ((root=(constvalue*)malloc(sizeof(constvalue)))==NULL)
-    error(103);       /* insufficient memory (fatal error) */
+    error(303);       /* insufficient memory (fatal error) */
   memset(root,0,sizeof(constvalue));
 
   /* walk through the source, copy fields */
@@ -7275,7 +7286,7 @@ static void dostate(void)
       int top=state_top_id(automaton->index);
       unsigned char *slist=malloc((top+1));
       if (slist==NULL)
-        error(103);                     /* insufficient memory */
+        error(303);                     /* insufficient memory */
       memset(slist,0xff,(top+1));
       for (idx=1; idx<=top; idx++) {
         if (state_findid(idx,automaton->index)!=NULL) {
@@ -7445,7 +7456,7 @@ static void addwhile(int *ptr)
   ptr[wqLOOP]=getlabel();
   ptr[wqEXIT]=getlabel();
   if (wq_ptr>=(wq_glb+wqTABSZ-wqSIZE))
-    error(102,"loop table");    /* loop table overflow (too many active loops)*/
+    error(302,"loop table");    /* loop table overflow (too many active loops)*/
   k=0;
   while (k<wqSIZE){     /* copy "ptr" to while queue table */
     *wq_ptr=*ptr;

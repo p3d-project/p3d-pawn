@@ -41,7 +41,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc7.c 7709 2026-10-10 19:44:52Z thiadmer $
+ *  Version: $Id: sc7.c 7714 2026-10-14 13:30:08Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -73,7 +73,7 @@
 #endif
 
 static int stgstring(char *start,char *end);
-static void stgopt(char *start,char *end,int packed_opc,bool (*outputfunc)(char *str));
+static void stgopt(char *start,char *end,int packed_opc,bool (*outputfunc)(const char *str));
 
 
 #define sSTG_GROW   512
@@ -101,14 +101,14 @@ static void grow_stgbuffer(char **buffer, unsigned *curmax, unsigned requiredsiz
    * over a few kBytes, there is probably a run-away expression
    */
   if (requiredsize>sSTG_MAX)
-    error(102,"staging buffer");    /* staging buffer overflow (fatal error) */
+    error(314,"staging buffer");    /* staging buffer capacity exceeded (fatal error) */
   *curmax=requiredsize+sSTG_GROW;
   if (*buffer!=NULL)
     p=(char *)realloc(*buffer,*curmax*sizeof(char));
   else
     p=(char *)malloc(*curmax*sizeof(char));
   if (p==NULL)
-    error(102,"staging buffer");    /* staging buffer overflow (fatal error) */
+    error(302,"staging buffer");    /* staging buffer overflow (fatal error) */
   *buffer=p;
   if (clear)
     **buffer='\0';
@@ -155,7 +155,7 @@ SC_FUNC void stgmark(char mark)
   } /* if */
 }
 
-static bool rebuffer(char *str)
+static bool rebuffer(const char *str)
 {
   if (sc_status==statWRITE) {
     assert(pipeidx==0 || stgpipe!=NULL);
@@ -171,7 +171,7 @@ static bool rebuffer(char *str)
   return true;
 }
 
-static bool filewrite(char *str)
+static bool filewrite(const char *str)
 {
   if (sc_status==statWRITE)
     return pc_writeasm(outf,str);
@@ -292,7 +292,7 @@ static int stgstring(char *start,char *end)
       /* allocate a argstack with sMAXARGS items */
       stack=(argstack *)malloc(sMAXARGS*sizeof(argstack));
       if (stack==NULL)
-        error(103);     /* insufficient memory */
+        error(303);     /* insufficient memory */
       reordered=1;      /* mark that the expression is reordered */
       nest=1;           /* nesting counter */
       argc=0;           /* argument counter */
@@ -739,7 +739,7 @@ static char *replacesequence(const char *pattern,const char symbols[MAX_OPT_VARS
   /* allocate a buffer to replace the sequence in */
   char *buffer=(char*)malloc(*repl_length);
   if (!buffer) {
-    error(103);
+    error(303);
     return NULL;
   } /* if */
 
@@ -858,7 +858,7 @@ static void strreplace(char *dest,const char *replace,int sub_length,int repl_le
  *  implementation simply uses the order in the list.
  */
 
-static void stgopt(char *start,char *end,int packed_opc,bool (*outputfunc)(char *str))
+static void stgopt(char *start,char *end,int packed_opc,bool (*outputfunc)(const char *str))
 {
   assert(sequences!=NULL);
   assert(start!=NULL && end!=NULL && end>=start);

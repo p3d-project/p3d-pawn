@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7708 2026-10-07 18:58:58Z thiadmer $
+ *  Version: $Id: sc5.c 7712 2026-10-12 08:59:39Z thiadmer $
  */
 #include <assert.h>
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -33,9 +33,9 @@
 #endif
 
 #if defined __WIN32__ || defined _WIN32 || defined WIN32 || defined __NT__
-# define DLLEXPORT __declspec (dllexport)
+# define EXPORT __declspec (dllexport)
 #elif defined HAVE_VISIBILITY
-# define DLLEXPORT __attribute__ ((visibility("default")))
+# define EXPORT __attribute__ ((visibility("default")))
 #endif
 #include "sc.h"
 
@@ -50,9 +50,17 @@
 # pragma warning(pop)
 #endif
 
-#define FATAL_BASE      100     /**< first 'fatal error' number */
+#define ERROR_BASE      0       /**< first error number is actually 1 */
+#define ERROR_COUNT     countof(errmsg)
 #define WARN_BASE       200     /**< first warning number */
-#define WARN_COUNT      (sizeof warnmsg / sizeof warnmsg[0])
+#define WARN_COUNT      countof(warnmsg)
+#define FATAL_BASE      300     /**< first 'fatal error' number */
+#define FATAL_COUNT     countof(fatalmsg)
+
+#define IS_ERROR(n)     ((int)(n)>=ERROR_BASE && (n)<ERROR_BASE+ERROR_COUNT)
+#define IS_WARNING(n)   ((n)>=WARN_BASE && (n)<WARN_BASE+WARN_COUNT)
+#define IS_FATAL(n)     ((n)>=FATAL_BASE && (n)<FATAL_BASE+FATAL_COUNT)
+
 typedef struct s_warnstack {
   struct s_warnstack *next;
   unsigned char flag[(WARN_COUNT+7)/8];	/* 8 flags in a char */
@@ -102,7 +110,6 @@ static int errnotice;   /**< explicitly set notice number */
  */
 static int error_v(unsigned long number,va_list argptr)
 {
-static const char *prefix[3]={ "error", "fatal error", "warning" };
 static int lastline,errcount_on_line;
 static short lastfile;
 
@@ -111,7 +118,7 @@ static short lastfile;
    */
   unsigned notice=highword(number);
   number=lowword(number);
-  assert(number>0 && number<WARN_BASE+WARN_COUNT);
+  assert(number>0 && number<FATAL_BASE+FATAL_COUNT);
   if (notice==0)
     notice=errnotice;
   errnotice=0;
@@ -122,7 +129,7 @@ static short lastfile;
    * the error reporting is enabled only in the second pass (and only when
    * actually producing output). Fatal errors may never be ignored.
    */
-  if ((errflag || sc_status!=statWRITE) && (number<FATAL_BASE || number>=WARN_BASE))
+  if ((errflag || sc_status!=statWRITE) && !IS_FATAL(number))
     return 0;
 
   /* also check for disabled warnings */
@@ -132,27 +139,27 @@ static short lastfile;
     return 0;
   } /* if */
 
-  const char *msg,*pre;
-  if (number<FATAL_BASE){
-    assert(number>0 && number<countof(errmsg));
-    msg=errmsg[number];
-    pre=prefix[0];
+  const char *msg=NULL,*prefix=NULL;
+  if (IS_ERROR(number)){
+    msg=errmsg[number-ERROR_BASE];
+    prefix="error";
     errflag=true;       /* set errflag (skip rest of erroneous expression) */
     errcount++;
     warnignore=pc_curline;
-  } else if (number<WARN_BASE) {
-    assert(((int)number-FATAL_BASE)>=0 && (number-FATAL_BASE)<countof(fatalmsg));
-    msg=fatalmsg[number-FATAL_BASE];
-    pre=prefix[1];
-    errcount++;         /* a fatal error also counts as an error */
-  } else {
-    assert(((int)number-WARN_BASE)>=0 && (number-WARN_BASE)<countof(warnmsg));
+  } else if (IS_WARNING(number)) {
     if (pc_curline==warnignore)
       return 0;         /* an error was already given for this line, gobble up the (probably incorrect) warning*/
     warnignore=-1;
     msg=warnmsg[number-WARN_BASE];
-    pre=prefix[2];
+    prefix="warning";
     warncount++;
+  } else if (IS_FATAL(number)) {
+    msg=fatalmsg[number-FATAL_BASE];
+    prefix="fatal error";
+    errcount++;         /* a fatal error also counts as an error */
+  } else {
+    /* unknown error number (this should not occur) */
+    pc_error((int)number,NULL,"Internal error, unknown error number","(none)",-1,pc_curline,argptr);
   } /* if */
 
   char string[256];
@@ -191,10 +198,10 @@ static short lastfile;
   bool on_terminal= (strlen(errfname)==0);
   if ((errstart<0 && lastline!=pc_curline) || lastline<errstart || lastline>pc_curline || fcurrent!=lastfile)
     errcount_on_line=0;
-  if (errcount_on_line<3 || !on_terminal) {
+  if (errcount_on_line<3 || !on_terminal || IS_FATAL(number)) {
     if (on_terminal) {
       int start= (errstart==errline) ? -1 : errstart;
-      if (pc_error((int)number,string,filename,start,errline,argptr)) {
+      if (pc_error((int)number,prefix,string,filename,start,errline,argptr)) {
         if (outf!=NULL) {
           pc_closeasm(outf,true);
           outf=NULL;
@@ -205,22 +212,22 @@ static short lastfile;
       FILE *fp=fopen(errfname,"a");
       if (fp!=NULL) {
         if (errstart>=0 && errstart!=errline)
-          fprintf(fp,"%s(%d -- %d) : %s %03d: ",filename,errstart,errline,pre,(int)number);
+          fprintf(fp,"%s(%d -- %d) : %s %03d: ",filename,errstart,errline,prefix,(int)number);
         else
-          fprintf(fp,"%s(%d) : %s %03d: ",filename,errline,pre,(int)number);
+          fprintf(fp,"%s(%d) : %s %03d: ",filename,errline,prefix,(int)number);
         vfprintf(fp,string,argptr);
         fclose(fp);
       } /* if */
     } /* if */
-  } else if (number<WARN_BASE) {
+  } else if (IS_ERROR(number)) {
     errhidden=true;
   } /* if */
-  if (number<WARN_BASE || errcount_on_line>0)
+  if (!IS_WARNING(number) || errcount_on_line>0)
     errcount_on_line++; /* don't count warnings, unless an error was also flagged */
 
-  if (number>=FATAL_BASE && number<WARN_BASE || errcount>25){
+  if (IS_FATAL(number) || errcount>25){
     if (on_terminal)
-      pc_error(0,"\nCompilation aborted.",NULL,0,0,argptr);
+      pc_error(0,NULL,"\nCompilation aborted.",NULL,0,0,argptr);
     if (outf!=NULL) {
       pc_closeasm(outf,true);
       outf=NULL;
@@ -407,7 +414,7 @@ SC_FUNC void errorset(unsigned long code)
 #if defined __cplusplus
   extern "C"
 #endif
-DLLEXPORT
+EXPORT
 int pc_enablewarning(unsigned number,int enable)
 {
   if (number<WARN_BASE || number>=WARN_BASE+WARN_COUNT)
@@ -434,7 +441,7 @@ SC_FUNC void pushwarnings(void)
     p->next=warndisable.next;
     warndisable.next=p;
   } else {
-    error(103); /* insufficient memory */
+    error(303); /* insufficient memory */
   }
 }
 

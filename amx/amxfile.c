@@ -1,6 +1,6 @@
 /* Text file I/O module for the Pawn Abstract Machine
  *
- *  Copyright (c) CompuPhase, 2003-2023
+ *  Copyright (c) CompuPhase, 2003-2026
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not
  *  use this file except in compliance with the License. You may obtain a copy
@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amxfile.c 7683 2026-08-20 20:23:32Z thiadmer $
+ *  Version: $Id: amxfile.c 7713 2026-10-13 08:15:44Z thiadmer $
  */
 #if defined _UNICODE || defined __UNICODE__ || defined UNICODE
 # if !defined UNICODE   /* for Windows */
@@ -147,6 +147,9 @@ enum seek_whence {
   seek_current,
   seek_end,
 };
+
+#define MAX_FILES 16  /* the max. number of files open at the same time */
+static FILE *filehandles[MAX_FILES];  /* open files */
 
 
 /* This function only stores unpacked strings. UTF-8 is used for
@@ -482,12 +485,17 @@ static char *completename(TCHAR *dest, TCHAR *src, size_t size)
 /* File: fopen(const name[], filemode: mode) */
 static cell AMX_NATIVE_CALL n_fopen(AMX *amx, const cell *params)
 {
-  TCHAR *attrib,*altattrib;
-  TCHAR *name,fullname[_MAX_PATH];
-  FILE *f = NULL;
-
   (void)amx;
-  altattrib=NULL;
+
+  /* get a slot */
+  int fidx=0;
+  while (fidx<MAX_FILES && filehandles[fidx]!=NULL)
+    fidx++;
+  if (fidx>=MAX_FILES)
+    return 0;   /* max. open files exceeded */
+
+  TCHAR *attrib;
+  TCHAR *altattrib=NULL;
   switch (params[2] & 0x7fff) {
   case io_read:
     attrib=__T("rb");
@@ -507,45 +515,66 @@ static cell AMX_NATIVE_CALL n_fopen(AMX *amx, const cell *params)
   } /* switch */
 
   /* get the filename */
+  FILE *f = NULL;
+  TCHAR *name,fullname[_MAX_PATH];
   amx_StrParam(amx,params[1],name);
   if (name!=NULL && completename(fullname,name,sizearray(fullname))!=NULL) {
     f=_tfopen(fullname,attrib);
     if (f==NULL && altattrib!=NULL)
       f=_tfopen(fullname,altattrib);
   } /* if */
-  return (cell)f;
+  if (f==NULL)
+    return 0; /* file could not be opened */
+  assert(filehandles[fidx]==NULL);
+  filehandles[fidx]=f;
+  return fidx+1;  /* returned value is the index + 1, so 0 is reserved for 'failure' */
 }
 
 /* fclose(File: handle) */
 static cell AMX_NATIVE_CALL n_fclose(AMX *amx, const cell *params)
 {
   (void)amx;
-  return fclose((FILE*)params[1]) == 0;
+  int fidx=(int)params[1];
+  if (fidx<0 || fidx>MAX_FILES) {
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return 0;
+  } /* if */
+  if (fidx==0 || filehandles[fidx-1]==NULL)
+    return 0; /* flag attempt to close a file that isn't open, but without raising an exception */
+  int result= (fclose(filehandles[fidx-1])==0);
+  filehandles[fidx-1]=NULL;
+  return result;
 }
 
 /* fwrite(File: handle, const string[]) */
 static cell AMX_NATIVE_CALL n_fwrite(AMX *amx, const cell *params)
 {
-  size_t r = 0;
-  cell *cptr;
-  char *str;
-  int len;
-
   (void)amx;
-  cptr=amx_Address(amx,params[2]);
+  cell *cptr=amx_Address(amx,params[2]);
+  int len;
   amx_StrLen(cptr,&len);
   if (len==0)
     return 0;
 
+  int fidx=(int)params[1];
+  if (fidx<0 || fidx>MAX_FILES) {
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return 0;
+  } /* if */
+  if (fidx==0 || filehandles[fidx-1]==NULL)
+    return 0; /* flag attempt to write to a file that isn't open, but without raising an exception */
+
+  size_t r = 0;
   if ((ucell)*cptr>UNPACKEDMAX) {
     /* the string is packed, write it as an ASCII/ANSI string */
+    char *str;
     if ((str=(char*)alloca(len + 1))!=NULL) {
       amx_GetString(str,cptr,0,len);
-      r=fputs(str,(FILE*)params[1]);
+      r=fputs(str,filehandles[fidx-1]);
     } /* if */
   } else {
     /* the string is unpacked, write it as UTF-8 */
-    r=fputs_cell((FILE*)params[1],cptr,1);
+    r=fputs_cell(filehandles[fidx-1],cptr,1);
   } /* if */
   return (cell)r;
 }
@@ -553,32 +582,36 @@ static cell AMX_NATIVE_CALL n_fwrite(AMX *amx, const cell *params)
 /* fread(File: handle, string[], size=sizeof string, bool:pack=false) */
 static cell AMX_NATIVE_CALL n_fread(AMX *amx, const cell *params)
 {
-  size_t chars;
-  int max;
-  char *str;
-  cell *cptr;
-
-  max=(int)params[3];
+  int max=(int)params[3];
   if (max<=0)
     return 0;
   if (params[4])
     max*=sizeof(cell);
 
-  cptr=amx_Address(amx,params[2]);
-  str=(char *)alloca(max);
+  cell *cptr=amx_Address(amx,params[2]);
+  char *str=(char *)alloca(max);
   if (str==NULL || cptr==NULL) {
     amx_RaiseError(amx, AMX_ERR_NATIVE);
     return 0;
   } /* if */
 
+  int fidx=(int)params[1];
+  if (fidx<0 || fidx>MAX_FILES) {
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return 0;
+  } /* if */
+  if (fidx==0 || filehandles[fidx-1]==NULL)
+    return 0; /* flag attempt to read from a file that isn't open, but without raising an exception */
+
+  size_t chars;
   if (params[4]) {
     /* store as packed string, read an ASCII/ANSI string */
-    chars=fgets_char((FILE*)params[1],str,max);
+    chars=fgets_char(filehandles[fidx-1],str,max);
     assert((int)chars<max);
     amx_SetString(cptr,str,1,0,max);
   } else {
     /* store and unpacked string, interpret UTF-8 */
-    chars=fgets_cell((FILE*)params[1],cptr,max,1);
+    chars=fgets_cell(filehandles[fidx-1],cptr,max,1);
   } /* if */
 
   assert((int)chars<max);
@@ -588,17 +621,25 @@ static cell AMX_NATIVE_CALL n_fread(AMX *amx, const cell *params)
 /* fputchar(File: handle, value, bool:utf8 = true) */
 static cell AMX_NATIVE_CALL n_fputchar(AMX *amx, const cell *params)
 {
-  size_t result;
-
   (void)amx;
+
+  int fidx=(int)params[1];
+  if (fidx<0 || fidx>MAX_FILES) {
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return 0;
+  } /* if */
+  if (fidx==0 || filehandles[fidx-1]==NULL)
+    return 0; /* flag attempt to write to a file that isn't open, but without raising an exception */
+
+  size_t result;
   if (params[3]) {
     cell str[2];
     str[0]=params[2];
     str[1]=0;
-    result=fputs_cell((FILE*)params[1],str,1);
+    result=fputs_cell(filehandles[fidx-1],str,1);
   } else {
-    fputc((int)params[2],(FILE*)params[1]);
-	result=1;
+    fputc((int)params[2],filehandles[fidx-1]);
+    result=1;
   } /* if */
   assert(result==0 || result==1);
   return (cell)result;
@@ -607,14 +648,22 @@ static cell AMX_NATIVE_CALL n_fputchar(AMX *amx, const cell *params)
 /* fgetchar(File: handle, bool:utf8 = true) */
 static cell AMX_NATIVE_CALL n_fgetchar(AMX *amx, const cell *params)
 {
+  (void)amx;
+
+  int fidx=(int)params[1];
+  if (fidx<0 || fidx>MAX_FILES) {
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return 0;
+  } /* if */
+  if (fidx==0 || filehandles[fidx-1]==NULL)
+    return 0; /* flag attempt to read from a file that isn't open, but without raising an exception */
+
   cell str[2];
   size_t result;
-
-  (void)amx;
   if (params[2]) {
-    result=fgets_cell((FILE*)params[1],str,2,1);
+    result=fgets_cell(filehandles[fidx-1],str,2,1);
   } else {
-    str[0]=fgetc((FILE*)params[1]);
+    str[0]=fgetc(filehandles[fidx-1]);
     result= (str[0]!=EOF);
   } /* if */
   assert(result==0 || result==1);
@@ -637,17 +686,24 @@ static cell AMX_NATIVE_CALL n_fgetchar(AMX *amx, const cell *params)
 /* fblockwrite(File: handle, buffer[], size=sizeof buffer) */
 static cell AMX_NATIVE_CALL n_fblockwrite(AMX *amx, const cell *params)
 {
-  cell *cptr;
-  cell count=0;
-
   (void)amx;
-  cptr=amx_Address(amx,params[2]);
+
+  int fidx=(int)params[1];
+  if (fidx<0 || fidx>MAX_FILES) {
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return 0;
+  } /* if */
+  if (fidx==0 || filehandles[fidx-1]==NULL)
+    return 0; /* flag attempt to write to a file that isn't open, but without raising an exception */
+
+  cell count=0;
+  cell *cptr=amx_Address(amx,params[2]);
   if (cptr!=NULL) {
     cell max=params[3];
     ucell v;
     for (count=0; count<max; count++) {
       v=(ucell)*cptr++;
-      if (fwrite(aligncell(&v),sizeof(cell),1,(FILE*)params[1])!=1)
+      if (fwrite(aligncell(&v),sizeof(cell),1,filehandles[fidx-1])!=1)
         break;          /* write error */
     } /* for */
   } /* if */
@@ -657,16 +713,23 @@ static cell AMX_NATIVE_CALL n_fblockwrite(AMX *amx, const cell *params)
 /* fblockread(File: handle, buffer[], size=sizeof buffer) */
 static cell AMX_NATIVE_CALL n_fblockread(AMX *amx, const cell *params)
 {
-  cell *cptr;
-  cell count=0;
-
   (void)amx;
-  cptr=amx_Address(amx,params[2]);
+
+  int fidx=(int)params[1];
+  if (fidx<0 || fidx>MAX_FILES) {
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return 0;
+  } /* if */
+  if (fidx==0 || filehandles[fidx-1]==NULL)
+    return 0; /* flag attempt to read from a file that isn't open, but without raising an exception */
+
+  cell count=0;
+  cell *cptr=amx_Address(amx,params[2]);
   if (cptr!=NULL) {
     cell max=params[3];
     ucell v;
     for (count=0; count<max; count++) {
-      if (fread(&v,sizeof(cell),1,(FILE*)params[1])!=1)
+      if (fread(&v,sizeof(cell),1,filehandles[fidx-1])!=1)
         break;          /* write error */
       *cptr++=(cell)*aligncell(&v);
     } /* for */
@@ -679,12 +742,28 @@ static cell AMX_NATIVE_CALL n_ftemp(AMX *amx, const cell *params)
 {
   (void)amx;
   (void)params;
-  return (cell)tmpfile();
+
+  /* get a slot */
+  int fidx=0;
+  while (fidx<MAX_FILES && filehandles[fidx]!=NULL)
+    fidx++;
+  if (fidx>=MAX_FILES)
+    return 0;   /* max. open files exceeded */
+  filehandles[fidx]=tmpfile();
+  return fidx+1;
 }
 
 /* fseek(File: handle, position, seek_whence: whence=seek_start) */
 static cell AMX_NATIVE_CALL n_fseek(AMX *amx, const cell *params)
 {
+  int fidx=(int)params[1];
+  if (fidx<0 || fidx>MAX_FILES) {
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return -1;
+  } /* if */
+  if (fidx==0 || filehandles[fidx-1]==NULL)
+    return -1;  /* flag attempt to access a file that isn't open, but without raising an exception */
+
   int whence;
   (void)amx;
   switch (params[3]) {
@@ -700,9 +779,10 @@ static cell AMX_NATIVE_CALL n_fseek(AMX *amx, const cell *params)
     //  params[2]=-params[2];
     break;
   default:
-    return 0;
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return -1;
   } /* switch */
-  return lseek(fileno((FILE*)params[1]),params[2],whence);
+  return lseek(fileno(filehandles[fidx-1]),params[2],whence);
 }
 
 /* bool: fremove(const name[]) */
@@ -772,12 +852,20 @@ static cell AMX_NATIVE_CALL n_frename(AMX *amx, const cell *params)
 /* flength(File: handle) */
 static cell AMX_NATIVE_CALL n_flength(AMX *amx, const cell *params)
 {
-  long l,c;
-  int fn=fileno((FILE*)params[1]);
-  c=lseek(fn,0,SEEK_CUR); /* save the current position */
-  l=lseek(fn,0,SEEK_END); /* return the file position at its end */
-  lseek(fn,c,SEEK_SET);   /* restore the file pointer */
   (void)amx;
+
+  int fidx=(int)params[1];
+  if (fidx<0 || fidx>MAX_FILES) {
+    amx_RaiseError(amx, AMX_ERR_NATIVE);  /* invalid parameter */
+    return -1;
+  } /* if */
+  if (fidx==0 || filehandles[fidx-1]==NULL)
+    return -1;  /* flag attempt to access a file that isn't open, but without raising an exception */
+
+  int fn=fileno(filehandles[fidx-1]);
+  long c=lseek(fn,0,SEEK_CUR);  /* save the current position */
+  long l=lseek(fn,0,SEEK_END);  /* return the file position at its end */
+  lseek(fn,c,SEEK_SET);         /* restore the file pointer */
   return l;
 }
 
@@ -1216,11 +1304,18 @@ AMX_NATIVE_INFO file_Natives[] = {
 
 int AMXEXPORT AMXAPI amx_FileInit(AMX *amx)
 {
+  memset(filehandles,0,sizeof filehandles);
   return amx_Register(amx, file_Natives, -1);
 }
 
 int AMXEXPORT AMXAPI amx_FileCleanup(AMX *amx)
 {
   (void)amx;
+  for (int i=0; i<MAX_FILES; i++) {
+    if (filehandles[i]!=NULL) {
+      fclose(filehandles[i]);
+      filehandles[i]=NULL;
+    } /* if */
+  } /* for */
   return AMX_ERR_NONE;
 }

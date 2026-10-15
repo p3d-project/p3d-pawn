@@ -555,7 +555,7 @@ test30:
   say '    compilation.'
   say '-----'
   pawncc '-v0 test6' commandsuffix
-  call matchoutput 'error 001*expected token: ''#endif''*<end of file>'
+  call matchoutput 'error 001*expected ''#endif''*<end of file>'
   /* Symptoms of detected bug: silent complation (no error/warning message).
    */
   return
@@ -566,7 +566,7 @@ test31:
   say '    The program has a /* without a matching */ before the end of compilation.'
   say '-----'
   pawncc '-v0 test7' commandsuffix
-  call matchoutput 'error 001*expected token: ''*/''*<end of file>'
+  call matchoutput 'error 001*expected ''*/''*<end of file>'
   /* Symptoms of detected bug: silent complation (no error/warning message).
    */
   return
@@ -1838,7 +1838,7 @@ test123:
   say '     Omitting commas in an enumeration declaration (where they are required).'
   say '-----'
   pawncc '-v0 ENUM_BAD_DECL= test1' commandsuffix
-  call matchoutput 'error 001*expected token: ''}''', '1 Error.'
+  call matchoutput 'error 001*expected ''}''', '1 Error.'
   return
 
 test124:
@@ -1964,7 +1964,7 @@ test133:
   say '     An array of strings where the strings are not separated with commas.'
   say '-----'
   pawncc '-v0 ARRAY2D_NO_COMMA= test1' commandsuffix
-  call matchoutput 'error 001*expected token: '']''', '1 Error.', '/Assertion failed'
+  call matchoutput 'error 001*expected '']''', '1 Error.', '/Assertion failed'
   /* Symptoms of detected bug: an assertion in the compiler.
    */
   return
@@ -2025,7 +2025,7 @@ test138:
   say '     A local static array with an incorrect (packed/unpacked) initialization.'
   say '-----'
   pawncc '-v0 INVALID_STATIC_2D_PACKED= test1' commandsuffix
-  call matchoutput 'error 001*expected token: ''[''', '4 Errors.', '/Assertion failed'
+  call matchoutput 'error 001*expected ''[''', '4 Errors.', '/Assertion failed'
   /* Symptoms of detected bug: assertion because the literal queue was cleared on
      the parsing error and the indirection tables relied on data still being there.
    */
@@ -2352,14 +2352,14 @@ test165:
   return
 
 test166:
-  say '166. The following test should issue warning 218 (followed by fatal error 111),'
+  say '166. The following test should issue warning 218 (followed by fatal error 311),'
   say '     but the error must be located in test1.p and not in renamed_file.'
   say ''
   say '    The main file was renamed using #file, but the error declaration occurs'
   say '    above the rename (so the original name should still apply).'
   say '-----'
   pawncc '-v0 -p RESET_FILE_DIRECTIVE= test1' commandsuffix
-  call matchoutput 'test1.p*warning 208', 'test1.p*fatal error 111'
+  call matchoutput 'test1.p*warning 208', 'test1.p*fatal error 311'
   /* Symptoms of detected bug: the warning and error were flagged in the renamed
      file.
    */
@@ -2422,7 +2422,7 @@ test171:
   say '    Declaration of a global variable but with a string literal following it.'
   say '-----'
   pawncc '-v0 -p LOOSE_STRING= test1' commandsuffix
-  call matchoutput 'error 001: expected token: ''=''', '1 Error.', '/Assertion failed'
+  call matchoutput 'error 001: expected ''=''', '1 Error.', '/Assertion failed'
   /* Symptoms of detected bug: compiler dropped into an assertion, due to stray
      data in the literal pool.
    */
@@ -2724,7 +2724,7 @@ test191:
   say ''
   say '    ''#pragma undefined'' on a symbol declared in a lower block.'
   say '-----'
-  pawncc 'PRAGMA_UNUSED_BLOCKLVL= test17' commandsuffix
+  pawncc '-v0 PRAGMA_UNUSED_BLOCKLVL= test17' commandsuffix
   call matchoutput 'warning 206', '1 Warning.'
   /* Sympton of detected bug: the block level was set the that of the #pragma,
      instead of that of the symbol.
@@ -2744,6 +2744,15 @@ test192:
   pawncc 'sum' commandsuffix
   pawnrun 'sum.amx' commandsuffix
   call matchoutput 'Completed successfully', 'count = 3', 'sum = 8', 'fields = 0 1 2'
+  return
+
+test193:
+  say '193. The following tests should issue 101 (numeric overflow).'
+  say ''
+  say '    Constant expression whose result does not fit in a cell.'
+  say '-----'
+  pawncc '-v0 NUMERIC_OVERFLOW= test1' commandsuffix
+  call matchoutput 'error 101', '1 Error.'
   return
 
 

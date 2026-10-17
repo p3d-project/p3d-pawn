@@ -13,3 +13,14 @@ public cmd(num)
 main()
     ;
 #endif
+
+#if defined EMPTY_MAIN2
+main()
+    l:
+#endif
+
+#if defined MISSING_OPTIONAL_PARENTHESIS
+main()
+if(
+}
+#endif

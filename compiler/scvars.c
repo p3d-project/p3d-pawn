@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: scvars.c 7709 2026-10-10 19:44:52Z thiadmer $
+ *  Version: $Id: scvars.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 #include <stdio.h>
 #include <stdlib.h>     /* for _MAX_PATH */
@@ -73,11 +73,8 @@ SC_VDEFINE int pc_tabsize=8;                /**< number of spaces that a TAB rep
 SC_VDEFINE int pc_matchedtabsize=0;         /**< if no tabsize explicitly set, try to detect the tab size */
 SC_VDEFINE bool sc_allowtags=true;          /**< allow/detect tagnames in lex() */
 SC_VDEFINE int sc_status;                   /**< browse/write/skip status */
-SC_VDEFINE int sc_rationaltag=0;            /**< tag for rational numbers */
-SC_VDEFINE int rational_digits=0;           /**< number of fractional digits */
 SC_VDEFINE bool sc_allowproccall=false;     /**< allow/detect tagnames in lex() */
 SC_VDEFINE short sc_is_utf8=false;          /**< is this source file in UTF-8 encoding */
-SC_VDEFINE char *pc_deprecate=NULL;         /**< if non-null, mark next declaration as deprecated */
 SC_VDEFINE int sc_curstates=0;              /**< ID of the current state list */
 SC_VDEFINE int pc_optimize=sOPTIMIZE_CORE;  /**< (peephole) optimization level */
 SC_VDEFINE int pc_memflags=0;               /**< special flags for the stack/heap usage */

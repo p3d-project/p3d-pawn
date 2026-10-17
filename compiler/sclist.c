@@ -21,7 +21,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sclist.c 7714 2026-10-14 13:30:08Z thiadmer $
+ *  Version: $Id: sclist.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 #include <assert.h>
 #include <limits.h>
@@ -382,7 +382,8 @@ SC_FUNC void delete_inputfiletable(void)
 }
 
 
-/* ----- helper function for symbol reference lists -------------- */
+/* ----- helper functions for symbol reference lists -------------- */
+
 typedef struct s_symbolref {
   struct s_symbolref *next;
   char name[sNAMEMAX+1];
@@ -676,6 +677,14 @@ SC_FUNC void delete_heaplisttable(void)
 
 
 /* ----- literal string/array list, for merging duplicate strings ----- */
+
+typedef struct s_arraymerge {
+  struct s_arraymerge *next;
+  cell addr;            /* base address of the array */
+  cell size;            /* array size in cells */
+  cell *data;           /* buffer with the array data ("size" cells long) */
+} arraymerge;
+
 static arraymerge litarray_list={0};
 
 /** litarray_add() copies data from the literal queue in local storage, for the

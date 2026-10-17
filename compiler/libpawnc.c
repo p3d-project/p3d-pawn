@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: libpawnc.c 7712 2026-10-12 08:59:39Z thiadmer $
+ *  Version: $Id: libpawnc.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 #include <assert.h>
 #include <stdbool.h>
@@ -169,6 +169,7 @@ int pc_error(int number,const char *prefix,const char *message,
  */
 void *pc_opensrc(const char *filename)
 {
+  assert(filename!=NULL);
   struct stat st;
   if (stat(filename,&st)==0 && S_ISDIR(st.st_mode))
     return NULL;
@@ -192,6 +193,7 @@ void *pc_opensrc(const char *filename)
  */
 void *pc_createsrc(const char *filename)
 {
+  assert(filename!=NULL);
   return fopen(filename,"wt");
 }
 

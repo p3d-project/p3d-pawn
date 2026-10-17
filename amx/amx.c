@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: amx.c 7698 2026-09-22 15:49:36Z thiadmer $
+ *  Version: $Id: amx.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -2574,21 +2574,21 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
       if (pri==0)
         ABORT(amx,AMX_ERR_DIVIDE);
       /* use floored division and matching remainder */
-      offs=pri;
+      val=pri;
 #     if defined TRUNC_SDIV
-        pri=alt/offs;
-        alt=alt%offs;
+        pri=alt/val;
+        alt=alt%val;
 #     else
-        val=alt;                /* portable routine for truncated division */
-        pri=IABS(alt)/IABS(offs);
-        if ((cell)(val ^ offs)<0)
+        /* portable routine for truncated division */
+        pri=IABS(alt)/IABS(val);
+        if ((cell)(val ^ val)<0)
           pri=-pri;
-        alt=val-pri*offs;       /* calculate the matching remainder */
+        alt-=pri*val;          /* calculate the matching remainder */
 #     endif
       /* now "fiddle" with the values to get floored division */
-      if (alt!=0 && (cell)(alt ^ offs)<0) {
+      if (alt!=0 && (cell)(alt ^ val)<0) {
         pri--;
-        alt+=offs;
+        alt+=val;
       } /* if */
       break;
     case OP_ADD:

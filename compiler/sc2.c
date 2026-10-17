@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc2.c 7714 2026-10-14 13:30:08Z thiadmer $
+ *  Version: $Id: sc2.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -41,6 +41,7 @@
 static cell litchar(const unsigned char **lptr,int flags);
 static symbol *find_symbol(const symbol *root,const char *name,int fnumber,int stateid);
 
+static int token_iscached(void);
 static void substallpatterns(unsigned char *line,int buffersize);
 static bool match(const char *keyword,bool need_nonalpha);
 static bool alpha(unsigned char c);
@@ -50,12 +51,15 @@ static bool alpha(unsigned char c);
 #define HANDLED_ELSE  4 /* bit field in "#if" stack */
 #define SKIPPING      (skiplevel>0 && (ifstack[skiplevel-1] & SKIPMODE)==SKIPMODE)
 
-static short icomment;  /* currently in multiline comment? */
-static char ifstack[sCOMP_STACK]; /* "#if" stack */
-static short iflevel;   /* nesting level if #if/#else/#endif */
-static short skiplevel; /* level at which we started skipping (including nested #if .. #endif) */
+static short icomment;  /**< currently in multiline comment? */
+static char ifstack[sCOMP_STACK]; /**< "#if" stack */
+static short iflevel;   /**< nesting level if #if/#else/#endif */
+static short skiplevel; /**< level at which we started skipping (including nested #if .. #endif) */
 static unsigned char term_expr[] = "";
-static int listline=-1; /* "current line" for the list file */
+static int listline=-1; /**< "current line" for the list file */
+
+static int rational_tag=0;      /**< tag for rational numbers */
+static cell rational_scale=0;   /**< multiplier for fixed-point rational numbers */
 
 
 /*  pushstk & popstk
@@ -124,28 +128,24 @@ SC_FUNC void clearstk(void)
 SC_FUNC bool plungequalifiedfile(const char *name)
 {
 static const char *extensions[] = { ".i", ".inc", ".p", ".pawn" };
+  char path[_MAX_PATH];         /* the name that is tried, with or without extension */
   FILE *fp;
-  char *ext;
-  unsigned ext_idx;
 
   assert(name!=NULL);
-  ext_idx=0;
-  do {
-    fp=(FILE*)pc_opensrc(name);
-    ext=strchr(name,'\0');      /* save position */
-    if (fp==NULL) {
-      /* try to append an extension */
-      strcpy(ext,extensions[ext_idx]);
-      fp=(FILE*)pc_opensrc(name);
-      if (fp==NULL)
-        *ext='\0';              /* on failure, restore filename */
-    } /* if */
-    ext_idx++;
-  } while (fp==NULL && ext_idx<countof(extensions));
-  if (fp==NULL) {
-    *ext='\0';                  /* restore filename */
+  if (strlen(name)>=countof(path))
     return false;
-  } /* if */
+  strlcpy(path,name,countof(path));
+  fp=(FILE*)pc_opensrc(path);
+  for (unsigned ext_idx=0; fp==NULL && ext_idx<countof(extensions); ext_idx++) {
+    /* try to append an extension, if it fits */
+    if (strlen(name)+strlen(extensions[ext_idx])<countof(path)) {
+      strlcpy(path,name,countof(path));
+      strlcat(path,extensions[ext_idx],countof(path));
+      fp=(FILE*)pc_opensrc(path);
+    } /* if */
+  } /* for */
+  if (fp==NULL)
+    return false;
   PUSHSTK_P(inpf);
   PUSHSTK_P(inpfname);          /* pointer to current file name */
   PUSHSTK_P(curlibrary);
@@ -156,7 +156,7 @@ static const char *extensions[] = { ".i", ".inc", ".p", ".pawn" };
   PUSHSTK_I(icomment);
   PUSHSTK_I(fcurrent);
   PUSHSTK_I(pc_curline);
-  inpfname=duplicatestring(name);/* set name of include file */
+  inpfname=duplicatestring(path);/* set name of include file */
   if (inpfname==NULL)
     error(303);                 /* insufficient memory */
   inpf=fp;                      /* set input file pointer to include file */
@@ -169,7 +169,7 @@ static const char *extensions[] = { ".i", ".inc", ".p", ".pawn" };
   assert(sc_status==statBROWSE || strcmp(get_inputfile(fcurrent),inpfname)==0);
   setfiledirect(inpfname);      /* (optionally) set in the list file */
   listline=-1;                  /* force a #line directive when changing the file */
-  sc_is_utf8=(short)scan_utf8(inpf,name);
+  sc_is_utf8=(short)scan_utf8(inpf,path);
   return true;
 }
 
@@ -203,21 +203,41 @@ SC_FUNC bool plungefile(const char *name,int try_currentpath,int try_includepath
     int i;
     const char *ptr;
     for (i=0; !result && (ptr=get_path(i))!=NULL; i++) {
-      char path[_MAX_PATH];
-      strlcpy(path,ptr,countof(path));
-      strlcat(path,name,countof(path));
-      result=plungequalifiedfile(path);
+      /* a path that does not fit would be cut short, and could name another file */
+      if (strlen(ptr)+strlen(name)<_MAX_PATH) {
+        char path[_MAX_PATH];
+        strlcpy(path,ptr,countof(path));
+        strlcat(path,name,countof(path));
+        result=plungequalifiedfile(path);
+      } /* if */
     } /* while */
   } /* if */
 
   return result;
 }
 
+static unsigned char *skipwhite(const unsigned char *lptr)
+{
+  assert(lptr!=NULL);
+  while (*lptr<=' ' && *lptr!='\0')
+    lptr++;
+  return (unsigned char*)lptr;
+}
+
+static char *striptrailing(char *lptr)
+{
+  assert(lptr!=NULL);
+  size_t len=strlen((const char*)lptr);
+  while (len>0 && lptr[len-1]<=' ')
+    len--;
+  lptr[len]='\0';
+  return lptr;
+}
+
 static void check_empty(const unsigned char *lptr)
 {
   /* verifies that the string contains only whitespace */
-  while (*lptr<=' ' && *lptr!='\0')
-    lptr++;
+  lptr=skipwhite(lptr);
   if (*lptr!='\0')
     error(38);          /* extra characters on line */
 }
@@ -235,23 +255,20 @@ static void doinclude(bool silent)
   char name[_MAX_PATH];
   char symname[sNAMEMAX];
 
-  while (*lexptr<=' ' && *lexptr!='\0')     /* skip leading whitespace */
-    lexptr++;
+  lexptr=skipwhite(lexptr);             /* skip leading whitespace */
   char c='\0';
   if (*lexptr=='<' || *lexptr=='\"') {
     c=(char)((*lexptr=='\"') ? '\"' : '>'); /* termination character */
     lexptr++;
-    while (*lexptr<=' ' && *lexptr!='\0')   /* skip whitespace after quote */
-      lexptr++;
+    lexptr=skipwhite(lexptr);           /* skip whitespace after quote */
   } /* if */
 
   int i=0;
   while (*lexptr!=c && *lexptr!='\0' && i<(int)countof(name)-1)  /* find the end of the string */
     name[i++]=*lexptr++;
-  while (i>0 && name[i-1]<=' ')
-    i--;                        /* strip trailing whitespace */
   assert(i>=0 && i<(int)countof(name));
   name[i]='\0';                 /* zero-terminate the string */
+  striptrailing(name);          /* strip trailing whitespace */
 
   if (*lexptr!=c) {             /* verify correct string termination */
     error(37);                  /* invalid string */
@@ -735,35 +752,39 @@ static int htoi(cell *val,const unsigned char *curptr)
  *     is not a valid number, you should write "2.0e3"
  *  o  at least one digit must follow the period; "6." is not a valid number,
  *     you should write "6.0"
+ *  o  like C23, Pawn allows a single quote to be used as a digit separator,
+ *     but (unlike C23) it must separate groups of 3 digits, and only in the
+ *     "whole" part of the number (so it is a "thousands separator" in Pawn)
  */
 static int ftoi(cell *val,const unsigned char *curptr)
 {
-  const unsigned char *ptr;
-  double fnum,ffrac,fmult;
-  unsigned long dnum,dbase;
-  int i, ignore;
-  unsigned digitsep=UINT_MAX; /* thousands separator */
-
   if (!isdigit(*curptr))      /* should start with digit */
     return 0;
-  assert(rational_digits>=0 && rational_digits<9);
-  for (i=0,dbase=1; i<rational_digits; i++)
-    dbase*=10;
-  fnum=0.0;
-  dnum=0L;
-  ptr=curptr;
+  assert(rational_scale>=0);
+  /* read the 'whole' part, both directly as IEEE 754 floating point (to support
+   * very large numbers) and as an integer (to avoid rounding errors in case
+   * there are only zeros behind the '.')
+   */
+  double fvalue=0.0;
+  ucell ivalue=0L;
+  unsigned digitsep=UINT_MAX; /* thousands separator */
+  const unsigned char *ptr=curptr;
   while (isdigit(*ptr) || *ptr=='\'') {
     if (*ptr=='\'') {
       if (digitsep!=0 && digitsep<INT_MAX)
         return 0;       /* invalid numeric format */
       digitsep=3;
     } else {
-      fnum=(fnum*10.0)+(*ptr-'0');
-      dnum=(dnum*10L)+(*ptr-'0')*dbase;
+      fvalue=(fvalue*10.0)+(*ptr-'0');
+      ivalue=(ivalue*10L)+(*ptr-'0');
       digitsep--;
     } /* if */
     ptr++;
   } /* while */
+  ucell tmp=ivalue;     /* keep value before scaling it, to check for overflow */
+  ivalue*=rational_scale;
+  bool overflow= (rational_scale!=0 && ivalue/rational_scale!=tmp);
+
   if (digitsep==3)
     ptr--;
   else if (digitsep!=0 && digitsep<INT_MAX)
@@ -773,56 +794,78 @@ static int ftoi(cell *val,const unsigned char *curptr)
   ptr++;
   if (!isdigit(*ptr))   /* there must be at least one digit after the dot */
     return 0;
-  ffrac=0.0;
-  fmult=1.0;
-  ignore=false;
+
+  /* read the fractional part as a whole number, but keep a digit count to
+   * scale the part afterwards
+   */
+  double ffrac=0.0;
+  ucell ifrac=0;
+  int digits=0;
   while (isdigit(*ptr)) {
     ffrac=(ffrac*10.0)+(*ptr-'0');
-    fmult=fmult/10.0;
-    dbase /= 10L;
-    dnum += (*ptr-'0')*dbase;
-    if (dbase==0L && sc_rationaltag && rational_digits>0 && !ignore) {
-      error(222);     /* number of digits exceeds rational number precision */
-      ignore=true;
-    } /* if */
+    ifrac=(ifrac*10)+(*ptr-'0');
+    digits++;
     ptr++;
   } /* while */
-  fnum += ffrac*fmult;  /* form the number so far */
-  if (*ptr=='e') {      /* optional fractional part */
-    int exp,sign;
+
+  /* form the full number so far */
+  if (ifrac>0) {
+    ffrac/=pow(10,digits);
+    fvalue+=ffrac;
+    if (rational_scale>1 && ifrac>=(ucell)rational_scale)
+      error(222);         /* number of digits exceeds rational number precision */
+    if (rational_scale%10==0)
+      while (ifrac*10<(ucell)rational_scale)
+        ifrac*=10;        /* decimal fixed-point */
+    else
+      ifrac=(ucell)(ffrac*rational_scale+0.5);
+    if (ifrac>(CELLMAX-ivalue))
+      overflow=true;
+    ivalue+=ifrac;
+  }
+
+  if (*ptr=='e') {      /* optional exponent */
     ptr++;
+    int sign=1;
     if (*ptr=='-') {
       sign=-1;
       ptr++;
-    } else {
-      sign=1;
     } /* if */
     if (!isdigit(*ptr)) /* 'e' should be followed by a digit */
       return 0;
-    exp=0;
+    int exp=0;
     while (isdigit(*ptr)) {
       exp=(exp*10)+(*ptr-'0');
       ptr++;
     } /* while */
-    fmult=pow(10,exp*sign);
-    fnum *= fmult;
-    dnum *= (unsigned long)(fmult+0.5);
+    if (exp!=0) {
+      fvalue*=pow(10,exp*sign);
+      if ((ucell)(fvalue*rational_scale+0.5)>(ucell)CELLMAX)
+        overflow=true;
+      ivalue=(ucell)(fvalue*rational_scale+0.5);
+    } /* if */
   } /* if */
 
+  /* until the number format was established (to be a rational number), range
+   * errors were silenced; they are reported now
+   */
+  if (rational_scale>1 && (overflow || ivalue>(ucell)CELLMAX))
+    error(101);         /* numeric overflow */
+
   /* decide how to store the number */
-  if (sc_rationaltag==0) {
+  if (rational_tag==0) {
     error(70);          /* rational number support was not enabled */
     *val=0;
-  } else if (rational_digits==0) {
+  } else if (rational_scale==0) {
     /* floating point */
     assert(pc_cellsize==4 || pc_cellsize==8);
     if (pc_cellsize==4) {
       /* although the selected cell size is 32-bits, the compiler actually
          always uses a 64-bit cell type internally, so copy through an
          explicitly 32-bit type */
-      float fnum32=(float)fnum; /* first convert to 4-byte float */
+      float fval32=(float)fvalue; /* first convert to 4-byte float */
       uint32_t inum32;
-      memcpy(&inum32,&fnum32,sizeof inum32);
+      memcpy(&inum32,&fval32,sizeof inum32);
       *val=(cell)inum32;
 #     if !defined NDEBUG
         /* I assume that the C/C++ compiler stores "float" values in IEEE 754
@@ -843,25 +886,26 @@ static int ftoi(cell *val,const unsigned char *curptr)
 #     endif
     } else {
       uint64_t inum64;
-      assert(sizeof(inum64)==sizeof(fnum));
-      memcpy(&inum64,&fnum,sizeof inum64);
+      assert(sizeof(inum64)==sizeof(fvalue));
+      memcpy(&inum64,&fvalue,sizeof inum64);
       *val=(cell)inum64;
 #     if !defined NDEBUG
         /* I assume that the C/C++ compiler stores "double" values in IEEE 754
          * format (as mandated in the ANSI standard).
          */
-        { double test1 = 0.0, test2 = 50.0, test3 = -50.0;
-          uint64_t bit = 1;
-          /* test 0.0 == all bits 0 */
-          assert(*(uint64_t*)&test1==0x00000000L);
-          /* test sign & magnitude format */
-          assert(((*(uint64_t*)&test2) ^ (*(uint64_t*)&test3)) == (bit << (8*pc_cellsize-1)));
-        }
+        // cppcheck-suppress-begin [invalidPointerCast]
+        double test1 = 0.0, test2 = 50.0, test3 = -50.0;
+        uint64_t bit = 1;
+        /* test 0.0 == all bits 0 */
+        assert(*(uint64_t*)&test1==0x00000000L);
+        /* test sign & magnitude format */
+        assert(((*(uint64_t*)&test2) ^ (*(uint64_t*)&test3)) == (bit << (8*pc_cellsize-1)));
+        // cppcheck-suppress-end [invalidPointerCast]
 #     endif
     } /* if */
   } else {
     /* fixed point */
-    *val=(cell)dnum;
+    *val=(cell)ivalue;
   } /* if */
 
   return (int)(ptr-curptr);
@@ -1053,12 +1097,10 @@ enum {
  */
 static int command(void)
 {
-  int tok,ret;
   unsigned index;
   cell code_index;
 
-  while (*lexptr<=' ' && *lexptr!='\0')
-    lexptr+=1;
+  lexptr=skipwhite(lexptr);
   if (*lexptr=='\0')
     return CMD_EMPTYLINE;       /* empty line */
   if (*lexptr!='#')
@@ -1075,8 +1117,8 @@ static int command(void)
   } /* if */
   cell lexval;
   char *lexstr;
-  tok=lex(&lexval,&lexstr);
-  ret=SKIPPING ? CMD_CONDFALSE : CMD_DIRECTIVE;  /* preset 'ret' to CMD_DIRECTIVE (most common case) */
+  int tok=lex(&lexval,&lexstr);
+  int ret=SKIPPING ? CMD_CONDFALSE : CMD_DIRECTIVE;  /* preset 'ret' to CMD_DIRECTIVE (most common case) */
   switch (tok) {
   case tpIF:                    /* conditional compilation */
   case tpIFDEF:
@@ -1094,7 +1136,12 @@ static int command(void)
       preproc_expr(&val,NULL,true);     /* get value (or 0 on error) */
       ifstack[iflevel-1]=(char)(val ? PARSEMODE : SKIPMODE);
     } else {
-      int symtok=lex(&lexval,&lexstr);
+      lexptr=skipwhite(lexptr);
+      /* only call lex() if we are certain that some text is present behind the
+       * directive, otherwise at the end of the line, lex() would read on into
+       * the next one
+       */
+      int symtok= (*lexptr!='\0') ? lex(&lexval,&lexstr) : 0;
       bool found=false;
       if (symtok==tSYMBOL) {
         const symbol *sym=findlcl(lexstr);
@@ -1112,9 +1159,9 @@ static int command(void)
           found=!found;
       } else {
         error(76);  /* syntax error */
-      }
+      } /* if */
       ifstack[iflevel-1]=(char)(found ? PARSEMODE : SKIPMODE);
-    }
+    } /* if */
     check_empty(lexptr);
     break;
   case tpELSE:
@@ -1220,8 +1267,8 @@ static int command(void)
       if (lex(&lexval,&lexstr)!=tNUMBER)
         error(8);                   /* invalid/non-constant expression */
       pc_curline=(int)lexval;
+      check_empty(lexptr);
     } /* if */
-    check_empty(lexptr);
     break;
   case tpASSERT:
     if (!SKIPPING && (sc_debug & sCHKBOUNDS)!=0) {
@@ -1248,8 +1295,7 @@ static int command(void)
 #if !defined PAWN_NO_CODEPAGE
         } else if (strcmp(lexstr,"codepage")==0) {
           char name[sNAMEMAX+1];
-          while (*lexptr<=' ' && *lexptr!='\0')
-            lexptr++;
+          lexptr=skipwhite(lexptr);
           if (*lexptr=='"') {
             lexptr=pp_getstring((unsigned char*)name,countof(name),lexptr);
           } else {
@@ -1262,18 +1308,13 @@ static int command(void)
             error(308);         /* codepage mapping file not found */
 #endif
         } else if (strcmp(lexstr,"deprecated")==0) {
-          while (*lexptr<=' ' && *lexptr!='\0')
-            lexptr++;
-          pc_deprecate=(char*)malloc(strlen((char*)lexptr)+1);
-          if (pc_deprecate!=NULL)
-            strcpy(pc_deprecate,(char*)lexptr);
+          set_deprecated(lexptr,true);
           lexptr=(unsigned char*)strchr((char*)lexptr,'\0'); /* skip to end (ignore "extra characters on line") */
         } else if (strcmp(lexstr,"dynamic")==0) {
           preproc_expr(&pc_stksize,NULL,true);
         } else if (strcmp(lexstr,"library")==0) {
           char name[sNAMEMAX+1];
-          while (*lexptr<=' ' && *lexptr!='\0')
-            lexptr++;
+          lexptr=skipwhite(lexptr);
           if (*lexptr=='"') {
             lexptr=pp_getstring((unsigned char*)name,countof(name),lexptr);
           } else {
@@ -1307,37 +1348,59 @@ static int command(void)
           assert(sym!=NULL);
           sym->addr=val;
         } else if (strcmp(lexstr,"rational")==0) {
-          char name[sNAMEMAX+1];
-          cell digits=0;
-          int i;
           /* first gather all information, start with the tag name */
-          while (*lexptr<=' ' && *lexptr!='\0')
-            lexptr++;
+          lexptr=skipwhite(lexptr);
+          char name[sNAMEMAX+1];
+          cell digits=0,shift=0;
+          int i;
           for (i=0; i<(int)countof(name) && alphanum(*lexptr); i++,lexptr++)
             name[i]=*lexptr;
           name[i]='\0';
           /* then the precision (for fixed point arithmetic) */
-          while (*lexptr<=' ' && *lexptr!='\0')
-            lexptr++;
+          if (*lexptr==':')
+            lexptr++;           /* skip ':' of a tag name, if present */
+          lexptr=skipwhite(lexptr);
           if (*lexptr=='(') {
-            preproc_expr(&digits,NULL,true);
-            if (digits<=0 || digits>9) {
-              error(68);        /* invalid rational number precision */
-              digits=0;
+            lexptr++;
+            preproc_expr(&digits,NULL,false);
+            lexptr=skipwhite(lexptr);
+            if (token_iscached()==':' || token_iscached()==0 && *lexptr==':') {
+              /* binary fixed point */
+              if (token_iscached()!=0)
+                lexclr(false);
+              else
+                lexptr++;
+              preproc_expr(&shift,NULL,false);
+              if (shift<=0 || digits+shift!=8*pc_cellsize) {
+                error(68);        /* invalid rational number precision */
+                digits=shift=0;
+              } /* if */
+              lexptr=skipwhite(lexptr);
+            } else {
+              /* decimal fixed point */
+              if (digits<=0 || digits>2*pc_cellsize) {
+                error(68);        /* invalid rational number precision */
+                digits=0;
+              } /* if */
             } /* if */
-            if (*lexptr==')')
+            if (token_iscached()==0 && *lexptr==')')
               lexptr++;
+            lexclr(false);      /* clear any "pushed" tokens */
           } /* if */
-          if (pc_cellsize<4) {
-            error(68);          /* rational numbers not supported on 16-bit cells */
-            break;
+          /* calculate scale factor */
+          cell scale= (digits>0) ? 1 : 0;
+          if (shift==0) {
+            for (int d=0; d<digits; d++)
+              scale*=10;
+          } else {
+            scale<<=shift;
           } /* if */
           /* add the tag (make it public) and check the values */
-          i=pc_addtag(name);
-          exporttag(i);
-          if (sc_rationaltag==0 || (sc_rationaltag==i && rational_digits==(int)digits)) {
-            sc_rationaltag=i;
-            rational_digits=(int)digits;
+          int tag=pc_addtag(name);
+          exporttag(tag);
+          if (rational_tag==0 || (rational_tag==tag && rational_scale==scale)) {
+            rational_tag=tag;
+            rational_scale=scale;
           } else {
             error(69);          /* rational number format already set, can only be set once */
           } /* if */
@@ -1355,10 +1418,8 @@ static int command(void)
           char name[sNAMEMAX+1];
           int i,comma;
           do {
-            /* get the name, store it together with the current line number and
-               scope */
-            while (*lexptr<=' ' && *lexptr!='\0')
-              lexptr++;
+            /* get the name, store it together with the current line number and scope */
+            lexptr=skipwhite(lexptr);
             for (i=0; i<(int)countof(name) && alphanum(*lexptr); i++,lexptr++)
               name[i]=*lexptr;
             name[i]='\0';
@@ -1367,8 +1428,7 @@ static int command(void)
             short blocklevel= (sym!=NULL) ? sym->block : pc_blocklevel;
             add_unusedvar(name,fcurrent,pc_curline,blocklevel);
             /* see if a comma follows the name */
-            while (*lexptr<=' ' && *lexptr!='\0')
-              lexptr++;
+            lexptr=skipwhite(lexptr);
             comma= (*lexptr==',');
             if (comma)
               lexptr++;
@@ -1414,8 +1474,7 @@ static int command(void)
       int count,prefixlen,matchbracket,nest;
       const stringpair *def;
       /* find the pattern to match */
-      while (*lexptr<=' ' && *lexptr!='\0')
-        lexptr++;
+      lexptr=skipwhite(lexptr);
       start=lexptr;       /* save starting point of the match pattern */
       count=0;
       while (*lexptr>' ' && *lexptr!='[') {
@@ -1444,8 +1503,7 @@ static int command(void)
       if (count>=2 && isdigit(pattern[count-1]) && pattern[count-2]=='%')
         pattern[count-2]='\0';
       /* find substitution string */
-      while (*lexptr<=' ' && *lexptr!='\0')
-        lexptr++;
+      lexptr=skipwhite(lexptr);
       matchbracket=(*lexptr=='[');
       if (matchbracket)
         lexptr++;         /* skip '[' */
@@ -1547,11 +1605,13 @@ static int command(void)
 #endif
   case tpERROR:
   case tpWARNING:
-    while (*lexptr<=' ' && *lexptr!='\0')
-      lexptr++;
+    lexptr=skipwhite(lexptr);
     if (!SKIPPING) {
       int errcode=(tok==tpERROR) ? 311 : 220;
-      error(errcode,lexptr);  /* user error or user warning */
+      char message[sLINEMAX+1];
+      strlcpy(message,(const char*)lexptr,countof(message));
+      striptrailing(message);
+      error(errcode,message);       /* user error or user warning */
     } /* if */
     break;
   default:
@@ -1649,6 +1709,68 @@ SC_FUNC char *strins(char *dest,const char *src,size_t srclen)
   memmove(dest+srclen, dest, destlen+1);/* include EOS byte */
   memcpy(dest, src, srclen);
   return dest;
+}
+
+/** is_rational() returns whether a tag refers to a rational number. If the
+ *  parameter `ieee754` is `true`, only IEEE 754 floating point numbers are
+ *  considered 'rational'.
+ */
+SC_FUNC bool is_rational(int tag,bool ieee754)
+{
+  bool result= (rational_tag!=0 && tag==rational_tag);
+  if (ieee754 && rational_scale==0)
+    result=false;
+  return result;
+}
+
+SC_FUNC int rational_gettag(void)
+{
+  return rational_tag;
+}
+
+static struct {
+  char *notice;
+  short fnumber;
+  int lnumber;
+} pc_deprecate = {0};
+
+/** set_deprecated() sets or clears a 'deprecated' flag.
+ *  \param text         [in] The notice for the deprecated pragma. It must be
+ *                      `NULL` to clear the notice.
+ *  \param warn         When `true` and if a notice is still pending, a warning
+ *                      is issued for an superfluous pragma.
+ *
+ *  \note Global references: pc_deprecate (modified)
+ *                           fcurrent (read-only)
+ *                           pc_curline (read-only)
+ */
+SC_FUNC void set_deprecated(const unsigned char *text,bool warn)
+{
+  if (warn && pc_deprecate.notice!=NULL)
+    error_onpos(pc_deprecate.fnumber,pc_deprecate.lnumber,242);
+  if (pc_deprecate.notice!=NULL)
+    free(pc_deprecate.notice);
+  if (text!=NULL) {
+    text=skipwhite(text);
+    size_t len=strlen((const char*)text);
+    pc_deprecate.notice=malloc(len+3); /* +2 for ", " and +1 for '\0' */
+    if (pc_deprecate.notice!=NULL) {
+      *pc_deprecate.notice='\0';
+      if (len>0 && *text!=',' && *text!=';')
+        strcat(pc_deprecate.notice,", ");
+      strcat(pc_deprecate.notice,(const char*)text);
+      striptrailing(pc_deprecate.notice);
+    } /* if */
+    pc_deprecate.fnumber=fcurrent;
+    pc_deprecate.lnumber=pc_curline;
+  } else {
+    pc_deprecate.notice=NULL;
+  } /* if */
+}
+
+SC_FUNC char *get_deprecated(void)
+{
+  return pc_deprecate.notice;
 }
 
 static bool substpattern(unsigned char *line,size_t buffersize,char *pattern,char *substitution)
@@ -2148,6 +2270,9 @@ SC_FUNC int lexinit(int releaseall)
   pc_indentmask=0;      /* tab/space interval to make up the current indent */
   pc_indentbits=0;      /* bits in pc_indentmask */
 
+  rational_tag=0;       /* assume no support for rational numbers */
+  rational_scale=0;     /* multiplier for fixed-point rational numbers */
+
   if (releaseall) {
     if (srcline!=NULL)
       free(srcline);
@@ -2460,12 +2585,12 @@ SC_FUNC void lexpush(void)
 }
 
 /** lexclr() clears the "cached" flag for the token to make sure lex() will read
- *  in a new symbol (a not continue with some old one), and it also skips
- *  anything remaining on the current source line. This is required to avoid
- *  preprocessor expressions to spill over into code, and in a few cases after
- *  detecting an syntax error.
+ *  in a new symbol (a not continue with some old one); if `clreol` is `true`,
+ *  it also skips anything remaining on the current source line. This is
+ *  required to avoid preprocessor expressions to spill over into code, and in a
+ *  few cases after detecting an syntax error.
  */
-SC_FUNC void lexclr(int clreol)
+SC_FUNC void lexclr(bool clreol)
 {
   is_cached=false;
   if (clreol) {
@@ -2556,6 +2681,11 @@ SC_FUNC int tokeninfo(cell *val,char **str)
   if (str)
     *str=cached_str;
   return cached_tok;
+}
+
+static int token_iscached(void)
+{
+  return is_cached ? cached_tok : 0;
 }
 
 SC_FUNC char *tokenname(char *descr,size_t descr_sz,int token,bool eof)
@@ -2854,7 +2984,7 @@ static bool alpha(unsigned char c)
  *
  *  Test if character "c" is alphanumeric ("a".."z", "0".."9", "_" or "@")
  */
-SC_FUNC int alphanum(unsigned char c)
+SC_FUNC bool alphanum(unsigned char c)
 {
   return (alpha(c) || isdigit(c));
 }
@@ -2863,7 +2993,7 @@ SC_FUNC int alphanum(unsigned char c)
  *
  *  Test if character "c" is a hexadecimal digit ("0".."9" or "a".."f").
  */
-SC_FUNC int ishex(char c)
+SC_FUNC bool ishex(char c)
 {
   return (c>='0' && c<='9') || (c>='a' && c<='f') || (c>='A' && c<='F');
 }

@@ -2747,12 +2747,40 @@ test192:
   return
 
 test193:
-  say '193. The following tests should issue 101 (numeric overflow).'
+  say '193. The following tests should issue error 101 (numeric overflow).'
   say ''
   say '    Constant expression whose result does not fit in a cell.'
   say '-----'
   pawncc '-v0 NUMERIC_OVERFLOW= test1' commandsuffix
   call matchoutput 'error 101', '1 Error.'
+  return
+
+test194:
+  say '194. The following tests should issue warning 242 (numeric overflow) TWICE, with'
+  say '     warning 234 in between.'
+  say ''
+  say '    ''#pragma deprecated'' not followed by a declaration.'
+  say '-----'
+  pawncc '-v0 deprecated' commandsuffix
+  call matchoutput 'warning 242', 'warning 234', 'warning 242', '3 Warnings.'
+  return
+
+test195:
+  say '195. The following tests should issue warning 203 (symbol ''l'' never used).'
+  say ''
+  say '    Function body contains only a label (no compound statement).'
+  say '-----'
+  pawncc '-v0 EMPTY_MAIN2= test14' commandsuffix
+  call matchoutput 'warning 203*symbol ''l''', '1 Warning.'
+  return
+
+test196:
+  say '196. The following tests should issue error 029 followed by error 054.'
+  say ''
+  say '    Expression of an ''if'' statement starts with a ''('' but lacks the closing '')''.'
+  say '-----'
+  pawncc '-v0 MISSING_OPTIONAL_PARENTHESIS= test14' commandsuffix
+  call matchoutput 'error 029', 'error 054', '2 Errors.'
   return
 
 

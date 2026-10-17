@@ -24,7 +24,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc1.c 7715 2026-10-15 07:35:24Z thiadmer $
+ *  Version: $Id: sc1.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -144,7 +144,7 @@ static constvalue *find_constval_byval(constvalue *table,cell val);
 static constvalue *clone_consttable(const constvalue *table);
 static symbol *fetchlab(const char *name);
 static void statement(int *lastindent,bool allow_decl);
-static void compound(bool stmt_sameline);
+static void compound(const unsigned char *stmt_sameline);
 static int test(int label,bool invert,bool test_true,bool *parenthesized);
 static int doexpr(int comma,int chkeffect,int allowarray,int mark_endexpr,
                   int *tag,symbol **symptr,bool chkfuncresult,int in_test);
@@ -742,7 +742,7 @@ int pc_compile(int argc, char *argv[])
 #   endif
     if (!tmpname)
       error(303);       /* insufficient memory */
-    ftmp=(FILE*)pc_createsrc(tmpname);
+    ftmp=(FILE*)pc_createsrc(tmpname);  /* error 303 is a fatal error, so tmpname is non-NULL when arriving here */
     for (fidx=0; (sname=get_sourcefile(fidx))!=NULL; fidx++) {
       unsigned char tstring[128];
       FILE *fsrc=(FILE*)pc_opensrc(sname);
@@ -1159,6 +1159,8 @@ int pc_addtag(const char *name)
 static void resetglobals(void)
 {
   /* reset the subset of global variables that is modified by the first pass */
+  errorset(sEXPRRELEASE);
+  set_deprecated(NULL,false);
   curfunc=NULL;         /* pointer to current function */
   lastst=0;             /* last executed statement type */
   rettype=0;            /* the type that a "return" expression should have */
@@ -1185,11 +1187,9 @@ static void resetglobals(void)
   pc_pendingflags=0;    /* operations to perform on next function/data declaration (bit set) */
   sc_reparse=false;     /* assume no extra pass needed */
   pc_docexpr=false;
-  pc_deprecate=NULL;
   sc_curstates=0;
   pc_memflags=0;
   pc_enumsequence=0;
-  errorset(sEXPRRELEASE);
   curlibrary=NULL;      /* current library name, selected by '#pragma library' */
 }
 
@@ -1212,8 +1212,6 @@ static void initglobals(void)
   pc_amxram=0;          /* no limit on data size of the abstract machine */
   pc_tabsize=8;         /* assume a TAB is 8 spaces */
   pc_matchedtabsize=0;  /* allow auto-adjust of TAB size (no space indents detected yet) */
-  sc_rationaltag=0;     /* assume no support for rational numbers */
-  rational_digits=0;    /* number of fractional digits */
   undefined_vars=false; /* if true, undefined symbols were found */
   pc_overlays=0;        /* do not generate for overlays */
   for (int i=0; i<ovlFIRST; i++)
@@ -2263,6 +2261,7 @@ static void parse(void)
     } /* switch */
   } /* while */
   sc_attachdocumentation(NULL,false);  /* attach any trailing comment to the main documentation */
+  set_deprecated(NULL,true);
 }
 
 /*  dumplits
@@ -2869,7 +2868,7 @@ static bool declloc(bool fstatic)
         while (litidx>cur_lit && litq[litidx-1]==0)
           litidx--;
         /* if the array is not completely filled, set all values to zero first */
-        if (litidx-cur_lit<(size_t)size)
+        if (litidx-cur_lit<(size_t)size && size<CELLMAX)
           fillarray(sym,size*pc_cellsize,0);
         if (cur_lit<litidx) {
           /* check whether all elements in the array are set to the same value;
@@ -2922,10 +2921,10 @@ static bool declloc(bool fstatic)
  */
 static cell calc_arraysize(int dim[],int numdim,int cur)
 {
-# if INT_MAX > 0xffffffffLu
+# if INT_MAX > 0x7fffffffL
 #   define ARRAY_MAX 0xffffffffLu  /* array is max. 4 GiB */
 # else
-#   define ARRAY_MAX INT_MAX
+#   define ARRAY_MAX INT_MAX       /* array is max. 2 GiB on 32-bit */
 # endif
   cell subsize;
   ucell newsize;
@@ -2940,7 +2939,7 @@ static cell calc_arraysize(int dim[],int numdim,int cur)
     return 0;
   if ((ucell)subsize>=ARRAY_MAX || newsize>=ARRAY_MAX || newsize<(ucell)subsize
       || newsize*pc_cellsize>=ARRAY_MAX)
-    return INT_MAX;
+    return CELLMAX;
   return newsize;
 # undef ARRAY_MAX
 }
@@ -2949,7 +2948,6 @@ static cell adjust_indirectiontables(int dim[],int numdim,int cur,cell increment
                                      int startlit,constvalue *lastdim,int *skipdim)
 {
 static int base;
-  int d;
   cell accum;
 
   assert(cur>=0 && cur<numdim);
@@ -2962,7 +2960,7 @@ static int base;
   /* 2 or more dimensions left, fill in an indirection vector */
   assert(dim[cur]>0);
   if (dim[cur+1]>0) {
-    for (d=0; d<dim[cur]; d++)
+    for (int d=0; d<dim[cur]; d++)
       litq[base++]=(dim[cur]+d*(dim[cur+1]-1)+increment)*pc_cellsize;
     accum=(cell)(dim[cur]*(dim[cur+1]-1));
   } else {
@@ -2973,6 +2971,7 @@ static int base;
     assert(skipdim!=NULL);
     accum=0;
     /* skip the final dimension sizes for all earlier major dimensions */
+    int d;
     for (d=0,ld=lastdim->next; d<*skipdim; d++,ld=ld->next) {
       assert(ld!=NULL);
     } /* for */
@@ -2988,7 +2987,7 @@ static int base;
   /* create the indirection tables for the lower level */
   if (cur+2<numdim) {   /* are there at least 2 dimensions below this one? */
     increment+=(dim[cur]-1)*dim[cur+1]; /* this many indirection tables follow */
-    for (d=0; d<dim[cur]; d++)
+    for (int d=0; d<dim[cur]; d++)
       increment+=adjust_indirectiontables(dim,numdim,cur+1,increment,-1,lastdim,skipdim);
   } /* if */
   return accum;
@@ -3027,7 +3026,7 @@ static void initials(int ident,int usage,int tag,cell *size,int dim[],int numdim
         }
       } /* if */
       *size=calc_arraysize(dim,numdim,0);
-      if (*size==(cell)INT_MAX) {
+      if (*size==CELLMAX) {
         error(9);       /* array is too big -> invalid size */
         return;
       } /* if */
@@ -3476,7 +3475,7 @@ static cell needsub(char match,constvalue **namelist)
     constexpression(&val,&exprtag,&sym);/* get value (must be constant expression) */
     if (tag==0)
       tag=exprtag;            /* copy expression tag */
-    if (val<0 || sc_rationaltag!=0 && tag==sc_rationaltag) {
+    if (val<0 || is_rational(tag,false)) {
       error(9);               /* negative array size is invalid; so is rational value */
       val=1;                  /* assume a valid array size */
     } /* if */
@@ -3721,18 +3720,14 @@ SC_FUNC symbol *fetchfunc(const char *name,int tag)
     sym->x.stacksize=1;         /* 1 for PROC opcode */
   } /* if */
   assert(sym!=NULL);
-  if (pc_deprecate!=NULL) {
+  if (get_deprecated()!=NULL) {
     sym->flags|=flgDEPRECATED;
     if (sc_status==statWRITE) {
-      if (sym->documentation!=NULL) {
+      if (sym->documentation!=NULL)
         free(sym->documentation);
-        sym->documentation=NULL;
-      } /* if */
-      sym->documentation=pc_deprecate;
-    } else {
-      free(pc_deprecate);
+      sym->documentation=strdup(get_deprecated());
     } /* if */
-    pc_deprecate=NULL;
+    set_deprecated(NULL,false);
   } /* if */
   if (strcmp(name,_MAINFUNC)==0 || strcmp(name,_STARTFUNC)==0)
     sym->flags|=flgENTRYPOINT;
@@ -4349,9 +4344,9 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     cidx=code_idx;
     glbdecl=glb_declared;
   } /* if */
-  if ((sym->flags & flgDEPRECATED)!=0) {
+  if ((sym->flags & flgDEPRECATED)!=0 && (sym->usage & uPUBLIC)!=0) {
     char *ptr= (sym->documentation!=NULL) ? sym->documentation : "";
-    error(234,symbolname,ptr);  /* deprecated (probably a public function) */
+    error(234,symbolname,ptr);  /* deprecated public function */
   } /* if */
   begcseg();
   sym->usage|=uDEFINE;  /* set the definition flag */
@@ -4403,7 +4398,16 @@ static int newfunc(const char *firstname,int firsttag,int fpublic,int fstatic,in
     } /* if */
 # endif
   sc_curstates=state_id;/* set state id, for accessing global state variables */
+  /* a function body without braces is a single statement at the block level of
+   * the statements in a compound block (where the '{' raises it to 1)
+   */
+  assert(pc_blocklevel==0);
+  if (!matchtoken('{'))
+    pc_blocklevel=1;            /* function body is a single statement */
+  else
+    lexpush();
   statement(NULL,false);
+  pc_blocklevel=0;
   sc_curstates=0;
   if ((rettype & uRETVALUE)!=0)
     sym->usage|=uRETVALUE;
@@ -4836,8 +4840,9 @@ static void param2symbol(const char *name,int ident,int offset,
       cell size;
       initials(ident,usage,tags[0],&size,arg->dim,arg->numdim,arg->dimnames);
       assert(size>=0 && (unsigned)size>=litidx);
-      /* allocate memory to hold the initial values */
-      arg->defvalue.array.data=(cell *)malloc(litidx*sizeof(cell));
+      /* allocate memory to hold the initial values (note: after an error in the
+       * initializer, the literal queue is reset, meaning no data) */
+      arg->defvalue.array.data=(litidx>0) ? (cell *)malloc(litidx*sizeof(cell)) : NULL;
       if (arg->defvalue.array.data!=NULL) {
         int i;
         memcpy(arg->defvalue.array.data,litq,litidx*sizeof(cell));
@@ -6157,7 +6162,7 @@ SC_FUNC symbol *add_constant(const char *name,cell val,int scope,int tag)
   } /* if */
 
   /* constant doesn't exist yet */
-  sym=addsym(name,val,iCONSTEXPR,scope,pc_blocklevel,tag,uDEFINE);
+  sym=addsym(name,val,iCONSTEXPR,scope,(scope==sGLOBAL) ? 0 : pc_blocklevel,tag,uDEFINE);
   assert(sym!=NULL);            /* fatal error 103 must be given on error */
   if (sc_status == statIDLE)
     sym->usage |= uPREDEF;
@@ -6226,9 +6231,10 @@ static void statement(int *lastindent,bool allow_decl)
   case '{': {
     int orgline=pc_curline;
     short orglevel=pc_blocklevel;
+    const unsigned char *body=lexptr; /* the text behind the '{', before matchtoken() reads on */
     pc_blocklevel+=1;           /* increase compound statement level */
     if (!matchtoken('}'))       /* {} is the empty statement */
-      compound(orgline==pc_curline && freading);
+      compound((orgline==pc_curline && freading) ? body : NULL);
     /* lastst (for "last statement") does not change */
     pc_blocklevel=orglevel;     /* restore compound statement level */
     break;
@@ -6310,13 +6316,18 @@ static void statement(int *lastindent,bool allow_decl)
 
 /** compound() handles a compound statement.
  *
- *  \param stmt_sameline  If true, it was determined that at least one token
- *                        (other than '}') appears on the same line as the '{'
- *                        that started the compound statement.
+ *  \param stmt_sameline  If valid (i.e. not `NULL`), it was determined that at
+ *                        least one token (other than '}') appears on the same
+ *                        line as the '{' that started the compound statement.
+ *                        This parameter then points in the current source line
+ *                        and behind the '{'. This pointer must be `NULL`
+ *                        otherwise.
  *
  *  \note The '{' that starts a compound statement is already matched.
+ *
+ *  \note Global references: srcline (read-only)
  */
-static void compound(bool stmt_sameline)
+static void compound(const unsigned char *stmt_sameline)
 {
   int indent=-1;
   cell save_decl=lcl_declared;
@@ -6324,24 +6335,16 @@ static void compound(bool stmt_sameline)
   int block_start=pc_curline; /* save line where the compound block started */
 
   /* if there is more text on this line, we should adjust the statement indent;
-     note that when 'stmt_sameline' is true, we know that 'srcline' holds at
-     least two tokens (one of which is '{') and that 'lexptr' points behind
-     the '{' ]*/
-  if (stmt_sameline) {
-    assert(lexptr>srcline);   /* must be true, because '{' was parsed */
-    const unsigned char *p=lexptr-1;
-    /* go back to the opening brace */
-    while (*p!='{') {
-      assert(p>srcline);
-      p--;
-    } /* while */
-    assert(*p=='{');          /* must be found, because it was already parsed earlier */
+     when 'stmt_sameline' is non-NULL, 'srcline' holds at least two tokens (one
+     of which is '{'), and 'stmt_sameline' points behind that '{' */
+  if (stmt_sameline!=NULL) {
+    assert(stmt_sameline!=NULL && stmt_sameline>srcline && *(stmt_sameline-1)=='{');
+    const unsigned char *p=stmt_sameline;
     /* go forward, skipping white-space */
-    p++;
     while (*p<=' ' && *p!='\0')
       p++;
     assert(*p!='\0');         /* a token must be found, because 'stmt_sameline' is
-                                 only true when there is something behind the '{' */
+                                 only valid when there is something behind the '{' */
     lex_fetchindent(srcline,p);
   } /* if */
 

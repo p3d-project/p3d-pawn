@@ -14,7 +14,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc5.c 7712 2026-10-12 08:59:39Z thiadmer $
+ *  Version: $Id: sc5.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 #include <assert.h>
 #if defined __WIN32__ || defined _WIN32 || defined __MSDOS__
@@ -93,9 +93,9 @@ static int errnotice;   /**< explicitly set notice number */
  *
  *  \return This function always returns 0.
  *
- *  \note If an error is found, the variable "errflag" is set and subsequent
+ *  \note If an error is found, the variable 'errflag' is set and subsequent
  *        errors are ignored until lex() finds a semicolon or a keyword (lex()
- *        resets "errflag" in that case).
+ *        resets 'errflag' in that case).
  *
  *  \note On a fatal error, the function aborts the program, with a `longjmp` to
  *        the clean-up code.
@@ -110,6 +110,7 @@ static int errnotice;   /**< explicitly set notice number */
  */
 static int error_v(unsigned long number,va_list argptr)
 {
+static unsigned lasterror;
 static int lastline,errcount_on_line;
 static short lastfile;
 
@@ -138,6 +139,11 @@ static short lastfile;
     errfile=-1;
     return 0;
   } /* if */
+
+  /* in any case, do not report the same error twice for the same line */
+  if (number==lasterror && (errline==lastline || errline<0 && pc_curline==lastline) && fcurrent==lastfile)
+    return 0;
+  lasterror=number;
 
   const char *msg=NULL,*prefix=NULL;
   if (IS_ERROR(number)){

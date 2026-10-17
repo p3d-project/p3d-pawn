@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc3.c 7715 2026-10-15 07:35:24Z thiadmer $
+ *  Version: $Id: sc3.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 #include <assert.h>
 #include <stdio.h>
@@ -571,7 +571,7 @@ static cell checkarrays(value *lval1,value *lval2)
     } /* for */
     /* get the total size in cells of the multi-dimensional array */
     length=array_totalsize(lval1->sym);
-    assert(length>0);           /* already checked */
+    assert(length>0);                   /* already checked */
   } /* if */
 
   return length;
@@ -860,67 +860,69 @@ static cell flooreddiv(cell a,cell b,int return_remainder)
 
 static cell calc(cell left,void (*oper)(),cell right,bool *boolresult)
 {
-  cell result=0;
   if (oper==ob_or) {
-    result=(left | right);
+    return (left | right);
   } else if (oper==ob_xor) {
-    result=(left ^ right);
+    return (left ^ right);
   } else if (oper==ob_and) {
-    result=(left & right);
+    return (left & right);
   } else if (oper==ob_andnot) {
-    result=(left & ~right);
+    return (left & ~right);
   } else if (oper==ob_eq) {
-    result=(left == right);
+    return (left == right);
   } else if (oper==ob_ne) {
-    result=(left != right);
+    return (left != right);
   } else if (oper==os_le) {
     *boolresult= *boolresult && (left <= right);
-    result= right;
+    return right;
   } else if (oper==os_ge) {
     *boolresult= *boolresult && (left >= right);
-    result= right;
+    return right;
   } else if (oper==os_lt) {
     *boolresult= *boolresult && (left < right);
-    result=right;
+    return right;
   } else if (oper==os_gt) {
     *boolresult= *boolresult && (left > right);
-    result=right;
+    return right;
   } else if (oper==os_sar) {
     if (right<0 || right>=8*pc_cellsize)
       error(101); /* numeric overflow */
-    result=(left >> (int)right);
+    return (left >> (int)right);
   } else if (oper==ou_sar) {
     if (right<0 || right>=8*pc_cellsize)
       error(101); /* numeric overflow */
-    result=((ucell)(left & CELL_MASK) >> (ucell)right);
+    return ((ucell)(left & CELL_MASK) >> (ucell)right);
   } else if (oper==ob_sal) {
     if (right<0 || right>=8*pc_cellsize)
       error(101); /* numeric overflow */
-    result=(((ucell)left<<(int)right) & CELL_MASK); /* mask off overflowing bits */
+    return (((ucell)left<<(int)right) & CELL_MASK); /* mask off overflowing bits */
   } else if (oper==ob_add) {
-    if (left>=0 && right>(CELLMAX-left) || left<0 && right<(CELLMIN-left))
+    if (left>=0 && right>(CELLMAX-left) || left<0 && right<(CELLMIN-left)) {
       error(101); /* numeric overflow */
-    else
-      result=(left+right);
+      return 0;
+    } /* if */
+    return (left+right);
   } else if (oper==ob_sub) {
-    if (left>=0 && right<(left-CELLMAX) || left<0 && right>(left-CELLMIN))
+    if (left>=0 && right<(left-CELLMAX) || left<0 && right>(left-CELLMIN)) {
       error(101); /* numeric overflow */
-    else
-      result=(left-right);
+      return 0;
+    } /* if */
+    return (left-right);
   } else if (oper==os_mult) {
-    result=(left*right);
+    cell result=(left*right);
     if (left!=0 && IABS(result)/IABS(left)!=IABS(right)) {
       error(101); /* numeric overflow */
       result=0;
     } /* if */
+    return result;
   } else if (oper==os_div) {
-    result=flooreddiv(left,right,0);
+    return flooreddiv(left,right,0);
   } else if (oper==os_mod) {
-    result=flooreddiv(left,right,1);
+    return flooreddiv(left,right,1);
   } else {
     error(76);  /* syntax error in expression (this should never occur) */
   } /* if */
-  return result;
+  return 0;
 }
 
 /** expression() starts the recursive descent parser, generating code in the
@@ -1270,7 +1272,7 @@ static int hier14(value *lval1)
    * or if an operation is in effect, this does not apply.
    */
   bool leftarray= IS_ARRAY(lval1copy)
-                  || (IS_PSEUDO_ARRAY(lval1copy) && !oper && (lval2.ident==iARRAY || lval2.ident==iREFARRAY));
+                  || (IS_PSEUDO_ARRAY(lval1copy) && !oper && IS_ARRAY(lval2));
   if (leftarray) {
     /* Left operand is an array, right operand should be an array variable
      * of the same size and the same dimension, an array literal (of the
@@ -1279,13 +1281,16 @@ static int hier14(value *lval1)
      * larger one (without warning). This is to make it easier to work with
      * strings. Function checkarrays() verifies all this.
      */
-    val=checkarrays(&lval1copy,&lval2);
+    val=checkarrays(&lval1copy,&lval2); /* 'val' is the size to copy */
   } else {
     /* left operand is not an array, right operand should then not be either */
-    if (lval2.ident==iARRAY || lval2.ident==iREFARRAY)
+    if (IS_ARRAY(lval2))
       error(6);         /* must be assigned to an array */
   } /* if */
-  if (leftarray) {
+  /* copy the array only from an array: when the right operand is not one,
+   * checkarrays() has reported the error
+   */
+  if (leftarray && (IS_ARRAY(lval2) || IS_PSEUDO_ARRAY(lval2))) {
     /* If the arrays are single-dimensional, we can simply copy the data; if
      * both arrays are at their roots (like "a = b", where "a" and "b" are
      * arrays), a copy of the full array (including the indirection vectors)
@@ -1485,7 +1490,13 @@ static int hier13(value *lval)
                               * max. heap usage will be wrong for the upper
                               * expression */
     } /* if */
-    assert(sc_status!=statWRITE || heap1==heap2);
+    /* in the write pass, the padding computed in the browse pass makes both
+     * branches use the same heap space; that holds when both passes parsed the
+     * same expression, which is certain only without errors (after an error,
+     * recovery may take another path in each pass, for example when a symbol
+     * is declared further on)
+     */
+    assert(sc_status!=statWRITE || heap1==heap2 || errorcount(NULL,NULL)>=2);
     if (lval->ident==iARRAY)
       lval->ident=iREFARRAY;    /* iARRAY becomes iREFARRAY */
     else if (lval->ident!=iREFARRAY)
@@ -1637,8 +1648,8 @@ static int hier2(value *lval)
     /* make a special check for a constant expression with the tag of a
      * rational number, so that we can simple swap the sign of that constant.
      */
-    if (lval->ident==iCONSTEXPR && lval->tag==sc_rationaltag && sc_rationaltag!=0) {
-      if (rational_digits==0) {
+    if (lval->ident==iCONSTEXPR && is_rational(lval->tag,false)) {
+      if (is_rational(lval->tag,true)) {
         assert(pc_cellsize==4 || pc_cellsize==8);
         if (pc_cellsize==4) {
           float *f = (float *)&lval->constval;
@@ -2099,7 +2110,7 @@ restart:
           lval1->ident=iARRAYCELL;
           if (sym->dim.array.length!=0)
             ffbounds(sym->dim.array.length-1);  /* run time check for array bounds */
-          //??? bounds check for 'argv' against number of variable parameters
+          //??? bounds check for 'argv' (i.e. generate code that checks PRI < argc)
           cell2addr(sPRI);      /* normal array index */
         } else {
           lval1->ident=iARRAYCHAR;
@@ -2252,8 +2263,9 @@ static int primary(value *lval,int *symtok)
     do
       lvalue=hier14(lval);
     while (matchtoken(','));
-    if (!needtoken(')'))
-      skiptotoken(')',false);   /* skip all until ')' or end of expression */
+    bool closed=needtoken(')');
+    if (!closed)
+      closed=skiptotoken(')',false);  /* skip all until ')' or end of expression */
     if (lvalue && in_test_expr==sTEST_EXPR) {
       rvalue(lval);
       lval->ident=iEXPRESSION;
@@ -2262,9 +2274,10 @@ static int primary(value *lval,int *symtok)
     sc_allowtags=save_allowtags;
     if (parenthesized_level>=0) {
       parenthesized_level--;
-      if (parenthesized_level==0) {
+      if (parenthesized_level==0 && closed) {
         /* for a fully parenthesized test expression, the closing parenthesis
-         * also terminates the expression
+         * also terminates the expression (but without that parenthesis, the
+         * token that was found instead is still pending)
          */
         assert(in_test_expr==sTEST_EXPR);
         lexsettoken(tTERM,"");
@@ -3083,7 +3096,7 @@ static bool constant(value *lval)
     lval->constval=lexval;
     ldconst(lval->constval,sPRI);
     lval->ident=iCONSTEXPR;
-    lval->tag=sc_rationaltag;
+    lval->tag=rational_gettag();
     lastsymbol[0]='\0';
   } else if (tok==tSTRING || tok==tPACKSTRING) {
     /* lex() stores starting index of string in the literal table in 'val' */

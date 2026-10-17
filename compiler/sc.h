@@ -24,7 +24,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc.h 7715 2026-10-15 07:35:24Z thiadmer $
+ *  Version: $Id: sc.h 7717 2026-10-17 16:25:40Z thiadmer $
  */
 #ifndef SC_H_INCLUDED
 #define SC_H_INCLUDED
@@ -161,8 +161,8 @@ typedef struct s_symbol {
   } dim;                /* for 'dimension', both functions and arrays */
 
   statelist *states;    /* list of state function/state variable ids + addresses */
-  int fvisible;         /* file number of the declaration for static global variables, or NOT_SET for true globals */
-  int fnumber;          /* file number of the declaration */
+  short fvisible;       /* file number of the declaration for static global variables, or NOT_SET for true globals */
+  short fnumber;        /* file number of the declaration */
   int lnumber;          /* line number of the declaration */
 
   struct s_symbol **refer;  /* referrer list, functions that "use" this symbol */
@@ -330,15 +330,6 @@ typedef struct s_valuepair {
   long first;
   long second;
 } valuepair;
-
-/* list to collect literal strings and literal arrays, so that these can be
-   merged */
-typedef struct s_arraymerge {
-  struct s_arraymerge *next;
-  cell addr;            /* base address of the array */
-  cell size;            /* array size in cells */
-  cell *data;           /* buffer with the array data ("size" cells long) */
-} arraymerge;
 
 /* macros for code generation */
 #define opcodes(n)      ((n)*pc_cellsize)   /* opcode size */
@@ -627,6 +618,10 @@ SC_FUNC bool plungequalifiedfile(const char *name);  /* explicit path included *
 SC_FUNC bool plungefile(const char *name,int try_currentpath,int try_includepaths);   /* search through "include" paths */
 SC_FUNC char *strdel(char *str,size_t len);
 SC_FUNC char *strins(char *dest,const char *src,size_t srclen);
+SC_FUNC bool is_rational(int tag,bool ieee754);
+SC_FUNC int rational_gettag(void);
+SC_FUNC void set_deprecated(const unsigned char *text,bool warn);
+SC_FUNC char *get_deprecated(void);
 SC_FUNC void preprocess(void);
 SC_FUNC void lex_fetchindent(const unsigned char *string,const unsigned char *pos);
 SC_FUNC int lex_adjusttabsize(int matchindent);
@@ -634,7 +629,7 @@ SC_FUNC int lexinit(int releaseall);
 SC_FUNC int lex(cell *lexvalue,char **lexstr);
 SC_FUNC void lexpush(void);
 SC_FUNC int lexsettoken(int token,const char *lexsym);
-SC_FUNC void lexclr(int clreol);
+SC_FUNC void lexclr(bool clreol);
 SC_FUNC int lexpeek(void);
 SC_FUNC int matchtoken(int token);
 SC_FUNC int tokeninfo(cell *val,char **str);
@@ -645,8 +640,8 @@ SC_FUNC void litq_free(void);
 SC_FUNC void litadd(cell value);
 SC_FUNC void litinsert(cell value,unsigned pos);
 SC_FUNC void litremove(unsigned pos);
-SC_FUNC int alphanum(unsigned char c);
-SC_FUNC int ishex(char c);
+SC_FUNC bool alphanum(unsigned char c);
+SC_FUNC bool ishex(char c);
 SC_FUNC int number(cell *val,const unsigned char *curptr);
 SC_FUNC void delete_symbol(symbol *root,symbol *sym);
 SC_FUNC void delete_symbols(symbol *root,int level,bool delete_labels,bool delete_functions);
@@ -766,7 +761,7 @@ SC_FUNC void outval(cell val,int fullcell,int newline);
 
 /* function prototypes in SC5.C */
 SC_FUNC int error(unsigned long number,...);
-SC_FUNC int error_onpos(short filenr,int linrnr,unsigned long number,...);
+SC_FUNC int error_onpos(short filenr,int linenr,unsigned long number,...);
 SC_FUNC int error_symbolname(unsigned number,const char *name);
 SC_FUNC int error_suggest(unsigned number,const char *name,int ident);
 SC_FUNC int error_suggest_list(unsigned number,const char *name,constvalue *list);
@@ -930,11 +925,8 @@ SC_VDECL int pc_tabsize;        /**< number of spaces that a TAB represents */
 SC_VDECL int pc_matchedtabsize; /**< if no tabsize explicitly set, try to detect the tab size */
 SC_VDECL bool sc_allowtags;     /**< allow/detect tagnames in lex() */
 SC_VDECL int sc_status;         /**< browse/write/skip status */
-SC_VDECL int sc_rationaltag;    /**< tag for rational numbers */
-SC_VDECL int rational_digits;   /**< number of fractional digits */
 SC_VDECL bool sc_allowproccall; /**< allow/detect tagnames in lex() */
 SC_VDECL short sc_is_utf8;      /**< is this source file in UTF-8 encoding */
-SC_VDECL char *pc_deprecate;    /**< if non-NULL, mark next declaration as deprecated */
 SC_VDECL int sc_curstates;      /**< ID of the current state list */
 SC_VDECL int pc_optimize;       /**< (peephole) optimization level */
 SC_VDECL int pc_memflags;       /**< special flags for the stack/heap usage */

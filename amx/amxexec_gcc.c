@@ -905,21 +905,21 @@ static const void * const amx_opcodelist[] = {
     if (alt==0)
       ABORT(amx,AMX_ERR_DIVIDE);
     /* use floored division and matching remainder */
-    offs=alt;
+    val=alt;
 #   if defined TRUNC_SDIV
-      pri=pri/offs;
-      alt=pri%offs;
+      pri=pri/val;
+      alt=pri%val;
 #   else
-      val=pri;                  /* portable routine for truncated division */
-      pri=IABS(pri)/IABS(offs);
-      if ((cell)(val ^ offs)<0)
+      /* portable routine for truncated division */
+      pri=IABS(pri)/IABS(val);
+      if ((cell)(val ^ val)<0)
         pri=-pri;
-      alt=val-pri*offs;         /* calculate the matching remainder */
+      alt-=pri*val;             /* calculate the matching remainder */
 #   endif
     /* now "fiddle" with the values to get floored division */
-    if (alt!=0 && (cell)(alt ^ offs)<0) {
+    if (alt!=0 && (cell)(alt ^ val)<0) {
       pri--;
-      alt+=offs;
+      alt+=val;
     } /* if */
     NEXT(cip,op);
   op_sub_inv:

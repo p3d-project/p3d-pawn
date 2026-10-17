@@ -16,7 +16,7 @@
  *  License for the specific language governing permissions and limitations
  *  under the License.
  *
- *  Version: $Id: sc4.c 7715 2026-10-15 07:35:24Z thiadmer $
+ *  Version: $Id: sc4.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 #include <assert.h>
 #include <ctype.h>
@@ -44,8 +44,6 @@ static int cellshift(void)
  */
 SC_FUNC void writeleader(symbol *root,int *lbl_nostate,int *lbl_ignorestate)
 {
-  symbol *sym;
-
   assert(code_idx==0);
 
   assert(lbl_nostate!=NULL);
@@ -65,6 +63,7 @@ SC_FUNC void writeleader(symbol *root,int *lbl_nostate,int *lbl_ignorestate)
   pc_ovl0size[ovlEXIT][1]=(int)(code_idx-pc_ovl0size[ovlEXIT][0]); /* store overlay code size */
 
   /* check whether there are any functions that have states */
+  const symbol *sym;
   for (sym=root->next; sym!=NULL; sym=sym->next)
     if (sym->ident==iFUNCTN && (sym->usage & (uPUBLIC | uREAD))!=0 && sym->states!=NULL)
       break;

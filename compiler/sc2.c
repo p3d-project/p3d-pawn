@@ -637,7 +637,7 @@ static int btoi(cell *val,const unsigned char *curptr)
           return 0;       /* invalid numeric format */
         digitsep=8;
       } else {
-        *val=(*val<<1) | (*ptr-'0');
+        *val=(cell)(((ucell)*val<<1) | (ucell)(*ptr-'0')); /* unsigned: a long literal wraps, without overflow */
         digitsep--;
       } /* if */
       ptr++;
@@ -676,7 +676,7 @@ static int dtoi(cell *val,const unsigned char *curptr)
         return 0;       /* invalid numeric format */
       digitsep=3;
     } else {
-      *val=(*val*10)+(*ptr-'0');
+      *val=(cell)((ucell)*val*10+(ucell)(*ptr-'0'));  /* unsigned: a long literal wraps, without overflow */
       digitsep--;
     } /* if */
     ptr++;
@@ -716,11 +716,9 @@ static int htoi(cell *val,const unsigned char *curptr)
         digitsep=4;
       } else {
         assert(ishex(*ptr));
-        *val= *val<<4;
-        if (isdigit(*ptr))
-          *val+= (*ptr-'0');
-        else
-          *val+= (tolower(*ptr)-'a'+10);
+        /* unsigned: a long literal wraps, without overflow */
+        ucell digit= isdigit(*ptr) ? (ucell)(*ptr-'0') : (ucell)(tolower(*ptr)-'a'+10);
+        *val=(cell)(((ucell)*val<<4)+digit);
         digitsep--;
       } /* if */
       ptr++;

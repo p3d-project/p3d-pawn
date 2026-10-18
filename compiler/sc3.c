@@ -817,6 +817,20 @@ static void plnge2(void (*oper)(void),void (*arrayoper)(cell),
 }
 
 #define IABS(a)       ((a)>=0 ? (a) : (-a))
+
+/** wrapcell() reduces a value to the cell size of the target (pc_cellsize), in
+ *  two's complement. The compiler uses cells of PAWN_CELL_SIZE bits internally,
+ *  which may be wider than the cells of the target: for example, with -C32 the
+ *  literal 0xffffffff is 4294967295 in the compiler, but -1 at run time.
+ */
+static cell wrapcell(cell value)
+{
+  ucell v=(ucell)value & CELL_MASK;
+  if (v>(ucell)CELLMAX)
+    v|=~CELL_MASK;      /* sign extension */
+  return (cell)v;
+}
+
 static cell flooreddiv(cell a,cell b,int return_remainder)
 {
   if (b==0) {
@@ -860,6 +874,9 @@ static cell flooreddiv(cell a,cell b,int return_remainder)
 
 static cell calc(cell left,void (*oper)(),cell right,bool *boolresult)
 {
+  /* fold the operands as the target cell holds them */
+  left=wrapcell(left);
+  right=wrapcell(right);
   if (oper==ob_or) {
     return (left | right);
   } else if (oper==ob_xor) {
@@ -885,17 +902,23 @@ static cell calc(cell left,void (*oper)(),cell right,bool *boolresult)
     *boolresult= *boolresult && (left > right);
     return right;
   } else if (oper==os_sar) {
-    if (right<0 || right>=8*pc_cellsize)
+    if (right<0 || right>=8*pc_cellsize) {
       error(101); /* numeric overflow */
+      return 0;
+    } /* if */
     return (left >> (int)right);
   } else if (oper==ou_sar) {
-    if (right<0 || right>=8*pc_cellsize)
+    if (right<0 || right>=8*pc_cellsize) {
       error(101); /* numeric overflow */
+      return 0;
+    } /* if */
     return ((ucell)(left & CELL_MASK) >> (ucell)right);
   } else if (oper==ob_sal) {
-    if (right<0 || right>=8*pc_cellsize)
+    if (right<0 || right>=8*pc_cellsize) {
       error(101); /* numeric overflow */
-    return (((ucell)left<<(int)right) & CELL_MASK); /* mask off overflowing bits */
+      return 0;
+    } /* if */
+    return wrapcell((cell)((ucell)left<<(int)right)); /* the overflowing bits are dropped */
   } else if (oper==ob_add) {
     if (left>=0 && right>(CELLMAX-left) || left<0 && right<(CELLMIN-left)) {
       error(101); /* numeric overflow */
@@ -909,12 +932,14 @@ static cell calc(cell left,void (*oper)(),cell right,bool *boolresult)
     } /* if */
     return (left-right);
   } else if (oper==os_mult) {
-    cell result=(left*right);
-    if (left!=0 && IABS(result)/IABS(left)!=IABS(right)) {
+    /* check before multiplying, because the product may not fit in a cell of
+     * the compiler either */
+    if (left>0 ? (right>0 ? left>CELLMAX/right : right<CELLMIN/left)
+               : (right>0 ? left<CELLMIN/right : left!=0 && right<CELLMAX/left)) {
       error(101); /* numeric overflow */
-      result=0;
+      return 0;
     } /* if */
-    return result;
+    return (left*right);
   } else if (oper==os_div) {
     return flooreddiv(left,right,0);
   } else if (oper==os_mod) {
@@ -1620,7 +1645,7 @@ static int hier2(value *lval)
     else if (lval->ident==iARRAY || lval->ident==iREFARRAY)
       error(33,check_symbolname(lval)); /* array was not indexed in an expression */
     invert();                   /* bitwise NOT */
-    lval->constval=~lval->constval;
+    lval->constval=wrapcell(~lval->constval);
     if (lval->ident!=iCONSTEXPR)
       lval->ident=iEXPRESSION;
     return false;
@@ -1667,7 +1692,8 @@ static int hier2(value *lval)
       lval->constval=0;
     } else {
       neg();                    /* arithmic negation */
-      lval->constval=-lval->constval;
+      /* as at run time, the negation of the smallest cell is itself */
+      lval->constval=wrapcell((cell)(0-(ucell)wrapcell(lval->constval)));
       if (lval->ident!=iCONSTEXPR)
         lval->ident=iEXPRESSION;
     } /* if */

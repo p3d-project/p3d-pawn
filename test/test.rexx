@@ -2783,4 +2783,15 @@ test196:
   call matchoutput 'error 029', 'error 054', '2 Errors.'
   return
 
+test197:
+  say '197. The following tests should issue warning 243 (number does not fit in a'
+  say '     cell) TWICE, for 4294967296 and 0x1''0000''0000.'
+  say ''
+  say '    Numbers that do not fit in a 32-bit cell, next to numbers that do (the'
+  say '    bit pattern of -1, and cellmin).'
+  say '-----'
+  pawncc '-v0 -C32 NUMBER_TOO_LARGE= test14' commandsuffix
+  call matchoutput 'warning 243*4294967296', 'warning 243*0x1''0000''0000', '2 Warnings.', '/0xffffffff', '/2147483648'
+  return
+
 

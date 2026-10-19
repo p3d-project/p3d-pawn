@@ -642,7 +642,7 @@ SC_FUNC void litinsert(cell value,unsigned pos);
 SC_FUNC void litremove(unsigned pos);
 SC_FUNC bool alphanum(unsigned char c);
 SC_FUNC bool ishex(char c);
-SC_FUNC int number(cell *val,const unsigned char *curptr);
+SC_FUNC int number(cell *val,bool *toolarge,const unsigned char *curptr);
 SC_FUNC void delete_symbol(symbol *root,symbol *sym);
 SC_FUNC void delete_symbols(symbol *root,int level,bool delete_labels,bool delete_functions);
 SC_FUNC int refer_symbol(symbol *entry,symbol *bywhom);

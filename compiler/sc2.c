@@ -622,7 +622,7 @@ static void stripcom(unsigned char *line)
  *
  *  A boolean value must start with "0b"
  */
-static int btoi(cell *val,const unsigned char *curptr)
+static int btoi(cell *val,bool *toolarge,const unsigned char *curptr)
 {
   const unsigned char *ptr;
 
@@ -637,6 +637,8 @@ static int btoi(cell *val,const unsigned char *curptr)
           return 0;       /* invalid numeric format */
         digitsep=8;
       } else {
+        if (((ucell)*val>>(8*sizeof(cell)-1))!=0)
+          *toolarge=true; /* a bit is shifted out of the cell of the compiler */
         *val=(cell)(((ucell)*val<<1) | (ucell)(*ptr-'0')); /* unsigned: a long literal wraps, without overflow */
         digitsep--;
       } /* if */
@@ -661,7 +663,7 @@ static int btoi(cell *val,const unsigned char *curptr)
  *  it returns the number of characters processed and the value is stored in
  *  "val". Otherwise it returns 0 and "val" is garbage.
  */
-static int dtoi(cell *val,const unsigned char *curptr)
+static int dtoi(cell *val,bool *toolarge,const unsigned char *curptr)
 {
   const unsigned char *ptr;
   unsigned digitsep=UINT_MAX; /* thousands separator */
@@ -676,7 +678,10 @@ static int dtoi(cell *val,const unsigned char *curptr)
         return 0;       /* invalid numeric format */
       digitsep=3;
     } else {
-      *val=(cell)((ucell)*val*10+(ucell)(*ptr-'0'));  /* unsigned: a long literal wraps, without overflow */
+      ucell digit=(ucell)(*ptr-'0');
+      if ((ucell)*val>(~(ucell)0-digit)/10)
+        *toolarge=true;   /* the value does not fit in the cell of the compiler */
+      *val=(cell)((ucell)*val*10+digit);  /* unsigned: a long literal wraps, without overflow */
       digitsep--;
     } /* if */
     ptr++;
@@ -698,7 +703,7 @@ static int dtoi(cell *val,const unsigned char *curptr)
  *  success it returns the number of characters processed and the value is
  *  stored in "val". Otherwise it return 0 and "val" is garbage.
  */
-static int htoi(cell *val,const unsigned char *curptr)
+static int htoi(cell *val,bool *toolarge,const unsigned char *curptr)
 {
   const unsigned char *ptr;
 
@@ -718,6 +723,8 @@ static int htoi(cell *val,const unsigned char *curptr)
         assert(ishex(*ptr));
         /* unsigned: a long literal wraps, without overflow */
         ucell digit= isdigit(*ptr) ? (ucell)(*ptr-'0') : (ucell)(tolower(*ptr)-'a'+10);
+        if (((ucell)*val>>(8*sizeof(cell)-4))!=0)
+          *toolarge=true; /* a digit is shifted out of the cell of the compiler */
         *val=(cell)(((ucell)*val<<4)+digit);
         digitsep--;
       } /* if */
@@ -920,17 +927,25 @@ static int ftoi(cell *val,const unsigned char *curptr)
  *  Note: the routine doesn't check for a sign (+ or -). The - is checked
  *        for at "hier2()" (in fact, it is viewed as an operator, not as a
  *        sign) and the + is invalid (as in K&R C, and unlike ANSI C).
+ *
+ *  If "toolarge" is not NULL, it is set to true when the value does not fit
+ *  in a cell of the target (pc_cellsize), and to false otherwise. A value
+ *  fits when no bit beyond the cell is set, so that 0xffffffff fits in a
+ *  32-bit cell (as the bit pattern of -1), but 0x100000000 does not.
  */
-SC_FUNC int number(cell *val,const unsigned char *curptr)
+SC_FUNC int number(cell *val,bool *toolarge,const unsigned char *curptr)
 {
   int i;
   cell value;
+  bool overflow=false;
 
-  if ((i=btoi(&value,curptr))!=0      /* binary? */
-      || (i=htoi(&value,curptr))!=0   /* hexadecimal? */
-      || (i=dtoi(&value,curptr))!=0)  /* decimal? */
+  if ((i=btoi(&value,&overflow,curptr))!=0      /* binary? */
+      || (i=htoi(&value,&overflow,curptr))!=0   /* hexadecimal? */
+      || (i=dtoi(&value,&overflow,curptr))!=0)  /* decimal? */
   {
     *val=value;
+    if (toolarge!=NULL)
+      *toolarge= overflow || ((ucell)value & ~CELL_MASK)!=0;
     return i;
   } else {
     return 0;                         /* else not a number */
@@ -2375,7 +2390,13 @@ SC_FUNC int lex(cell *lexvalue,char **lexstr)
   } /* while */
 
   starttoken=lexptr;    /* save start pointer (for concatenating to documentation string) */
-  if ((i=number(&cached_val,lexptr))!=0) {   /* number (non-floating point) */
+  bool toolarge;
+  if ((i=number(&cached_val,&toolarge,lexptr))!=0) {   /* number (non-floating point) */
+    if (toolarge) {
+      char text[40];
+      strlcpy(text,(const char*)lexptr,(i<(int)sizeof text) ? (size_t)i+1 : sizeof text);
+      error(243,text,8*pc_cellsize);    /* number does not fit in a cell */
+    } /* if */
     cached_tok=tNUMBER;
     *lexvalue=cached_val;
     lexptr+=i;

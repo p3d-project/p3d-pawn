@@ -1987,7 +1987,7 @@ restart:
             const unsigned char *head=lexptr;
             while (*head<=' ')
               head++;
-            num=number(&val,head);
+            num=number(&val,NULL,head);
             if (num>0) {
               head+=num;
             } else {

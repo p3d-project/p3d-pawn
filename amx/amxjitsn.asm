@@ -1302,6 +1302,8 @@ _VERIFYADDRESS_edx:             ; used in load.i, store.i & lidx
 
 JIT_OP_SDIV:
         mov     ebp,edx
+        cmp     ebp,-1          ; Dividing by -1 is a negation, and it is the one
+        je      sdiv_negate     ; division that overflows (idiv traps on it).
         xor     edx,eax         ; Check signs of the operands.
         cdq
         js      sdiv_fiddle     ; If the signs of the operands are different
@@ -1310,6 +1312,11 @@ JIT_OP_SDIV:
         or      ebp,ebp         ; check for divide by zero
         jz      err_divide
         idiv    ebp             ; default behavior is right in the other cases
+        ret
+
+    sdiv_negate:
+        neg     eax             ; The smallest cell stays itself,
+        xor     edx,edx         ; and the remainder is zero.
         ret
 
     sdiv_fiddle:

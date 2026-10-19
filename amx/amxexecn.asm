@@ -662,6 +662,8 @@ OP_SDIV:
         ; of SDIV.INV
 OP_SDIV_INV:
         mov     ebp,edx
+        cmp     ebp,-1          ; Dividing by -1 is a negation, and it is the one
+        je      short sdiv_negate ; division that overflows (idiv traps on it).
         xor     edx,eax         ; Check signs of the operands.
         cdq
         js      short sdiv_fiddle ; If the signs of the operands are different
@@ -670,6 +672,12 @@ OP_SDIV_INV:
         _CHKDIVIDEZERO
         add     esi,4           ; default behavior is right in the other cases
         idiv    ebp
+        NEXT
+
+    sdiv_negate:
+        neg     eax             ; The smallest cell stays itself,
+        xor     edx,edx         ; and the remainder is zero.
+        add     esi,4
         NEXT
 
     sdiv_fiddle:

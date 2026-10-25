@@ -452,7 +452,7 @@ enum {
 # define amx_Address(amx,addr) \
                         (cell*)(((int32_t)((amx)->data ? (amx)->data : (amx)->code) & ~CELLMASK) | ((int32_t)(addr) & CELLMASK))
 #else
-# define amx_Address(amx,addr) ((void)(amx),(cell*)(addr))
+# define amx_Address(amx,addr) ((void)(amx),(cell*)(intptr_t)(addr))
 #endif
 
 #if defined __STDC_VERSION__ && __STDC_VERSION__ >= 199901L

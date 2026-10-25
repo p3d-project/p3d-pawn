@@ -454,7 +454,7 @@ typedef enum {
   }
 #endif
 
-#if (BYTE_ORDER==BIG_ENDIAN || PAWN_CELL_SIZE==64) && (defined _I64_MAX || defined __x86_64__ || defined HAVE_I64)
+#if (BYTE_ORDER==BIG_ENDIAN || PAWN_CELL_SIZE==64) && (defined _I64_MAX || defined INT64_MAX || defined __x86_64__ || defined HAVE_I64)
   void amx_Swap64(uint64_t *v)
   {
     unsigned char *s = (unsigned char *)v;
@@ -501,7 +501,7 @@ uint32_t * AMXAPI amx_Align32(uint32_t *v)
   return v;
 }
 
-#if defined _I64_MAX || defined __x86_64__ || defined HAVE_I64
+#if defined _I64_MAX || defined INT64_MAX || defined __x86_64__ || defined HAVE_I64
 uint64_t * AMXAPI amx_Align64(uint64_t *v)
 {
   assert(sizeof(*v)==8);
@@ -511,7 +511,7 @@ uint64_t * AMXAPI amx_Align64(uint64_t *v)
 # endif
   return v;
 }
-#endif  /* _I64_MAX || __x86_64__ || HAVE_I64 */
+#endif  /* _I64_MAX || INT64_MAX || __x86_64__ || HAVE_I64 */
 #endif  /* AMX_ALIGN || AMX_INIT */
 
 #if defined AMX_FLAGS
@@ -606,7 +606,7 @@ int AMXAPI amx_Callback(AMX *amx, cell index, cell *result, const cell *params)
   /* convert from relative addresses to absolute physical addresses */
 # define RELOC_ABS(base,off)   (*(ucell *)((base)+(int)(off)) += (ucell)(base)+(int)(off)-sizeof(cell))
 #else
-# define JUMPREL(ip)           ((cell*)((intptr_t)(ip)+*(cell*)(ip)-sizeof(cell)))
+# define JUMPREL(ip)           ((cell*)(intptr_t)((intptr_t)(ip)+*(cell*)(ip)-sizeof(cell)))
 #endif
 #if defined AMX_ASM || defined AMX_JIT
 # define RELOCATE_ADDR(base,v) ((v)+((ucell)(base)))
@@ -620,7 +620,7 @@ int AMXAPI amx_Callback(AMX *amx, cell index, cell *result, const cell *params)
 # if defined AMX_NO_PACKED_OPC
 #   define GETOPCODE(c)  (OPCODE)(c)
 # else
-#   define GETOPCODE(c)  (OPCODE)((c) & ((1UL << sizeof(cell)*4)-1))
+#   define GETOPCODE(c)  (OPCODE)((c) & (((ucell)1 << sizeof(cell)*4)-1))
 # endif
 #endif
 #if !defined GETPARAM_P
@@ -666,7 +666,7 @@ static int VerifyPcode(AMX *amx)
 # if defined AMX_NO_PACKED_OPC
     opmask= ~0;
 # else
-    opmask=(1UL << sizeof(cell)*4)-1;
+    opmask=(cell)(((ucell)1 << sizeof(cell)*4)-1);
 # endif
 
   /* sanity checks */
@@ -2877,7 +2877,7 @@ int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
 #if !defined AMX_NO_OVERLAY
     case OP_CALL_OVL:
       offs=(cell)((unsigned char *)cip-amx->code+sizeof(cell)); /* skip address */
-      assert(offs>=0 && offs<(1L<<(sizeof(cell)*4)));
+      assert(offs>=0 && offs<((cell)1<<(sizeof(cell)*4)));
       PUSH((offs<<(sizeof(cell)*4)) | amx->ovl_index);
       amx->ovl_index=(int)*cip;
       assert(amx->overlay!=NULL);

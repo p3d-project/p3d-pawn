@@ -99,7 +99,7 @@
 # if defined AMX_NO_PACKED_OPC
 #   define NEXT(cip,op) goto *amx_opcodelist[*cip++]
 # else
-#   define NEXT(cip,op) goto *amx_opcodelist[(op=*cip++) & ((1UL << sizeof(cell)*4)-1)]
+#   define NEXT(cip,op) goto *amx_opcodelist[(op=*cip++) & (((ucell)1 << sizeof(cell)*4)-1)]
 # endif
 #else
 # if !defined AMX_NO_PACKED_OPC
@@ -778,7 +778,7 @@ static const void * const amx_opcodelist[] = {
 #if !defined AMX_NO_OVERLAY
   op_call_ovl:
     offs=(unsigned char *)cip-amx->code+sizeof(cell); /* skip address */
-    assert(offs>=0 && offs<(1L<<(sizeof(cell)*4)));
+    assert(offs>=0 && offs<((cell)1<<(sizeof(cell)*4)));
     PUSH((offs<<(sizeof(cell)*4)) | amx->ovl_index);
     amx->ovl_index=(int)*cip;
     assert(amx->overlay!=NULL);

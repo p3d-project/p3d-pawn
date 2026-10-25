@@ -620,6 +620,7 @@ SC_FUNC char *strdel(char *str,size_t len);
 SC_FUNC char *strins(char *dest,const char *src,size_t srclen);
 SC_FUNC bool is_rational(int tag,bool ieee754);
 SC_FUNC int rational_gettag(void);
+SC_FUNC void rational_reset(void);
 SC_FUNC void set_deprecated(const unsigned char *text,bool warn);
 SC_FUNC char *get_deprecated(void);
 SC_FUNC void preprocess(void);

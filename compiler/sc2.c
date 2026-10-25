@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <locale.h>
 #include <math.h>
 #include "lstring.h"
 #include "sc.h"
@@ -738,6 +739,38 @@ static int htoi(cell *val,const unsigned char *curptr)
     return (int)(ptr-curptr);
 }
 
+/*  literal_value
+ *
+ *  Converts the text of a rational number (from "start" up to "end") to a
+ *  floating point value, correctly rounded: as a "float" when "single" is true
+ *  (the result is then exact in the "double"), and as a "double" otherwise.
+ *  The digit separators are dropped, and the period is replaced by the decimal
+ *  point of the current locale, which is what strtod() and strtof() expect
+ *  (a program that embeds the compiler may have changed the locale).
+ */
+static double literal_value(const unsigned char *start,const unsigned char *end,bool single)
+{
+  char text[sLINEMAX+1];
+  const char *decpoint=localeconv()->decimal_point;
+  size_t len=0;
+  assert(end>start && end-start<=sLINEMAX);
+  for ( ; start<end; start++) {
+    if (*start=='\'')
+      continue;         /* digit separator */
+    if (*start=='.') {
+      size_t dplen=strlen(decpoint);
+      if (len+dplen>=sizeof text)
+        break;
+      memcpy(text+len,decpoint,dplen);
+      len+=dplen;
+    } else if (len+1<sizeof text) {
+      text[len++]=(char)*start;
+    } /* if */
+  } /* for */
+  text[len]='\0';
+  return single ? (double)strtof(text,NULL) : strtod(text,NULL);
+}
+
 /*  ftoi
  *
  *  Attempts to interpret a numeric symbol as a rational number, either as
@@ -761,11 +794,9 @@ static int ftoi(cell *val,const unsigned char *curptr)
   if (!isdigit(*curptr))      /* should start with digit */
     return 0;
   assert(rational_scale>=0);
-  /* read the 'whole' part, both directly as IEEE 754 floating point (to support
-   * very large numbers) and as an integer (to avoid rounding errors in case
-   * there are only zeros behind the '.')
+  /* read the 'whole' part as an integer (for fixed point); the floating point
+   * value is formed from the text of the whole number at the end
    */
-  double fvalue=0.0;
   ucell ivalue=0L;
   unsigned digitsep=UINT_MAX; /* thousands separator */
   const unsigned char *ptr=curptr;
@@ -775,7 +806,6 @@ static int ftoi(cell *val,const unsigned char *curptr)
         return 0;       /* invalid numeric format */
       digitsep=3;
     } else {
-      fvalue=(fvalue*10.0)+(*ptr-'0');
       ivalue=(ivalue*10L)+(*ptr-'0');
       digitsep--;
     } /* if */
@@ -795,35 +825,49 @@ static int ftoi(cell *val,const unsigned char *curptr)
   if (!isdigit(*ptr))   /* there must be at least one digit after the dot */
     return 0;
 
+  /* for decimal fixed point, the scale is a power of 10: count the decimals
+   * that it holds
+   */
+  bool decimal_fixed= (rational_scale>1 && rational_scale%10==0);
+  int scaledigits=0;
+  if (decimal_fixed)
+    for (cell s=rational_scale; s>1; s/=10)
+      scaledigits++;
+
   /* read the fractional part as a whole number, but keep a digit count to
-   * scale the part afterwards
+   * scale the part afterwards; for decimal fixed point, only the decimals that
+   * the scale holds are kept (the others are dropped, with error 222)
    */
   double ffrac=0.0;
   ucell ifrac=0;
   int digits=0;
   while (isdigit(*ptr)) {
     ffrac=(ffrac*10.0)+(*ptr-'0');
-    ifrac=(ifrac*10)+(*ptr-'0');
+    if (!decimal_fixed || digits<scaledigits)
+      ifrac=(ifrac*10)+(*ptr-'0');
     digits++;
     ptr++;
   } /* while */
 
-  /* form the full number so far */
-  if (ifrac>0) {
-    ffrac/=pow(10,digits);
-    fvalue+=ffrac;
-    if (rational_scale>1 && ifrac>=(ucell)rational_scale)
+  /* scale the decimals: for decimal fixed point by their count, for binary
+   * fixed point from their fractional value
+   */
+  ffrac/=pow(10,digits);
+  if (decimal_fixed) {
+    if (digits>scaledigits)
       error(222);         /* number of digits exceeds rational number precision */
-    if (rational_scale%10==0)
-      while (ifrac*10<(ucell)rational_scale)
-        ifrac*=10;        /* decimal fixed-point */
-    else
-      ifrac=(ucell)(ffrac*rational_scale+0.5);
+    for (int d=digits; d<scaledigits; d++)
+      ifrac*=10;          /* align the decimals to the scale: 0.05 is 50/1000 */
+  } else if (rational_scale>1) {
+    ifrac=(ucell)(ffrac*rational_scale+0.5);  /* binary fixed point */
+  } /* if */
+  if (rational_scale>1) {
     if (ifrac>(CELLMAX-ivalue))
       overflow=true;
     ivalue+=ifrac;
-  }
+  } /* if */
 
+  int exp=0;
   if (*ptr=='e') {      /* optional exponent */
     ptr++;
     int sign=1;
@@ -833,17 +877,23 @@ static int ftoi(cell *val,const unsigned char *curptr)
     } /* if */
     if (!isdigit(*ptr)) /* 'e' should be followed by a digit */
       return 0;
-    int exp=0;
     while (isdigit(*ptr)) {
-      exp=(exp*10)+(*ptr-'0');
+      if (exp<=(INT_MAX-9)/10)
+        exp=(exp*10)+(*ptr-'0');  /* a larger exponent is out of range anyway */
       ptr++;
     } /* while */
-    if (exp!=0) {
-      fvalue*=pow(10,exp*sign);
-      if ((ucell)(fvalue*rational_scale+0.5)>(ucell)CELLMAX)
-        overflow=true;
-      ivalue=(ucell)(fvalue*rational_scale+0.5);
-    } /* if */
+    exp*=sign;
+  } /* if */
+
+  double fvalue=literal_value(curptr,ptr,rational_scale==0 && pc_cellsize==4);
+  if (exp!=0 && rational_scale>1) {
+    /* with an exponent, a fixed point number is formed from the floating point
+     * value, so check the range on that value (the part before the exponent
+     * may be out of range on its own, as in 2147483.8e-3), before converting it
+     */
+    double scaled=fvalue*rational_scale+0.5;
+    overflow= (scaled>(double)CELLMAX);
+    ivalue= overflow ? 0 : (ucell)scaled;
   } /* if */
 
   /* until the number format was established (to be a rational number), range
@@ -1395,14 +1445,18 @@ static int command(void)
           } else {
             scale<<=shift;
           } /* if */
-          /* add the tag (make it public) and check the values */
-          int tag=pc_addtag(name);
-          exporttag(tag);
-          if (rational_tag==0 || (rational_tag==tag && rational_scale==scale)) {
-            rational_tag=tag;
-            rational_scale=scale;
+          if (scale==0 && pc_cellsize<4) {
+            error(68);          /* IEEE 754 floating point needs a cell of 32 or 64 bits */
           } else {
-            error(69);          /* rational number format already set, can only be set once */
+            /* add the tag (make it public) and check the values */
+            int tag=pc_addtag(name);
+            exporttag(tag);
+            if (rational_tag==0 || (rational_tag==tag && rational_scale==scale)) {
+              rational_tag=tag;
+              rational_scale=scale;
+            } else {
+              error(69);        /* rational number format already set, can only be set once */
+            } /* if */
           } /* if */
         } else if (strcmp(lexstr,"recursive")==0) {
           if (curfunc!=NULL)
@@ -1718,14 +1772,26 @@ SC_FUNC char *strins(char *dest,const char *src,size_t srclen)
 SC_FUNC bool is_rational(int tag,bool ieee754)
 {
   bool result= (rational_tag!=0 && tag==rational_tag);
-  if (ieee754 && rational_scale==0)
-    result=false;
+  if (ieee754 && rational_scale!=0)
+    result=false;       /* fixed point, not floating point */
   return result;
 }
 
 SC_FUNC int rational_gettag(void)
 {
   return rational_tag;
+}
+
+/** rational_reset() clears the rational number format, which is set with
+ *  `#pragma rational`. It must be called once per compilation, not per pass:
+ *  the format that the first pass found stays valid in the second pass, so
+ *  that a rational number may appear before the `#pragma rational` that sets
+ *  its format (as in the default parameters in float.inc).
+ */
+SC_FUNC void rational_reset(void)
+{
+  rational_tag=0;       /* assume no support for rational numbers */
+  rational_scale=0;     /* multiplier for fixed-point rational numbers */
 }
 
 static struct {
@@ -2269,9 +2335,6 @@ SC_FUNC int lexinit(int releaseall)
 
   pc_indentmask=0;      /* tab/space interval to make up the current indent */
   pc_indentbits=0;      /* bits in pc_indentmask */
-
-  rational_tag=0;       /* assume no support for rational numbers */
-  rational_scale=0;     /* multiplier for fixed-point rational numbers */
 
   if (releaseall) {
     if (srcline!=NULL)

@@ -1212,6 +1212,7 @@ static void initglobals(void)
   pc_amxram=0;          /* no limit on data size of the abstract machine */
   pc_tabsize=8;         /* assume a TAB is 8 spaces */
   pc_matchedtabsize=0;  /* allow auto-adjust of TAB size (no space indents detected yet) */
+  rational_reset();     /* assume no support for rational numbers */
   undefined_vars=false; /* if true, undefined symbols were found */
   pc_overlays=0;        /* do not generate for overlays */
   for (int i=0; i<ovlFIRST; i++)

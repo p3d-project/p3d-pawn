@@ -30,6 +30,7 @@
 # endif
 #endif
 
+#include <float.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -602,7 +603,7 @@ static TCHAR *reverse(TCHAR *string,int stop)
  * If the width value is positive, the string is padded with spaces; if it is
  * negative, it is padded with zeros.
  */
-static TCHAR *amx_strval(TCHAR buffer[], long value, int format, int width)
+static TCHAR *amx_strval(TCHAR buffer[], cell value, int format, int width)
 {
   int start, stop;
   TCHAR temp;
@@ -626,14 +627,14 @@ static TCHAR *amx_strval(TCHAR buffer[], long value, int format, int width)
       } while (value != 0);
     }
   } else if (format == SV_BINARY) {
-    unsigned long v = (unsigned long)value;	/* copy to unsigned value for shifting */
+    ucell v = (ucell)value;   /* copy to unsigned value for shifting */
     do {
       buffer[stop++] = (TCHAR)((v & 1) + __T('0'));
       v >>= 1;
     } while (v != 0);
   } else {
     /* hexadecimal */
-    unsigned long v = (unsigned long)value; /* copy to unsigned value for shifting */
+    ucell v = (ucell)value;   /* copy to unsigned value for shifting */
     do {
       buffer[stop] = (TCHAR)((v & 0x0f) + __T('0'));
       if (buffer[stop] > __T('9'))
@@ -664,68 +665,50 @@ static TCHAR *amx_strval(TCHAR buffer[], long value, int format, int width)
   #define FIXEDMULT     1000
   #define FIXEDDIGITS   3
 
-static TCHAR *formatfixed(TCHAR *string,cell value,TCHAR align,int width,TCHAR decpoint,int digits,TCHAR filler)
+/* formatfixed() formats a fixed point value with FIXEDDIGITS decimals, rounded
+ * to "digits" decimals; with more than FIXEDDIGITS decimals, the remaining ones
+ * are zeros. The value is handled as an unsigned magnitude, so that the smallest
+ * cell and the rounding cannot overflow.
+ */
+static TCHAR *formatfixed(TCHAR *string,cell value,TCHAR decpoint,int digits)
 {
-  int i, len;
-  cell ipart,v;
-  TCHAR vsign=__T('\0');
+  int i;
+  ucell magnitude,ipart,fpart,round;
 
-  /* make the value positive (but keep the sign) */
-  if (value<0) {
-    value=-value;
-    vsign=__T('-');
-  } /* if */
+  string[0]=__T('\0');
+  if (value<0)
+    _tcscpy(string,__T("-"));
+  magnitude= (value<0) ? 0-(ucell)value : (ucell)value;
 
   /* "prepare" the value so that when it is truncated to the requested
    * number of digits, the result is rounded towards the dropped digits
    */
-  assert(digits<INT_MAX);
-  v=FIXEDMULT/2;
-  for (i=0; i<digits; i++)
-    v/=10;
-  value+=v;
+  assert(digits>=0 && digits<INT_MAX);
+  round=FIXEDMULT/2;
+  for (i=0; i<digits && round>0; i++)
+    round/=10;
+  magnitude+=round;     /* cannot overflow: the magnitude is at most half the range of a ucell */
 
-  /* get the integer part and remove it from the value */
-  ipart=value/FIXEDMULT;
-  value-=FIXEDMULT*ipart;
-  assert(ipart>=0);
-  assert(value>=0);
+  /* split the integer part and the decimals */
+  ipart=magnitude/FIXEDMULT;
+  fpart=magnitude%FIXEDMULT;
 
-  /* truncate the fractional part to the requested number of digits */
+  /* truncate the decimals to the requested number of digits */
   for (i=FIXEDDIGITS; i>digits; i--)
-    value/=10;
-
-  string[0]=__T('\0');
-
-  /* add sign */
-  i=(int)_tcslen(string);
-  string[i]=vsign;
-  string[i+1]=__T('\0');
+    fpart/=10;
 
   /* add integer part */
-  amx_strval(string+_tcslen(string),(long)ipart,SV_DECIMAL,0);
+  amx_strval(string+_tcslen(string),(cell)ipart,SV_DECIMAL,0);
 
-  /* add fractional part */
+  /* add fractional part: the significant decimals, then zeros */
   if (digits>0) {
+    int significant= (digits<FIXEDDIGITS) ? digits : FIXEDDIGITS;
     i=(int)_tcslen(string);
     string[i]=decpoint;
-    amx_strval(string+i+1,(long)value,SV_DECIMAL,-digits);
-  } /* if */
-
-  len=(int)_tcslen(string);
-  if (len<width) {
-    /* pad to the requested width */
-    for (i=len; i<width; i++)
-      string[i]=filler;
+    amx_strval(string+i+1,(cell)fpart,SV_DECIMAL,-significant);
+    for (i=(int)_tcslen(string); significant<digits; significant++)
+      string[i++]=__T('0');
     string[i]=__T('\0');
-    /* optionally move the padding to the beginning of the string, using the handwaving algorithm */
-    if (align!=__T('-')) {
-      assert(i==(int)_tcslen(string));
-      assert(i>=len);
-      reverse(string,len);
-      reverse(string+len,i-len);
-      reverse(string,i);
-    } /* if */
   } /* if */
 
   return string;
@@ -737,7 +720,10 @@ static int dochar(AMX *amx,TCHAR ch,cell param,TCHAR sign,TCHAR decpoint,int wid
                   int (*f_putstr)(void*,const TCHAR *),int (*f_putchar)(void*,TCHAR),void *user)
 {
   cell *cptr;
-  TCHAR buffer[40];
+  /* the longest integer is binary (one digit per bit); a fixed point number
+   * has at most as many digits in its integer part, plus a sign, a decimal
+   * point and 25 decimals */
+  TCHAR buffer[8*sizeof(cell)+28];
   #if defined FLOATPOINT
     TCHAR formatstring[40];
   #endif
@@ -762,7 +748,7 @@ static int dochar(AMX *amx,TCHAR ch,cell param,TCHAR sign,TCHAR decpoint,int wid
     if (sign!=__T('-'))
       while (width-->0)
         f_putchar(user,filler);
-    amx_strval(buffer,(long)*cptr,SV_BINARY,0);
+    amx_strval(buffer,*cptr,SV_BINARY,0);
     f_putstr(user,buffer);
     while (width-->0)
       f_putchar(user,filler);
@@ -781,14 +767,12 @@ static int dochar(AMX *amx,TCHAR ch,cell param,TCHAR sign,TCHAR decpoint,int wid
     return 1;
 
   case __T('d'): {
-    cell value;
+    ucell value;
     int length=1;
     cptr=amx_Address(amx,param);
-    value=*cptr;
-    if (value<0 || sign==__T('+'))
+    if (*cptr<0 || sign==__T('+'))
       length++;
-    if (value<0)
-      value=-value;
+    value= (*cptr<0) ? 0-(ucell)*cptr : (ucell)*cptr;  /* magnitude, also of the smallest cell */
     while (value>=10) {
       length++;
       value/=10;
@@ -815,23 +799,34 @@ static int dochar(AMX *amx,TCHAR ch,cell param,TCHAR sign,TCHAR decpoint,int wid
     else if (digits>25)
       digits=25;
     _tcscpy(formatstring,__T("%"));
-    if (sign!=__T('\0'))
-      _stprintf(formatstring+_tcslen(formatstring),__T("%c"),sign);
-    if (width>0)
-      _stprintf(formatstring+_tcslen(formatstring),__T("%d"),width);
+    if (sign==__T('+'))
+      _tcscpy(formatstring+_tcslen(formatstring),__T("+"));
     _stprintf(formatstring+_tcslen(formatstring),__T(".%df"),digits);
     cptr=amx_Address(amx,param);
-    #if PAWN_CELL_SIZE == 64
-      _stprintf(buffer,formatstring,*(double*)cptr);
-    #else
-      _stprintf(buffer,formatstring,*(float*)cptr);
-    #endif
-    if (decpoint==__T(',')) {
-      TCHAR *ptr=_tcschr(buffer,__T('.'));
-      if (ptr!=NULL)
-        *ptr=__T(',');
-    } /* if */
-    f_putstr(user,buffer);
+    {
+      /* the width is applied below, so the number needs at most the digits of
+       * the largest value, a sign, a decimal point and 25 decimals */
+      #if PAWN_CELL_SIZE == 64
+        TCHAR number[DBL_MAX_10_EXP+1+28];
+        _stprintf(number,formatstring,*(double*)cptr);
+      #else
+        TCHAR number[FLT_MAX_10_EXP+1+28];
+        _stprintf(number,formatstring,*(float*)cptr);
+      #endif
+      assert(_tcslen(number)<sizeof number/sizeof number[0]);
+      if (decpoint==__T(',')) {
+        TCHAR *ptr=_tcschr(number,__T('.'));
+        if (ptr!=NULL)
+          *ptr=__T(',');
+      } /* if */
+      width-=(int)_tcslen(number);
+      if (sign!=__T('-'))
+        while (width-->0)
+          f_putchar(user,__T(' '));
+      f_putstr(user,number);
+      while (width-->0)
+        f_putchar(user,__T(' '));
+    }
     return 1;
 #endif
 
@@ -847,9 +842,16 @@ static int dochar(AMX *amx,TCHAR ch,cell param,TCHAR sign,TCHAR decpoint,int wid
       digits=3;
     else if (digits>25)
       digits=25;
-    formatfixed(buffer,*cptr,sign,width,decpoint,digits,filler);
-    assert(_tcslen(buffer)<sizeof buffer);
+    formatfixed(buffer,*cptr,decpoint,digits);
+    assert(_tcslen(buffer)<sizeof buffer/sizeof buffer[0]);
+    /* the width is applied here, so that it does not need room in the buffer */
+    width-=(int)_tcslen(buffer);
+    if (sign!=__T('-'))
+      while (width-->0)
+        f_putchar(user,filler);
     f_putstr(user,buffer);
+    while (width-->0)
+      f_putchar(user,filler);
     return 1;
 #endif
 
@@ -886,7 +888,7 @@ static int dochar(AMX *amx,TCHAR ch,cell param,TCHAR sign,TCHAR decpoint,int wid
     if (sign!=__T('-'))
       while (width-->0)
         f_putchar(user,filler);
-    amx_strval(buffer,(long)*cptr,SV_HEX,0);
+    amx_strval(buffer,*cptr,SV_HEX,0);
     f_putstr(user,buffer);
     while (width-->0)
       f_putchar(user,filler);
@@ -943,7 +945,8 @@ static int formatstate(TCHAR c,int *state,TCHAR *sign,TCHAR *decpoint,int *width
     break;
   case FMT_WIDTH:
     if (c>=__T('0') && c<=__T('9')) {
-      *width=*width*10+(int)(c-__T('0'));
+      if (*width<=(INT_MAX-9)/10)
+        *width=*width*10+(int)(c-__T('0'));   /* a larger width cannot be printed anyway */
     } else if (c==__T('.') || c==__T(',')) {
       *decpoint=c;
       *digits=0;
@@ -954,7 +957,8 @@ static int formatstate(TCHAR c,int *state,TCHAR *sign,TCHAR *decpoint,int *width
     break;
   case FMT_DECIM:
     if (c>=__T('0') && c<=__T('9')) {
-      *digits=*digits*10+(int)(c-__T('0'));
+      if (*digits<=(INT_MAX-9)/10)
+        *digits=*digits*10+(int)(c-__T('0')); /* it is capped at 25 anyway */
     } else {
       return 1;   /* print formatted character */
     } /* if */

@@ -17,6 +17,10 @@
  *  Version: $Id: amx.h 7696 2026-09-20 14:46:13Z thiadmer $
  */
 
+/*
+ *  Modified hereafter by the P3D Team
+ */
+
 #ifndef AMX_H_INCLUDED
 #define AMX_H_INCLUDED
 

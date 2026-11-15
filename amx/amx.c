@@ -17,6 +17,9 @@
  *  Version: $Id: amx.c 7717 2026-10-17 16:25:40Z thiadmer $
  */
 
+/*
+ *  Modified hereafter by the P3D Team
+ */
 #define WIN32_LEAN_AND_MEAN
 #if defined _UNICODE || defined __UNICODE__ || defined UNICODE
 #if !defined UNICODE /* for Windows API */

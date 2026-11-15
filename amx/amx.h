@@ -405,7 +405,8 @@ typedef int64_t cell;
         AMX_ERR_PARAMS,      /* parameter error */
         AMX_ERR_DOMAIN,      /* domain error, expression result does not fit in range */
         AMX_ERR_GENERAL,     /* general error (unknown or unspecific error) */
-        AMX_ERR_OVERLAY      /* overlays are unsupported (JIT) or uninitialized */
+        AMX_ERR_OVERLAY,     /* overlays are unsupported (JIT) or uninitialized */
+        AMX_ERR_YIELD        /* yield script execution and decreases program counter*/
     };
 
 #define AMX_FLAG_OVERLAY 0x01   /* all function calls use overlays */

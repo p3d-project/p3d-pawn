@@ -2203,6 +2203,10 @@ int AMXAPI amx_PushString(AMX* amx, cell** address, const char* string, int pack
 #define SKIPPARAM(n) (cip = (cell*)cip + (n)) /* for obsolete opcodes */
 #endif
 
+#if !defined SYSREQ_YIELD
+#define SYSREQ_YIELD(nparams) (amx->cip -= (1 + (nparams)) * sizeof(cell))
+#endif
+
 #define AMXPUSH(v) (amx->stk -= sizeof(cell), *(cell*)(data + amx->stk) = (v))
 #define ABORT(amx, v)                                                                                                  \
     {                                                                                                                  \
@@ -2897,8 +2901,12 @@ int AMXAPI amx_Exec(AMX* amx, cell* retval, int index)
             i = amx->callback(amx, offs, &pri, (cell*)(data + (int)stk));
             if (i != AMX_ERR_NONE)
             {
-                if (i == AMX_ERR_SLEEP)
+                if (i == AMX_ERR_SLEEP || i == AMX_ERR_YIELD)
                 {
+                    if (i == AMX_ERR_YIELD)
+                    {
+                        SYSREQ_YIELD(1);
+                    }
                     amx->pri = pri;
                     amx->alt = alt;
                     amx->reset_stk = reset_stk;
@@ -2987,7 +2995,21 @@ int AMXAPI amx_Exec(AMX* amx, cell* retval, int index)
             amx->hea = hea;
             amx->frm = frm;
             amx->stk = stk;
+            amx->error = AMX_ERR_NONE;
             pri = ((AMX_NATIVE)(intptr_t)offs)(amx, (cell*)(data + (int)stk));
+
+            if (amx->error == AMX_ERR_YIELD)
+            {
+                stk += sizeof(cell);
+                SYSREQ_YIELD(2);
+                amx->pri = pri;
+                amx->alt = alt;
+                amx->stk = stk;
+                amx->reset_stk = reset_stk;
+                amx->reset_hea = reset_hea;
+                return AMX_ERR_YIELD;
+            }
+
             stk += val + sizeof(cell);
             if (amx->error != AMX_ERR_NONE)
             {
@@ -3250,6 +3272,20 @@ int AMXAPI amx_Exec(AMX* amx, cell* retval, int index)
             amx->frm = frm;
             amx->stk = stk;
             i = amx->callback(amx, offs, &pri, (cell*)(data + (int)stk));
+
+            // if we're going to yield, don't touch the stack
+            if (i == AMX_ERR_YIELD)
+            {
+                stk += sizeof(cell);
+                SYSREQ_YIELD(2);
+                amx->pri = pri;
+                amx->alt = alt;
+                amx->stk = stk;
+                amx->reset_stk = reset_stk;
+                amx->reset_hea = reset_hea;
+                return i;
+            }
+
             stk += val + sizeof(cell);
             if (i != AMX_ERR_NONE)
             {

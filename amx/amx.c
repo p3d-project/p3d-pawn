@@ -2973,7 +2973,19 @@ int AMXAPI amx_Exec(AMX* amx, cell* retval, int index)
             amx->hea = hea;
             amx->frm = frm;
             amx->stk = stk;
+            amx->error = AMX_ERR_NONE;
             pri = ((AMX_NATIVE)(intptr_t)offs)(amx, (cell*)(data + (int)stk));
+
+            if (amx->error == AMX_ERR_YIELD)
+            {
+                SYSREQ_YIELD(1);
+                amx->pri = pri;
+                amx->alt = alt;
+                amx->reset_stk = reset_stk;
+                amx->reset_hea = reset_hea;
+                return AMX_ERR_YIELD;
+            }
+
             if (amx->error != AMX_ERR_NONE)
             {
                 if (amx->error == AMX_ERR_SLEEP)
